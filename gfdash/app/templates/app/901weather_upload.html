@@ -1,0 +1,56 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <link href="/static/vendors/dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2>アメダスデータアップロード</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>アメダスのcsv過去データ(日別、時間帯別)を下の枠内にドラッグアンドドロップするか、クリックしてファイルを選択してください。</p>
+              <form method="post" enctype="multipart/form-data" class="dropzone clsbox" id="myDropzone">
+                <div class="fallback">
+<!--                  <input id="file" name="file" type="file" multiple="multiple"/>-->
+                  <input id="file" name="file" type="file" />
+                  <input type="submit" value="Upload"/>
+                </div>
+              </form>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_submit" class="btn btn-success" type="submit"  onclick="btnSubmit()">Upload</button>
+                <button id="btn_cancel" class="btn btn-primary" type="button"  onclick="btnCancel()">Cancel</button>
+              </div>
+              <br />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <script src="/static/vendors/dropzone/dist/min/dropzone.min.js"></script>
+
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 901wheter_upload専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_901.js"></script>
+
+{% endblock javascripts %}

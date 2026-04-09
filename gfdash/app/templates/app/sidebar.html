@@ -1,0 +1,146 @@
+<div class="left_col scroll-view">
+  <div class="navbar nav_title" style="border: 0;">
+    <a href="/" class="site_title">
+      <i class="fa-solid fa-golf-ball-tee gf_icon_full"></i>
+      <span class="gf_text_full">GF Dashboard</span>
+      
+      <span class="gf_text_mini">Menu</span>
+    </a>
+  </div>
+
+  <div class="clearfix"></div>
+
+  <br />
+
+{% load permission_tags %}
+  <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+    <div class="menu_section">
+      <h3>MENU</h3>
+    <ul class="nav side-menu">
+      <li><a href="/"><i class="fa fa-home"></i> Home </a></li>
+    </ul>
+
+    {% if request.user|is_any_allowed:'101raijyo_index.html, 110raijyo_data.html, 115nenkan_raijyo_data.html, 120getuji_hikaku.html, 125nenji_hikaku.html' %}
+    <ul class="nav side-menu">
+      <li><a><i class="fa fa-bar-chart-o"></i> 来場者数 <span class="fa fa-chevron-down"></span></a>
+        <ul class="nav child_menu">
+          {% if request.user|is_allowed:'101raijyo_index.html' %}
+            <li><a href="101raijyo_index.html">来場者数情報</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'110raijyo_data.html' %}
+            <li><a href="110raijyo_data.html">月間来場者数情報詳細</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'115nenkan_raijyo_data.html' %}
+            <li><a href="115nenkan_raijyo_data.html">年間来場者数情報詳細</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'120getuji_hikaku.html' %}
+            <li><a href="120getuji_hikaku.html">月間来場者数比較</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'125nenji_hikaku.html' %}
+            <li><a href="125nenji_hikaku.html">年間来場者数比較</a></li>
+          {% endif %}
+        </ul>
+      </li>
+    </ul>      
+    {% endif %}
+
+    {% if request.user|is_any_allowed:'201uriage_index.html, 210uriage_data.html, 215nenkan_uriage_data.html, 220getuji_uriage_hikaku.html, 225nenji_uriage_hikaku.html' %}
+    <ul class="nav side-menu">
+      <li><a><i class="fa fa-bar-chart-o"></i> 売上データ <span class="fa fa-chevron-down"></span></a>
+        <ul class="nav child_menu">
+          {% if request.user|is_allowed:'201uriage_index.html' %}
+            <li><a href="201uriage_index.html">売上情報</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'210uriage_data.html' %}
+            <li><a href="210uriage_data.html">月間売上情報詳細</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'215nenkan_uriage_data.html' %}
+            <li><a href="215nenkan_uriage_data.html">年間売上情報詳細</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'220getuji_uriage_hikaku.html' %}
+            <li><a href="220getuji_uriage_hikaku.html">月間売上比較</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'225nenji_uriage_hikaku.html' %}
+            <li><a href="225nenji_uriage_hikaku.html">年間売上比較</a></li>
+          {% endif %}
+        </ul>
+      </li>
+    </ul>
+    {% endif %}
+
+    {% if request.user|is_any_allowed:'310nenkaihi_data.html, 320tanka_data.html, 330ticket_data.html, 340zennen_hikaku.html' %}
+    <ul class="nav side-menu">
+      <li><a><i class="fa fa-bar-chart-o"></i> 集計情報 <span class="fa fa-chevron-down"></span></a>
+        <ul class="nav child_menu">
+          {% if request.user|is_allowed:'310nenkaihi_data.html' %}
+            <li><a href="310nenkaihi_data.html">年会費情報</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'320tanka_data.html' %}
+            <li><a href="320tanka_data.html">客単価情報</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'330ticket_data.html' %}
+            <li><a href="330ticket_data.html">クーポン利用情報</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'340zennen_hikaku.html' %}
+            <li><a href="340zennen_hikaku.html">前年情報比較</a></li>
+          {% endif %}
+        </ul>
+      </li>
+    </ul>      
+    {% endif %}
+
+    {% include "app/sidebar_custom.html" %}
+
+    {% if request.user|is_any_allowed:'901weather_upload.html, 903normal_temprature_upload.html' %}
+    <ul class="nav side-menu">
+      <li><a><i class="fa fa-cog"></i> メンテナンス <span class="fa fa-chevron-down"></span></a>
+        <ul class="nav child_menu">
+          {% if request.user|is_allowed:'901weather_upload.html' %}
+            <li><a href="901weather_upload.html">天候情報アップロード</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'903normal_temprature_upload.html' %}
+            <li><a href="903normal_temprature_upload.html">平年気温情報アップロード</a></li>
+          {% endif %}
+        </ul>
+      </li>
+    </ul>
+    {% endif %}
+
+    {% if not is_sample_mode %}
+    <ul class="nav side-menu">
+      <li>
+        <form id="logout-form" action="{% url 'logout' %}" method="POST" style="display: none;">
+          {% csrf_token %}
+        </form>
+        <a href="#" onclick="document.getElementById('logout-form').submit(); return false;">
+          <i class="fa fa-sign-out"></i> ログアウト
+        </a>
+      </li>
+    </ul>
+    {% endif %}
+
+  </div>
+</div>
+
+
+<!-- /sidebar menu -->
+
+  <!-- /menu footer buttons -->
+<!--
+  <div class="sidebar-footer hidden-small">
+    <a data-toggle="tooltip" data-placement="top" title="Settings">
+      <span class="glyphicon glyphicon-cog" aria-hidden="true"></span>
+    </a>
+    <a data-toggle="tooltip" data-placement="top" title="FullScreen">
+      <span class="glyphicon glyphicon-fullscreen" aria-hidden="true"></span>
+    </a>
+    <a data-toggle="tooltip" data-placement="top" title="Lock">
+      <span class="glyphicon glyphicon-eye-close" aria-hidden="true"></span>
+    </a>
+    <a data-toggle="tooltip" data-placement="top" title="Logout" href="login.html">
+      <span class="glyphicon glyphicon-off" aria-hidden="true"></span>
+    </a>
+  </div>
+-->
+  <!-- /menu footer buttons -->
+</div>

@@ -1,0 +1,58 @@
+<div class="nav_menu">
+  <nav>
+    <div class="nav toggle">
+      <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+    </div>
+
+    <ul class="nav navbar-nav">
+      <li class="gf_page_title_wrapper">
+        {% if page_title %}
+          <h3>{{ page_title }}</h3>
+        {% else %}
+          <h3>&nbsp;</h3>
+        {% endif %}
+      </li>
+    </ul>
+
+    {% if is_sample_mode %}
+    <ul class="nav navbar-nav navbar-right">
+      <li class="gf_demo_label_wrapper">
+          <span class="label label-info">
+            <i class="fa-solid fa-desktop"></i> デモンストレーションモード
+          </span>
+      </li>
+    </ul>
+    {% endif %}
+
+    {% if not is_sample_mode %}
+    <ul class="nav navbar-nav navbar-right">
+      <li class="">
+        <a href="javascript:;" class="user-profile dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+          
+          {% if request.user.is_superuser %}
+            <i class="fa-solid fa-user-shield" style="font-size: 24px; vertical-align: middle; margin-right: 8px; color: #5A738E;"></i>
+          {% elif request.user.groups.all.0.name == 'Manager' %}
+            <i class="fa-solid fa-user-tie" style="font-size: 24px; vertical-align: middle; margin-right: 8px; color: #5A738E;"></i>
+          {% else %}
+            <i class="fa-solid fa-circle-user" style="font-size: 24px; vertical-align: middle; margin-right: 8px; color: #5A738E;"></i>
+          {% endif %}
+          
+          {{ request.user.username }}
+          <span class=" fa fa-angle-down"></span>
+        </a>
+        <ul class="dropdown-menu dropdown-usermenu pull-right">
+          <li>
+            <form id="logout-form" action="{% url 'logout' %}" method="POST" style="display: none;">
+              {% csrf_token %}
+            </form>
+            <a href="#" onclick="document.getElementById('logout-form').submit(); return false;">
+              <i class="fa fa-sign-out"></i> ログアウト
+            </a>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    {% endif %}
+
+  </nav>
+</div>

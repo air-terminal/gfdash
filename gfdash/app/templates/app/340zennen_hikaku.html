@@ -1,0 +1,81 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- bootstrap-datepicker -->
+  <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet"  type="text/css">
+  <link href="/static/gf_vendors/datatables.net-bs/datatables.min.css" rel="stylesheet"  type="text/css">
+
+  <link href="/static/build/css/custom_gf.css" rel="stylesheet"  type="text/css">
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <input type="hidden" id="calendar_saveval" value="">
+    <input type="hidden" id="calendar_initval" value="">
+    <input type="hidden" id="calendar_from" value="">
+    <input type="hidden" id="calendar_to" value="">
+
+    <div class="">
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="row x_title">
+              <div class="col-md-6 col-sm-6">
+                <h2 id="gf_header"><small></small></h2>
+              </div>
+              <div class="col-md-6 col-sm-6">
+                <div class="gf_custom_menu_parts pull-right">
+                  <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="sub340_btnPrevMonth()"></button>
+                  <div class="input-group date" style="margin-bottom: 0px;">
+                    <span class="input-group-addon"><i class="glyphicon glyphicon-calendar fa-solid fa-calendar-days"></i></span>
+                    <input id="gf_calendar"  type="text" class="form-control" style="width:7em;">
+                  </div>
+                  <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="sub340_btnNextMonth()"></button>
+                </div>
+              </div>
+            </div>
+            <br>
+            <div class="x_content gf_custom">
+              
+              <canvas id="chart_plot_mix"  height="80"></canvas>
+  
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_content gf_custom">
+              <div id="hikaku_table_container" style="display: none; overflow-x: auto;"></div>            
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- Chart.js -->
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+  <script src="/static/gf_vendors/chartjs-plugin-annotation/3.1.0/chartjs-plugin-annotation.min.js"></script>
+
+  <!-- Datatables -->
+  <script src="/static/gf_vendors/datatables.net-bs/datatables.min.js"></script>
+  <script src="/static/vendors/jszip/dist/jszip.min.js"></script>
+  <script src="/static/vendors/pdfmake/build/pdfmake.min.js"></script>
+  <script src="/static/vendors/pdfmake/build/vfs_fonts.js"></script>
+
+  <!-- bootstrap-datepicker GF カスタム -->
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <!-- 340zennen_hikaku専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_340.js"></script>
+
+{% endblock javascripts %}

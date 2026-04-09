@@ -1,0 +1,4 @@
+# 環境変数ファイル（絶対に公開しない！）
+.env_dev
+.env
+dev_params.json

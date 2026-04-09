@@ -1,0 +1,182 @@
+{% extends "app/base_site.html" %}
+
+{% block title %} Home {% endblock title %}
+
+{% block stylesheets %}
+  {{ block.super }}
+    <!-- bootstrap-datepicker -->
+    <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet"  type="text/css">
+{% endblock stylesheets %}
+
+{% block content %}
+{% csrf_token %}
+
+<!--  <script> {{ init_jsdata }} </script> -->
+
+  <div class="right_col" role="main">
+    <input type="hidden" id="calendar_saveval" value="">
+    <input type="hidden" id="calendar_initval" value="">
+    <input type="hidden" id="calendar_from" value="">
+    <input type="hidden" id="calendar_to" value="">
+    <!-- top tiles -->
+
+    <div class="row gf_tile" style="display: inline-block;" >
+      <div class="tile_count">
+
+        <div class="{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
+          <span class="count_top"><i class="fa fa-user"></i> 月来場者数</span>
+          <div class="count txt011"></div> 
+          <span class="count_bottom">前年比  <span class="txt111"></span></span>
+        </div>
+        
+        <div class="{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
+          <span class="count_top"><i class="fa fa-user"></i> 平均来場者数</span>
+          <div class="count txt012"></div> 
+          <span class="count_bottom">前年比  <span class="txt112"></span></span>
+        </div>
+
+{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}
+        <div class="col-md-3 col-sm-3 col-xs-6  tile_stats_count">
+          <span class="count_top"><i class="fa fa-signal"></i> 月売上合計</span>
+          <div class="count txt013" data-length="medium"></div> 
+          <span class="count_bottom">前年比  <span class="txt113"></span></span>
+        </div>
+        <div class="col-md-3 col-sm-3 col-xs-6  tile_stats_count">
+          <span class="count_top"><i class="fa fa-signal"></i> 月平均売上</span>
+          <div class="count txt014" data-length="medium"></div> 
+          <span class="count_bottom">前年比  <span class="txt114"></span></span>
+        </div>
+{% endif %}
+
+      </div>
+    </div>
+    <!-- /top tiles -->
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <!--
+        <div class="dashboard_graph x_panel">
+          <div class="row x_title">
+            -->
+        <div class="dashboard_graph x_panel">
+          <div class="x_title">
+            <div class="col-md-6">
+              <h3><small class="count txt001"></small></h3>
+            </div>
+
+            <div class="col-md-3">
+{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}
+              <div id="toggleBtn" class="btn-group pull-right" data-toggle="buttons">
+                <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="raijyo" onchange="btnToggleChartMode()" checked>来場者
+                </label>
+                <label class="btn btn-primary" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="uriage" onchange="btnToggleChartMode()">&nbsp;売上&nbsp;
+                </label>
+              </div>
+{% else %}
+              <input type="radio" name="chart_mode" value="raijyo" checked style="display:none;">
+{% endif %}              
+            </div>
+
+
+            <div class="col-md-3">
+              <div class="gf_custom_menu_parts pull-right">
+                <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
+                <div class="input-group date" style="margin-bottom: 0px;">
+                  <span class="input-group-addon"><i class="glyphicon glyphicon-calendar fa-solid fa-calendar-days"></i></span>
+                  <input id="gf_calendar"  type="text" class="form-control" style="width:7em;">
+                </div>
+                <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="btnNextMonth()"></button>
+              </div>
+            </div>
+            
+            <div class="clearfix"></div>
+          </div>
+
+          <div class="x_content">
+
+            <div id="chart_wrapper" style="height: 300px; width: 100%; position: relative;">
+              <span id="chart_y_label" style="position: absolute; top: 5px; left: 0; width: 80px; text-align: center; font-size: 12px; font-weight: bold; color: #5A738E;"></span>
+              <canvas id="chart_plot_02b"></canvas>
+            </div>
+
+            <div id="weather_table_container" style="display: none; margin-top: 0px; overflow-x: auto;"></div>
+            <span id="weather_table_exp">
+              <span>最大風速(矢印)：</span>
+              <span class="fa-solid fa-angle-right" style="display: inline-block;"></span><span>5m/sまで</span>
+              <span class="fa-solid fa-angles-right" style="display: inline-block;"></span><span>5m/s以上</span><br>
+            </span>
+            <span id="weather_table_exp2">
+              <span>瞬間最大風速(色)：</span>
+              <span class="fa-solid fa-flag blue" style="color: var(--gfdash-blue) !important; display: inline-block;"></span><span>～10m/sまで</span>
+              <span class="fa-solid fa-flag yellow" style="color: var(--gfdash-yellow) !important; display: inline-block;"></span><span>10m/s以上</span>
+              <span class="fa-solid fa-flag red" style="color: var(--gfdash-red) !important; display: inline-block;"></span><span>15m/s以上</span>
+              <span class="fa-solid fa-flag purple" style="color: var(--gfdash-purple) !important; display: inline-block;"></span><span>20m/s以上</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2>データベース情報 <small></small></h2>
+            <ul class="nav navbar-right panel_toolbox">
+              <li><a class="collapse-link"><i class="fa fa-chevron-up"></i></a></li>
+            </ul>
+            <div class="clearfix"></div>
+          </div>
+
+          <div class="x_content">
+            <div class="row" style="border-bottom: 1px solid #E0E0E0; padding-bottom: 5px; margin-bottom: 5px;">
+              <div class="col-md-12">
+                <div class="row">
+                  <div class="col-md-2">
+                    <h4 style="margin:0">来場者数データ</h4>更新日:<span class="txt301"></span>
+                  </div>
+                  <div class="col-md-2">
+                    <h4 style="margin:0">売上情報データ</h4>更新日:<span class="txt302"></span>
+                  </div>
+                  <div class="col-md-2">
+                    <h4 style="margin:0">アメダス(日別)</h4>更新日:<span class="txt309"></span>
+                  </div>
+                  <div class="col-md-2">
+                    <h4 style="margin:0">アメダス(時間別)</h4>更新日:<span class="txt310"></span>
+                  </div>
+                  <div class="col-md-2">
+                    <h4 style="margin:0">天気観測地点</h4><span class="txt320"></span>
+                  </div>
+                  <div class="col-md-2">
+                    <h4 style="margin:0">アメダス地点</h4><span class="txt321"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </div>
+
+
+
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super}}
+  <!-- Chart.js -->
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+  <!-- <script src="/static/build/js/custom_chart.js"></script> -->
+
+  <!-- bootstrap-datepicker GF カスタム -->
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <!-- index専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_001.js"></script>
+
+ {% endblock javascripts %}

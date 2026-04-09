@@ -1,0 +1,179 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+    <!-- bootstrap-datepicker -->
+    <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet"  type="text/css">
+    <link href="/static/build/css/custom_gf.css" rel="stylesheet"  type="text/css">
+{% endblock stylesheets %}
+
+{% block content %}
+
+<!--  <script> {{ init_jsdata }} </script> -->
+
+  <div class="right_col" role="main">
+    <input type="hidden" id="calendar_saveval" value="">
+    <input type="hidden" id="calendar_initval" value="">
+    <input type="hidden" id="calendar_from" value="">
+    <input type="hidden" id="calendar_to" value="">
+    <!-- top tiles -->
+    <!-- /top tiles -->
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="dashboard_graph x_panel">
+          <div class="x_title">
+            <div class="col-md-6">
+              <h2>月間来場者数　<small class="count txt001"></small></h2>
+            </div>
+
+            <div class="col-md-3">
+              <div id="toggleBtn" class="btn-group pull-right" data-toggle="buttons">
+                <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="detail" onchange="btnToggleChartMode()" checked>&nbsp;詳細&nbsp;
+                </label>
+                <label class="btn btn-primary" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="total" onchange="btnToggleChartMode()" >累計数
+                </label>
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <div class="gf_custom_menu_parts pull-right">
+                <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
+                <div class="input-group date" style="margin-bottom: 0px;">
+                  <span class="input-group-addon"><i class="fa-solid fa-calendar-days"></i></span>
+                  <input id="gf_calendar"  type="text" class="form-control" style="width:7em;">
+                </div>
+                <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="btnNextMonth()"></button>
+              </div>
+            </div>
+            
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+
+            <div class="x_title gf_smart_toolbar" style="background: #f8f9fa; padding: 12px; border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 25px; border: 1px solid #ddd; margin-bottom: 15px;">
+  
+              <div class="control_unit">
+                <div class="btn-group" data-toggle="buttons">
+                  <label class="btn btn-default active" style="padding: 8px 16px;" onclick="btnToggleTimeMode()">
+                    <input type="radio" name="time_option" value="day" checked> <i class="fa-solid fa-calendar-day"></i> 日別
+                  </label>
+                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleTimeMode()">
+                    <input type="radio" name="time_option" value="hour"> <i class="fa-solid fa-clock"></i> 時間帯別
+                  </label>
+                </div>            
+              </div>
+
+              <div id="toolbar_detail_filter" style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: bold; color: #5A738E;">表示内訳:</span>
+                <div class="btn-group" data-toggle="buttons">
+                  <label class="btn btn-primary active" style="padding: 8px 15px;"><input type="checkbox" id="detail_option1" checked onchange="chkDetailChartMode()"> 朝</label>
+                  <label class="btn btn-primary active" style="padding: 8px 15px;"><input type="checkbox" id="detail_option2" checked onchange="chkDetailChartMode()"> 昼</label>
+                  <label class="btn btn-primary active" style="padding: 8px 15px;"><input type="checkbox" id="detail_option3" checked onchange="chkDetailChartMode()"> 夜</label>
+                </div>
+              </div>
+
+              <div id="toolbar_time_select" style="display: none; align-items: center; gap: 10px;">
+                <span style="font-weight: bold; color: #5A738E;">分析対象:</span>
+                <div class="btn-group" data-toggle="buttons">
+                  <label class="btn btn-info active" style="padding: 8px 15px;"><input type="radio" name="time_detail_option" value="morning" checked onchange="btnToggleTimeDetailMode()"> 朝</label>
+                  <label class="btn btn-info" style="padding: 8px 15px;"><input type="radio" name="time_detail_option" value="afternoon" onchange="btnToggleTimeDetailMode()"> 昼</label>
+                  <label class="btn btn-info" style="padding: 8px 15px;"><input type="radio" name="time_detail_option" value="night" onchange="btnToggleTimeDetailMode()"> 夜</label>
+                </div>
+              </div>
+
+              <div id="toolbar_temp_option" style="display: flex; align-items: center; gap: 10px; margin-left: auto;">
+                <span style="font-weight: bold; color: #5A738E;">気温:</span>
+                <div class="btn-group" data-toggle="buttons">
+                  <label class="btn btn-default active" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
+                    <input type="radio" name="chart_option" value="temp_max" checked>最高
+                  </label>
+                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
+                    <input type="radio" name="chart_option" value="temp_min">最低
+                  </label>
+                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
+                    <input type="radio" name="chart_option" value="temp_ave">平均
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div id="sync_scroll_container" style="overflow-x: auto; position: relative; border: 1px solid #E6E9ED;">
+
+              <div id="chart_wrapper" style="height: 350px; position: relative;">
+                <span id="chart_y1_label" style="position: absolute; top: 5px; left: 0; width: 80px; text-align: center; font-size: 12px; font-weight: bold; color: #5A738E; z-index: 10;"></span>
+                <span id="chart_y2_label" style="position: absolute; top: 5px; right: 0; width: 80px; text-align: center; font-size: 12px; font-weight: bold; color: #5A738E; z-index: 10;"></span>
+                <canvas id="chart_plot_02b" height="100"></canvas>
+              </div>
+              <div id="weather_table_container" style="display: none; margin-top: 0; min-width: 1200px;"></div>
+            </div>
+
+            <div id="weather_table_exp" style="margin-top: 10px;">
+              <span>最大風速(矢印)：</span>
+              <span class="fa-solid fa-angle-right" style="display: inline-block;"></span><span>5m/sまで</span>
+              <span class="fa-solid fa-angles-right" style="display: inline-block;"></span><span>5m/s以上</span>
+            </div>
+            <div id="weather_table_exp2">
+              <span>瞬間最大風速(色)：</span>
+              <span class="fa-solid fa-flag blue" style="color: var(--gfdash-blue) !important; display: inline-block;"></span><span>～10m/sまで</span>
+              <span class="fa-solid fa-flag yellow" style="color: var(--gfdash-yellow) !important; display: inline-block;"></span><span>10m/s以上</span>
+              <span class="fa-solid fa-flag red" style="color: var(--gfdash-red) !important; display: inline-block;"></span><span>15m/s以上</span>
+              <span class="fa-solid fa-flag purple" style="color: var(--gfdash-purple) !important; display: inline-block;"></span><span>20m/s以上</span>
+            </div>
+
+            <div class="tiles tile_count">
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 総来場者数</h2></span>
+                <div class="count txt011"></div> 
+                <span class="count_bottom">前年比  <span class="txt111"></span></span>
+              </div>
+    
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> メンバー</h2></span>
+                  <div class="count txt012"></div> 
+                  <span class="count_bottom">前年比  <span class="txt112"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> ビジター</h2></span>
+                  <div class="count txt013"></div> 
+                  <span class="count_bottom">前年比  <span class="txt113"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 平均来場者数</h2></span>
+                <div class="count txt014"></div> 
+                <span class="count_bottom">前年比  <span class="txt114"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2 class="txt020"></h2></span>
+                <div class="count txt021"></div> 
+                <span class="count_bottom txt022"></span>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super}}
+  <!-- Chart.js -->
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+
+  <!-- bootstrap-datepicker GF カスタム -->
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <!-- index専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_101.js"></script>
+
+ {% endblock javascripts %}

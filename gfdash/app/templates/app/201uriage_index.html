@@ -1,0 +1,194 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+    <!-- bootstrap-datepicker -->
+    <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet"  type="text/css">
+    <link href="/static/build/css/custom_gf.css" rel="stylesheet"  type="text/css">
+
+{% endblock stylesheets %}
+
+{% block content %}
+{% csrf_token %}
+
+<!--  <script> {{ init_jsdata }} </script> -->
+
+  <div class="right_col" role="main">
+    <input type="hidden" id="calendar_saveval" value="">
+    <input type="hidden" id="calendar_initval" value="">
+    <input type="hidden" id="calendar_from" value="">
+    <input type="hidden" id="calendar_to" value="">
+    <!-- top tiles -->
+    <!-- /top tiles -->
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <!--
+        <div class="dashboard_graph x_panel">
+          <div class="row x_title">
+            -->
+        <div class="dashboard_graph x_panel">
+          <div class="x_title">
+            <div class="col-md-6">
+              <h2>月間売上額　<small class="count txt001"></small></h2>
+            </div>
+
+            <div class="col-md-3">
+              <div id="toggleBtn" class="btn-group pull-right" data-toggle="buttons">
+                <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="total" onchange="btnToggleNenkaihi()" checked>概要
+                </label>
+                <label class="btn btn-primary" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
+                  <input type="radio" name="chart_mode" value="detail" onchange="btnToggleNenkaihi()">&nbsp;詳細&nbsp;
+                </label>
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <div class="gf_custom_menu_parts pull-right">
+                <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
+                <div class="input-group date" style="margin-bottom: 0px;">
+                  <span class="input-group-addon"><i class="glyphicon glyphicon-calendar fa-solid fa-calendar-days"></i></span>
+                  <input id="gf_calendar"  type="text" class="form-control" style="width:7em;">
+                </div>
+                <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="btnNextMonth()"></button>
+              </div>
+            </div>
+            
+            <div class="clearfix"></div>
+          </div>
+
+          <div class="x_content">
+
+            <canvas id="chart_plot_02b"></canvas>
+
+            <div class="tiles tile_count gf_custom">
+
+              <div class="graph_option" id="nenkaihi_option">
+                <span class="count_top">入金集計オプション</span>
+                <!-- icheckライブラリを使っているため、オプション変更時のイベント発生は、initFor201()にて定義 -->
+                <div class="radio">
+                  <label><input type="radio" class="flat" name="range_option" value="nenkaihi_add" checked="checked">
+                     メンバー年会費を含める
+                  </label>
+                </div>
+                <div class="radio">
+                  <label>
+                    <input type="radio" class="flat" name="range_option" value="nenkaihi_separate"> メンバー年会費を別表示
+                  </label>
+                </div>
+              </div>
+
+              <div class="graph_option" id="detail_option">
+                <span class="count_top">グラフ表示オプション１</span>
+                <!-- icheckライブラリを使っているため、オプション変更時のイベント発生は、initFor201()にて定義 -->
+                <div class="checkbox">
+                  <label><input type="checkbox" class="flat" id="detail_option1" name="detail_option" checked="checked"> レンジ売上
+                  </label>
+                </div>
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" class="flat" id="detail_option2" name="detail_option" checked="checked"> ショップ売上
+                  </label>
+                </div>
+                <div class="checkbox">
+                  <label><input type="checkbox" class="flat" id="detail_option3" name="detail_option" checked="checked"> スクール売上
+                  </label>
+                </div>
+                <div class="checkbox">
+                  <label><input type="checkbox" class="flat" id="detail_option4" name="detail_option" checked="checked"> 入金
+                  </label>
+                </div>
+                <div class="checkbox">
+                  <label id="detail_option_sub1" hidden><input type="checkbox" class="flat" id="detail_option10" name="detail_option" checked="checked"> 年会費
+                  </label>
+                </div>
+              </div>
+
+              <div class="graph_option" id="detail2_option">
+                <span class="count_top">グラフ表示オプション２</span>
+                <!-- icheckライブラリを使っているため、オプション変更時のイベント発生は、initFor201()にて定義 -->
+                <div class="radio">
+                  <label><input type="radio" class="flat" name="detail2_option" value="view" checked="checked">
+                     その他を表示する
+                  </label>
+                </div>
+                <div class="radio">
+                  <label>
+                    <input type="radio" class="flat" name="detail2_option" value="hide"> その他を表示しない
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="tiles tile_count">
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> レンジ売上</h2></span>
+                <div class="count txt011"></div> 
+                <span class="count_bottom">前年比  <span class="txt111"></span></span>
+              </div>
+              
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> ショップ売上</h2></span>
+                  <div class="count txt012"></div> 
+                  <span class="count_bottom">前年比  <span class="txt112"></span></span>
+              </div>
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> スクール売上</h2></span>
+                  <div class="count txt013"></div> 
+                  <span class="count_bottom">前年比  <span class="txt113"></span></span>
+              </div>
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count" id="status_014_2" hidden>
+                <span class="count_top"><h2> 年会費</h2></span>
+                <div class="count txt014_2"></div> 
+                <span class="count_bottom">前年比  <span class="txt114_2"></span></span>
+              </div>
+              
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> その他</h2></span>
+                  <div class="count txt014"></div> 
+                  <span class="count_bottom">前年比  <span class="txt114"></span></span>
+              </div>
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 総売上</h2></span>
+                <div class="count txt015"></div> 
+                <span class="count_bottom">前年比  <span class="txt115"></span></span>
+              </div>
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 平均売上額</h2></span>
+                <div class="count txt016"></div> 
+                <span class="count_bottom">前年比  <span class="txt116"></span></span>
+              </div>
+
+              <div class="col-md-4 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2 class="txt020"></h2></span>
+                <div class="count txt021"></div> 
+                <span class="count_bottom txt022"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super}}
+  <!-- Chart.js -->
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+
+  <!-- bootstrap-datepicker GF カスタム -->
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <!-- index専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_201.js"></script>
+
+ {% endblock javascripts %}

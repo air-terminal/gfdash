@@ -1,0 +1,14 @@
+asgiref==3.9.1
+Django==6.0
+sqlparse==0.5.0
+typing_extensions==4.7.1
+psycopg2
+psycopg2-binary
+django-bootstrap5
+python-dateutil
+pandas
+requests
+lxml
+html5lib
+beautifulsoup4
+whitenoise

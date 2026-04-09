@@ -1,0 +1,5 @@
+-- スキーマを作成
+CREATE SCHEMA IF NOT EXISTS gf;
+
+-- 権限追加
+GRANT ALL PRIVILEGES ON SCHEMA gf TO dash_admin;

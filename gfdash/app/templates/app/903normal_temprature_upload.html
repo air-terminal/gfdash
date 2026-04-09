@@ -1,0 +1,77 @@
+{% extends "app/base_site.html" %}
+
+{% block title %} Form Upload {% endblock title %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <link href="/static/vendors/dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+      <div class="page-title">
+        <div class="title_left">
+          <h3>平年気温情報登録・更新</h3>
+        </div>
+      </div>
+
+      <div class="clearfix"></div>
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2>平年気温情報アップロード</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>アメダスのcsv過去データ(日別、平年値を含む)を下の枠内にドラッグアンドドロップするか、クリックしてファイルを選択してください。</p>
+              
+              <form method="post" enctype="multipart/form-data" class="dropzone clsbox" id="myDropzone">
+                <div class="fallback">
+<input id="file" name="file" type="file" />
+                  <input type="submit" value="Upload"/>
+                </div>
+              </form>
+
+              <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
+                <p><strong>【アップロードするCSVデータの必須条件】</strong><br>
+                平年気温情報を登録するには、気象庁から以下の条件でダウンロードしたデータが必要です。</p>
+                <ul>
+                  <li><strong>期間：</strong> 1年分</li>
+                  <li><strong>データ項目：</strong> 気温（日平均気温、日最高気温、日最低気温）</li>
+                  <li><strong>オプション：</strong> 過去の平均値との比較にて「<strong>平年値も表示</strong>」をオン</li>
+                </ul>
+                <p style="margin-top: 10px;">
+                  <i class="fa fa-external-link"></i> 
+                  <a href="https://www.data.jma.go.jp/gmd/risk/obsdl/index.php" target="_blank" rel="noopener noreferrer" style="color: #337ab7; text-decoration: underline;">
+                    気象庁 過去の気象データ・ダウンロードページを開く
+                  </a>
+                </p>
+              </div>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_submit" class="btn btn-success" type="submit" onclick="btnSubmit()">Upload</button>
+                <button id="btn_cancel" class="btn btn-primary" type="button" onclick="btnCancel()">Cancel</button>
+              </div>
+              <br />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <script src="/static/vendors/dropzone/dist/min/dropzone.min.js"></script>
+
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <script src="/static/build/js/customjs_903.js"></script>
+
+{% endblock javascripts %}

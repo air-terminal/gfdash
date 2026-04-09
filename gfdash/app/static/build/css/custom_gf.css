@@ -1,0 +1,508 @@
+/* custom_gfでオリジナルを上書き */
+.input-group-addon {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+
+
+
+
+
+/* 以下カスタム部分 */
+.gf_custom .table {
+    width: 100%;
+}
+
+.gf_custom .table th {
+    border-color: #999 #ddd;
+    border-width: 1px;
+    white-space: nowrap;
+    width: 6em;
+    padding: 4px 8px;
+}
+
+.gf_custom .table td {
+    text-align: right;
+    vertical-align: middle;
+    width: 6em;
+    padding: 4px 8px;
+}
+
+.gf_custom .table-group-divider td {
+    text-align: right;
+    padding: 4px 8px;
+}
+
+.gf_custom .table .category-head {
+    border-bottom: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+}
+
+.gf_custom .table .category th{
+    border-top-width: 0px;
+}
+
+.gf_custom .table .record-top td {
+    border-top: 1px solid #999;
+}
+
+.gf_custom .table-group-divider td {
+    border-color: #999 #ddd;
+    border-width: 2px 1px;
+}
+
+.gf_custom .table-foothead {
+    font-weight: bold;
+}
+
+.gf_custom_menu_parts{
+/*    display:inline-block; */
+    flex-wrap: nowrap;
+    display:flex;
+    align-items: center;
+}
+
+.gf_custom_menu_parts button{
+    height: 2.5em;
+    padding: 0px 10px;
+    margin: 0px 5px;
+}
+
+.gf_custom .graph_option div{
+    display: inline-block; _display: inline;
+}
+
+.gf_custom .table_option div{
+    display: inline-block; _display: inline;
+}
+
+
+.minus {
+    color: red;
+}
+
+.plus100 {
+  background-color: rgb(255, 245, 185);
+  margin: 0px;
+}
+
+.plus200 {
+  background-color: rgb(255, 245, 185);
+  margin: 0px;
+}
+
+.plus200all {
+  background-color: rgb(255, 220, 230);
+  margin: 0px;
+}
+
+.plus270 {
+  background-color: rgb(255, 220, 230);
+  margin: 0px;
+}
+
+.plus300 {
+  background-color: rgb(255, 245, 185);
+  margin: 0px;
+}
+
+.colorLevel1 {
+  background-color: rgb(255, 220, 230);
+  margin: 0px;
+}
+
+.colorLevel2 {
+  background-color: rgb(255, 245, 185);
+  margin: 0px;
+}
+
+
+
+.weekend {
+  color: red;
+  margin: 0px;
+}
+
+.demo-placeholder2 {
+    height: 280px;
+}
+
+
+:root {
+  --gfdash-blue: #3498DB;      /* Gentelella標準のblue */
+  --gfdash-yellow: #cdb909;
+  --gfdash-purple: #9B59B6;    /* Gentelella標準のpurple */
+  --gfdash-red: #E74C3C;       /* Gentelella標準のred */
+  --gfdash-dark: #34495E;      /* Gentelella標準のdark */
+  --gfdash-sunny: #e67e22;
+}
+
+/* 追加文字カラークラス */
+.yellow {
+/*    color: #cdb909; */
+    color: var(--gfdash-yellow);
+}
+
+
+
+@media (min-width: 576px) {
+  .container-sm, .container {
+    max-width: 100%;
+  }
+}
+@media (min-width: 768px) {
+  .container-md, .container-sm, .container {
+    max-width: 100%;
+  }
+}
+@media (min-width: 992px) {
+  .container-lg, .container-md, .container-sm, .container {
+    max-width: 100%;
+  }
+}
+@media (min-width: 1200px) {
+  .container-xl, .container-lg, .container-md, .container-sm, .container {
+    max-width: 100%;
+  }
+}
+@media (min-width: 1400px) {
+  .container-xxl, .container-xl, .container-lg, .container-md, .container-sm, .container {
+    max-width: 100%;
+  }
+}
+
+
+
+
+
+.gf_tile .tile_count .tile_stats_count .count[data-length="short"] {
+    font-size: 30px;
+    line-height: 40px;
+    font-weight: 600
+}
+.gf_tile .tile_count .tile_stats_count .count[data-length="medium"] {
+    font-size: 30px;
+    line-height: 40px;
+    font-weight: 600
+}
+.gf_tile .tile_count .tile_stats_count .count[data-length="long"] {
+    font-size: 30px;
+    line-height: 40px;
+    font-weight: 600
+}
+@media (min-width: 768px) {
+    .gf_tile .tile_count .tile_stats_count .count[data-length="short"] {
+        font-size: 30px;
+        width: 6em
+    }
+    .gf_tile .tile_count .tile_stats_count .count[data-length="medium"] {
+        font-size: 30px;
+        width: 9em
+    }
+    .gf_tile .tile_count .tile_stats_count .count[data-length="long"] {
+        font-size: 30px;
+        width: 11em
+    }
+}
+
+/* --- テーブルの列幅ズレ防止とレスポンシブ対応 --- */
+
+/* テーブルの枠組み固定は共通 */
+#datatable_gf {
+    table-layout: fixed !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+}
+
+/* 共通のセル設定（特定の%幅指定は削除する） */
+.gf_custom .table th, 
+.gf_custom .table td {
+    padding: 4px 1px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* iPad縦持ち時のフォント調整 */
+@media (max-width: 768px) {
+    .gf_custom .table th, 
+    .gf_custom .table td {
+        font-size: 10px !important; /* 10列なら10pxでも比較的余裕があります */
+    }
+}
+
+/* --- テーブルの文字配置調整 --- */
+
+/* 1. ヘッダ(見出し)を中央寄せにする */
+.gf_custom .table th {
+    text-align: center !important;
+    vertical-align: middle !important; /* rowspan時に上下中央にする */
+}
+
+/* 2. ボディ(データ)は右寄せにする（数値の桁を揃えるため） */
+.gf_custom .table td {
+    text-align: right !important;
+    vertical-align: middle !important;
+}
+
+/* 3. フッタの見出しラベル（合計、前年比など）は中央寄せにする */
+.gf_custom .table-foothead {
+    text-align: center !important;
+    font-weight: bold;
+}
+
+/* 4. カテゴリ見出し（「月間計」などcolspanしている部分）の調整 */
+.gf_custom .table .category-head {
+    text-align: center !important;
+}
+
+#gf_header {
+    /* 1行に強制する設定を解除し、必要なら折り返すようにする */
+    white-space: normal !important;
+    
+    /* はみ出た部分を隠さず表示する */
+    overflow: visible !important;
+    
+    /* 三点リーダ (...) を表示しない */
+    text-overflow: clip !important;
+    
+    /* 横幅を固定せず、コンテンツに合わせる */
+    width: auto !important;
+    display: inline-block !important;
+}
+
+/* デモンストレーションモード用ラベルのコンテナ */
+.top_nav .navbar-right li.gf_demo_label_wrapper {
+    display: flex !important;
+    align-items: center !important;   /* 上下中央揃え */
+    justify-content: flex-end !important; /* コンテナ内でも右側に寄せる */
+    height: 57px !important;          /* ナビゲーションバーの高さに合わせる */
+    float: right !important;          /* 要素自体を右端に浮かせる（重要） */
+    padding-right: 20px !important;
+    list-style: none !important;      /* ポッチを消す */
+}
+
+/* デモンストレーションモード用ラベルの文字サイズ */
+.top_nav .navbar-right li.gf_demo_label_wrapper .label {
+    font-size: 14px !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+}
+
+/* GF Dashboard タイトルのコンテナを強制的に上下中央揃えにする */
+.site_title {
+    display: flex !important;
+    align-items: center !important;
+    line-height: 1 !important; /* 元々設定されている高すぎる行の高さをリセット */
+    padding-top: 8px !important; /* ★追加: 上から8px押し下げてバランスを取る */    
+}
+
+/* GF Dashboard タイトルのアイコン装飾リセット */
+.site_title i {
+    border: none !important;          /* 枠線を消す */
+    border-radius: 0 !important;      /* 丸みをなくす */
+    padding: 0 !important;            /* 枠用の余白を消す */
+    margin: 0 8px 0 0 !important;     /* 余計な上下の余白を消し、右に8pxの隙間を作る */
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* トップナビのページタイトル用コンテナ */
+.nav.navbar-nav li.gf_page_title_wrapper {
+    display: flex !important;
+    align-items: center !important;
+    height: 57px !important;      /* ナビバーの高さに合わせる */
+    padding-left: 5px !important; /* 既存の15pxから減らして左寄りに調整 */
+}
+
+/* トップナビのページタイトル文字 */
+.nav.navbar-nav li.gf_page_title_wrapper h3 {
+    margin: 0 !important;         /* <h3>特有の上下余白を消して完璧な上下中央に */
+    color: #5A738E !important;
+    white-space: nowrap !important; /* 改行を強制的に防ぐ */
+    overflow: hidden !important;    /* 画面が狭い場合ははみ出しを隠す */
+    text-overflow: ellipsis !important; /* はみ出た部分を「...」にする */
+    max-width: 50vw !important;     /* 右側のメニューに押し出されないよう最大幅を画面の半分に制限 */
+    font-size: 20px !important;     /* 文字サイズ（お好みで調整してください） */
+}
+
+/* --- サイドバー開閉時のタイトル表示切り替え --- */
+
+/* 1. 通常時（開いている時）は "Menu" を隠す */
+.nav-md .site_title .gf_text_mini {
+    display: none !important;
+}
+
+/* 2. 縮小時（閉じている時）は "アイコン" と "GF Dashboard" を隠す */
+.nav-sm .site_title .gf_icon_full,
+.nav-sm .site_title .gf_text_full {
+    display: none !important;
+}
+
+/* 3. 縮小時に "Menu" を表示して中央に配置する */
+.nav-sm .site_title .gf_text_mini {
+    display: block !important;
+    width: 100% !important;
+    text-align: center !important;
+    font-size: 15px !important;
+    font-weight: bold !important;
+    letter-spacing: 1px !important; /* 少し文字間隔を空けるとクールです */
+}
+
+/* 縮小表示時のタイトルコンテナを完全な中央揃えに補正 */
+.nav-sm .site_title {
+    padding-left: 0 !important;         /* 元々ある左側の余白(10px)を消す */
+    justify-content: center !important; /* Flexboxの力で完璧など真ん中に配置 */
+}
+
+.x_title h2 {
+    font-size: 20px !important; /* お好みのサイズに変更してください */
+    margin-top: 8px !important;  /* 上下の位置微調整 */
+}
+
+/* --- ページタイトルの文字サイズ統一とGentelella仕様の上書き --- */
+/* 1. 外側の箱（h2, h3）の設定 */
+.x_panel .x_title h2,
+.x_panel .x_title h3,
+#gf_header {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    
+    /* ▼ ここがポイント：Flexboxで文字とsmallタグの並びを強固に固定する ▼ */
+    display: flex !important;
+    align-items: baseline !important; /* 下のラインを綺麗に揃える */
+    flex-wrap: wrap !important;       /* 極端に狭い場合は「...」にせず綺麗に改行させる */
+    
+    font-size: 22px !important;
+    font-weight: 500 !important;
+    color: #5A738E !important;
+    margin-top: 6px !important;
+    line-height: 1.4 !important;
+}
+
+/* 2. 内側の文字（small）の設定 */
+.x_panel .x_title h2 small,
+.x_panel .x_title h3 small,
+#gf_header small {
+    display: inline-block !important;
+    visibility: visible !important;     /* 透明にされるバグを防ぐ */
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    
+    font-size: 80% !important;          /* 親の80%の大きさでバランスを取る */
+    color: inherit !important;
+    font-weight: normal !important;
+    margin-left: 8px !important;
+}
+
+/* 3. iPadなど（1270px以下）で発動するGentelellaの悪魔の仕様を直接上書きして制圧 */
+@media (max-width: 1270px) {
+    .x_panel .x_title h2,
+    .x_panel .x_title h3,
+    #gf_header {
+        font-size: 18px !important;
+        width: 100% !important; /* Gentelellaの勝手な62%縮小をここで完全に無効化 */
+    }
+    
+    .x_panel .x_title h2 small,
+    .x_panel .x_title h3 small,
+    #gf_header small {
+        display: inline-block !important; /* ここで勝手に非表示(none)にされるのを確実に防ぐ */
+        margin-left: 5px !important;
+    }
+}
+
+/* 120画面・125画面特有の「すべてがsmallタグに入っている」構造へのサイズ補正 */
+#gf_header #txt001 {
+    font-size: 100% !important;   /* 80%への強制縮小を解除し、本来のサイズに戻す */
+    font-weight: 500 !important;  /* タイトルとして見やすいように少し太字にする */
+    margin-left: 0 !important;    /* 101画面用につけた隙間をリセットする */
+}
+
+/* テーブル全体のレイアウト固定 */
+#weather_table_container table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    border-collapse: collapse;
+}
+
+/* 左端のラベル列（もしあれば）をグラフのY軸幅と合わせる */
+/* テーブルの最初のTDまたはTH */
+#weather_table_container table tr th:first-child,
+#weather_table_container table tr td:first-child {
+    width: 80px !important; 
+    min-width: 80px !important;
+}
+
+/* 左端のラベル列 */
+#weather_table_container table tr th:first-child,
+#weather_table_container table tr td:first-child {
+    width: 80px !important;
+    min-width: 80px !important;
+}
+
+/* スクロールバーの見た目（任意：細くするとクールです） */
+#sync_scroll_container::-webkit-scrollbar {
+    height: 8px;
+}
+#sync_scroll_container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+
+@media print {
+    /* 1. Firefoxおよび標準ブラウザ向けの強制色調整の無効化 */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        /* Firefoxでの印刷時ブラックアウトを防ぐ標準プロパティ */
+        forced-color-adjust: none !important; 
+    }
+
+    /* 2. Font Awesome本体（::before）の色をインライン指定に従わせる */
+    /* セレクタを極限まで具体的にし、!importantでBootstrapに勝利します */
+    html body #weather_table_container table td i,
+    html body #weather_table_container table td i::before,
+    html body #weather_table_container table td span,
+    html body #weather_table_container table td span::before,
+    html body #weather_table_exp2 span,
+    html body #weather_table_exp2 span::before{
+        color: inherit !important;
+        -webkit-text-fill-color: inherit !important; /* Chrome対策も継承に */
+        forced-color-adjust: none !important;
+    }
+
+    /* 3. 背景色を持つクラス（plus100など）のFirefox対策 */
+    .plus100, .plus200, .plus300, .plus200all, .plus270, .colorLevel1, .colorLevel2{
+        background-color: inherit !important;
+        print-color-adjust: exact !important;
+    }
+}
+
+
+/* ツールバー内のボタン共通設定 */
+.gf_smart_toolbar .btn {
+    font-weight: bold;
+    border: 1px solid #ccc;
+    transition: all 0.2s;
+}
+
+/* 選択されているボタンの強調 */
+.gf_smart_toolbar .btn.active {
+    background-color: #1ABB9C !important; /* 来場者系は緑 */
+    color: #fff !important;
+    border-color: #169F85 !important;
+    box-shadow: inset 0 3px 5px rgba(0,0,0,0.2);
+}
+
+/* 時間帯選択（Info）のアクティブ色 */
+.gf_smart_toolbar .btn-info.active {
+    background-color: #3498DB !important; /* 分析対象は青 */
+    border-color: #2980B9 !important;
+}

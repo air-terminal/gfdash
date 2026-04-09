@@ -1,0 +1,16 @@
+{
+  "test_users": [
+    {
+      "username": "test_manager",
+      "email": "manager@example.com",
+      "password": "", 
+      "group": "Manager"
+    },
+    {
+      "username": "test_staff",
+      "email": "staff@example.com",
+      "password": "",
+      "group": "Staff"
+    }
+  ]
+}
