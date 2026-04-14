@@ -47,7 +47,7 @@ erDiagram
 | `wind_max_inst` | 日最大瞬間風速 | NUMERIC(5,2) | | - | |
 | `wind_max_inst_dir`| 日最大瞬間風速(風向)| VARCHAR(255) | | - | |
 | `gaikyo` | 天気概況(日中) | VARCHAR(255) | | - | 6-18時 |
-| `gaikyo_night` | 天気概況(夜間) | VARCHAR(255) | | - | |
+| `gaikyo_night` | 天気概況(夜間) | VARCHAR(255) | | - | 18-翌6時 |
 | `input_date` | 登録日 | DATE | | `CURRENT_DATE` | |
 
 #### tz102_weather_avarage (天候情報 平年値テーブル)
