@@ -17,8 +17,10 @@
 
 ```mermaid
 erDiagram
-    ta215_attnd ||--|| tb120_report : "営業日の祝日・メモ情報を参照"
+    ta215_attnd ||--|| tb120_report : "日付で紐付け"
     tb120_report ||--o| tb330_sales_diff : "日付で紐付け"
+    tb120_report ||--|{ tz201_dept_report : "日付で紐付け"
+    tb120_report ||--|{ tz202_clerk_report : "日付で紐付け"
 ```
 
 ---

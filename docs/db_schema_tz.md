@@ -22,6 +22,9 @@
 erDiagram
     tz101_weather_report ||--o{ tz105_detailed_weather_info : "同じ日付の詳細を保持"
     
+    tb120_report ||--|{ tz201_dept_report : "日付で紐付け"
+    tb120_report ||--|{ tz202_clerk_report : "日付で紐付け"
+
     tz910_permission {
         VARCHAR template_name PK
         INT required_level
