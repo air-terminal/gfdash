@@ -57,11 +57,11 @@
   
               <div class="control_unit">
                 <div class="btn-group" data-toggle="buttons">
-                  <label class="btn btn-default active" style="padding: 8px 16px;" onclick="btnToggleTimeMode()">
-                    <input type="radio" name="time_option" value="day" checked> <i class="fa-solid fa-calendar-day"></i> 日別
+                  <label class="btn btn-default active" style="padding: 8px 16px;">
+                    <input type="radio" name="time_option" value="day" checked onclick="btnToggleTimeMode()"> <i class="fa-solid fa-calendar-day"></i> 日別
                   </label>
-                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleTimeMode()">
-                    <input type="radio" name="time_option" value="hour"> <i class="fa-solid fa-clock"></i> 時間帯別
+                  <label class="btn btn-default" style="padding: 8px 16px;" >
+                    <input type="radio" name="time_option" value="hour" onclick="btnToggleTimeMode()"> <i class="fa-solid fa-clock"></i> 時間帯別
                   </label>
                 </div>            
               </div>
@@ -87,14 +87,14 @@
               <div id="toolbar_temp_option" style="display: flex; align-items: center; gap: 10px; margin-left: auto;">
                 <span style="font-weight: bold; color: #5A738E;">気温:</span>
                 <div class="btn-group" data-toggle="buttons">
-                  <label class="btn btn-default active" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
-                    <input type="radio" name="chart_option" value="temp_max" checked>最高
+                  <label class="btn btn-default active" style="padding: 8px 16px;">
+                    <input type="radio" name="chart_option" value="temp_max" checked onclick="btnToggleChartMode()">最高
                   </label>
-                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
-                    <input type="radio" name="chart_option" value="temp_min">最低
+                  <label class="btn btn-default" style="padding: 8px 16px;">
+                    <input type="radio" name="chart_option" value="temp_min" onclick="btnToggleChartMode()">最低
                   </label>
-                  <label class="btn btn-default" style="padding: 8px 16px;" onclick="btnToggleChartMode()">
-                    <input type="radio" name="chart_option" value="temp_ave">平均
+                  <label class="btn btn-default" style="padding: 8px 16px;">
+                    <input type="radio" name="chart_option" value="temp_ave" onclick="btnToggleChartMode()">平均
                   </label>
                 </div>
               </div>

@@ -19,27 +19,6 @@ function initFor101(){
 
     sub101_postView(initParam);
 
-    // icheck使用部のイベントリスナー定義
-    $('input').on('ifChecked', function(event){
-        switch($(this).attr('name')){
-            case 'time_option':
-                btnToggleTimeMode();
-            case 'time_detail_option':
-                btnToggleTimeDetailMode();
-            case 'chart_option':
-                btnToggleChartMode();
-            break;
-        }
-    });
-
-    $('input').on('ifToggled', function(event){
-        switch($(this).attr('name')){
-            case 'detail_option':
-                chkDetailChartMode();
-            break;
-        }
-    });
-
 }
 
 
@@ -350,7 +329,6 @@ function sub101_postView(postParam){
                 case 'temperature_time':
                     chartTempTime = val;
                     break;
-
                 case 'temperature_ave_max':
                     summaryTemp['maxAve'] = val;
                     break;
@@ -446,16 +424,15 @@ function sub101_postView(postParam){
             }
 
             // --- 累計モード：画面幅に収める ---
-    wrapper.style.width = '100%';
-    wrapper.style.minWidth = 'auto';
-    /* ★ここがポイント：
-       clamp(最小, 推奨(画面幅の比率), 最大)
-       ・iPad（横幅が狭い時）は 250px 程度を維持
-       ・PC（横幅が広い時）は 画面幅の20%〜25%程度まで高くする
-       ・高くなりすぎないよう 400px でキャップをかける
-    */
-    wrapper.style.height = 'clamp(250px, 22vw, 400px)';
-
+            wrapper.style.width = '100%';
+            wrapper.style.minWidth = 'auto';
+            /* ★ここがポイント：
+            clamp(最小, 推奨(画面幅の比率), 最大)
+            ・iPad（横幅が狭い時）は 250px 程度を維持
+            ・PC（横幅が広い時）は 画面幅の20%〜25%程度まで高くする
+            ・高くなりすぎないよう 400px でキャップをかける
+            */
+            wrapper.style.height = 'clamp(250px, 22vw, 400px)';
 
             wrapper.style.height = '350px';
             wrapper.style.width = '100%';
@@ -666,6 +643,10 @@ function btnNextMonth(){
 
 function btnToggleTimeMode(){
     // グラフ表示（日別／時間帯別切り替え）
+    if(sub101_getTimeOption() === 'hour'){
+        sub101_initDetailOption();
+    }
+console.log('1');
     var getDate = new Date($("#calendar_initval").val());
 
     let initParam = {
@@ -714,7 +695,7 @@ function btnToggleChartMode(){
 }
 
 function chkDetailChartMode(){
-    // 折れ線グラフ部　来場者数累計／気温の切り替え
+    // 表示内訳（朝・昼・夜）の切り替え
     var getDate = new Date($("#calendar_initval").val());
 
     let initParam = {
@@ -1004,7 +985,7 @@ function sub101_set_chatjs_gf(chartXLabels, chart_plot_02_data, chart_plot_02_da
                             autoSkip: false,
                             // コールバック関数を使ってラベルの色を動的に変更
                             color: function(context) {
-                                return sub101_setChartLabelColor(context);
+                                return com_setChartLabelColor(context);
                             }
                         }
                     },
@@ -1222,9 +1203,10 @@ function sub101_set_chatjs_detail_day(chartXLabels, chartResultsDetail, chart_pl
 
     // 平年値設定
     if (tmpHeinenFlg){
-        tmpKey2 = sub101_getChartOption()
+        tmpKey2 = sub101_getChartOption();
         // [0][0]にしないといけない理由(pushでせっとしたから？直していないです)
-        $.each(chartHeinenTemp[0][0], function(key, val) {
+//        $.each(chartHeinenTemp[0][0], function(key, val) {
+        $.each(chartHeinenTemp, function(key, val) {
             $.each(val, function(key2, val2) {
                 if(key2 === tmpKey2){
                     tmpData3.push(val2);
@@ -1521,27 +1503,25 @@ function sub101_getChartOption(){
     return chartOption;
 }
 
-function sub101_setChartLabelColor(context){
+function sub101_initDetailOption(){
 
-    let label = context.tick.label;
-    if (Array.isArray(context.tick.label)) {
-        label = context.tick.label[0];
-    };
+    // .btn-group 内のすべてのチェックボックスを取得して処理
+    document.querySelectorAll('.btn-group input[type="checkbox"]').forEach(cb => {
+    // 1. チェック状態をONにする
+    cb.checked = true;
 
-//    const label = context.tick.label;
-    // ラベルが「特定の文字」を含む場合に赤色にする
-    if (label.includes('㈷')) {
-        return 'red';
-    }
-    if (label.includes('㈯')) {
-        return 'blue';
-    }
-    if (label.includes('㈰')) {
-        return 'red';
-    }
-    // それ以外はデフォルトの色
-    return '#666';
+    // 2. 親要素（label）に active クラスを追加して、ボタンを押し込んだ見た目にする
+    const label = cb.closest('label');
+    if (label) {
+        label.classList.add('active');
+        }
+    });    
+
+    return;
 }
+
+
+
 
 $(document).ready(function() {
     initFor101();

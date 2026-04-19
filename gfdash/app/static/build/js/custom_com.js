@@ -57,7 +57,13 @@ function com_filesizecalculation(size) {
 }
 
 function com_setChartLabelColor(context){
-    const label = context.tick.label;
+//    const label = context.tick.label;
+
+    let label = context.tick.label;
+    if (Array.isArray(context.tick.label)) {
+        label = context.tick.label[0];
+    };
+
     // ラベルが「特定の文字」を含む場合に赤色にする
     if (label.includes('㈷')) {
         return 'red';
