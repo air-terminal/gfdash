@@ -79,6 +79,8 @@ function sub101_postView(postParam){
         var chartTempTime = 99;
 
         var weatherData = [];
+        var weatherTelopsFlg = false;
+        var weatherTelopsData = null;
                                 
         // 配列をループ処理
         $.each(results, function(key, val) {
@@ -269,12 +271,21 @@ function sub101_postView(postParam){
                         chartXLabelsOption.push([tmpWeather]);
                     });
                     break;
+                case 'weatherTelopsFlg':
+                    weatherTelopsFlg = val;
+                    break;
+                case 'weatherTelopsData':
+                    weatherTelopsData = val;
+                    break;                    
                 case 'weatherData':
                     $.each(val, function(key2, val2) {
-                        tmpWeather = {temp:0,ave_temp:0,wind_speed:0,wind_direction:'',gaiyo:'',gaiyo_night:'', rainfall:0};
+                        tmpWeather = {weather_day:'', temp:0,ave_temp:0,wind_speed:0,wind_direction:'',gaiyo:'',gaiyo_night:'', rainfall:0};
 
                         $.each(val2, function(key3, val3) {
                             switch(key3){
+                                case 'weather_day':
+                                    tmpWeather['weather_day'] = val3;
+                                    break;
                                 case 'temp':
                                     tmpWeather['temp'] = val3;
                                     break;
@@ -466,7 +477,7 @@ function sub101_postView(postParam){
                 $(".gf_smart_toolbar").show();
                 $("#weather_table_exp").show();
                 $("#weather_table_exp2").show();
-                com_set_day_weather_table(chartXLabels, weatherData, true);  
+                com_set_day_weather_table(chartXLabels, weatherData, weatherTelopsFlg, weatherTelopsData, true);  
             } else {
                 sub101_set_chatjs_detail_time(chartXLabels, chartXLabelsOption, chartTempTime, chartResultsDetail, chartResults2, chartTemp);
                 $(".gf_smart_toolbar").show();

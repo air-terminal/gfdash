@@ -18,6 +18,7 @@ from ..utils.com_weather import *
 
 import json
 import calendar
+import datetime as dt
 
 def get001_main(ctx):
 
@@ -153,7 +154,7 @@ def sub001_conv_param(dic):
 def sub001_editYM(pGetYM):
     #初期処理時、DB上の最新月のデータを取得する
 
-    tmpFrom = datetime.date(datetime.strptime(pGetYM, "%Y/%m/%d 00:00:00"))
+    tmpFrom = dt.datetime.strptime(pGetYM, "%Y/%m/%d 00:00:00").date()
     tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
     tmpTo = date(tmpFrom.year, tmpFrom.month, tmpLastDay)
 
@@ -283,6 +284,18 @@ def sub001_index(dictParam):
 
     # 天候情報
     dictCtx['weatherData'] = com_get_101weather_data(dictParam['from'], dictParam['to'])
+
+    dictCtx['weatherTelopsFlg'] = False
+    try:
+        Telops_obj = Tz901ComName.objects.filter(code='005', num='0').first()
+        if Telops_obj and Telops_obj.code_name2:
+            if Telops_obj.code_name2 == 'true':
+                dictCtx['weatherTelopsFlg'] = True
+                dictCtx['weatherTelopsData'] = com_get_weather_telops(dictParam['from'], dictParam['to'])
+            else:
+                dictCtx['weatherTelopsFlg'] = False
+    except Exception:
+        pass # マスタ未設定時は true を使用
 
     if type(dictParam['from']) is str:
         tmpFrom = dictParam['from'].replace('-', '/')

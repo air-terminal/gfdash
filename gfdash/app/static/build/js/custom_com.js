@@ -325,8 +325,90 @@ function com_set_weather_table(chartXLabels, chartXLabelsOption, chartTemp, char
 }
 
 
+/**
+ * テロップ番号から重ね合わせ・並び表示用の天候アイコンHTMLを生成する
+ * @param {object} telopObj - {telop: 112, rain_level: 2} 等のオブジェクト
+ * @param {boolean} isNight - 夜の時間帯かどうかのフラグ
+ * @param {number} maxTemp - その日の最高気温（色分け用）
+ * @returns {string} - アイコンのHTML文字列
+ */
+function com_getWeatherTelopIcon(telopObj, isNight = false, maxTemp = 0) {
+    if (!telopObj || telopObj.telop === 999) return '-';
+    
+    var telop = telopObj.telop;
+    var rainLevel = telopObj.rain_level || 0; 
+    
+    // ベースとなるアイコンクラスと色を取得する内部関数
+    var getIconProps = function(type) {
+        switch(type) {
+            case 1: // 晴れ
+                if (isNight) return { cls: 'fa-solid fa-moon', col: '#f1c40f' }; // 夜は月
+                if (maxTemp >= 40) return { cls: 'fa-solid fa-sun', col: '#8e44ad' }; // 酷暑日 (紫)
+                if (maxTemp >= 35) return { cls: 'fa-solid fa-sun', col: '#c0392b' }; // 猛暑日 (濃赤)
+                if (maxTemp >= 30) return { cls: 'fa-solid fa-sun', col: '#e74c3c' }; // 真夏日 (赤)
+                return { cls: 'fa-solid fa-sun', col: '#e67e22' }; // 通常 (オレンジ)
+            case 2: // 曇り
+                return { cls: 'fa-solid fa-cloud', col: '#7f8c8d' }; // グレー
+            case 3: // 雨 (ご指定の仕様に変更)
+                if (rainLevel >= 3) return { cls: 'fa-solid fa-cloud-showers-heavy', col: '#2c3e50' }; // 豪雨
+                if (rainLevel >= 2) return { cls: 'fa-solid fa-cloud-showers-heavy', col: '#2980b9' }; // 強雨
+                if (rainLevel >= 1) return { cls: 'fa-solid fa-cloud-rain', col: '#3498db' }; // やや強い雨
+                return { cls: 'fa-solid fa-umbrella', col: '#3498db' }; // 通常雨
+            case 4: // 雪
+                return { cls: 'fa-solid fa-snowflake', col: '#00bcd4' };
+            case 5: // 雷
+                return { cls: 'fa-solid fa-bolt', col: '#f1c40f' };
+            default: return null;
+        }
+    };
+
+    // メイン天候（100の位）
+    var mainType = Math.floor(telop / 100);
+    var mainI = getIconProps(mainType);
+    if (!mainI) return '-';
+    
+    // 単一アイコンの場合 (高さズレを防ぐため vertical-align を付与)
+    var mainHtml = '<i class="' + mainI.cls + '" style="color:' + mainI.col + ' !important; font-size: 15px; vertical-align: middle;"></i>';
+    if ([100, 200, 300, 400, 500].includes(telop)) {
+        return mainHtml;
+    }
+
+    // サブ天候の特定マッピング
+    var JMA_SUB = {
+        110: 2, 112: 3, 114: 4, 101: 2, 102: 3, 103: 3, 104: 4, 105: 5,
+        210: 1, 212: 3, 214: 4, 201: 1, 202: 3, 203: 3, 204: 4, 205: 5,
+        311: 1, 313: 2, 314: 4, 301: 1, 302: 2, 305: 5,
+        411: 1, 413: 2, 414: 3, 3005: 5
+    };
+    
+    var subType = JMA_SUB[telop];
+    if (!subType) return mainHtml;
+
+    var subI = getIconProps(subType);
+    
+    // パターンの判定
+    var isNochi = (telop % 100 >= 10 && telop !== 3005);
+    
+    if (isNochi) {
+        // 「のち」：Gentelella標準色(#73879C)に変更。vertical-align: middle;で浮き上がりを防止。
+        return '<span style="position: relative; display: inline-block; width: 26px; height: 16px; vertical-align: middle;">' +
+               '<i class="' + mainI.cls + '" style="color:' + mainI.col + ' !important; font-size: 13px; position: absolute; left: 0; top: 0; z-index: 1;"></i>' +
+               '<i class="' + subI.cls + '" style="color:' + subI.col + ' !important; font-size: 13px; position: absolute; right: 0; top: 0; z-index: 1;"></i>' +
+               '<i class="fa-solid fa-caret-right" style="color:#73879C; font-size: 10px; position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); z-index: 3; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;"></i>' +
+               '</span>';
+    } else {
+        // 「一時/ときどき」：こちらも vertical-align: middle; で高さを統一。
+        var subIconHtml = '<i class="' + subI.cls + '" style="color:' + subI.col + ' !important; font-size: 9px; position: absolute; right: -3px; bottom: -2px; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;"></i>';
+        return '<span style="position: relative; display: inline-block; width: 15px; height: 15px; vertical-align: middle;">' +
+               '<i class="' + mainI.cls + '" style="color:' + mainI.col + ' !important; font-size: 15px; position: absolute; left: 0; top: 0;"></i>' +
+               subIconHtml +
+               '</span>';
+    }
+}
+
 // 日別天候テーブルの生成処理（固定幅・省スペース版）
-function com_set_day_weather_table(tableLabels, weatherData, setRightSpace = false) {
+// ※第3, 第4引数に新仕様のデータ受け取りを追加
+function com_set_day_weather_table(tableLabels, weatherData, weatherTelopsFlg = false, weatherTelopsData = null, setRightSpace = false) {
     var $tableContainer = $("#weather_table_container");
     $tableContainer.css("overflow-x", "visible");
     $tableContainer.empty();
@@ -336,54 +418,97 @@ function com_set_day_weather_table(tableLabels, weatherData, setRightSpace = fal
     var tdStyle = 'padding: 4px 1px; vertical-align: middle;';
     var thStyle = tdStyle + ' width: 55px; font-weight: bold; background-color: #f9f9f9;';
 
-    var rowDate             = '<tr><th style="' + thStyle + '">日付</th>';
-    var rowWeatherDaytime   = '<tr><th style="' + thStyle + '">天気(昼)</th>';
-    var rowWeatherNight     = '<tr><th style="' + thStyle + '">天気(夜)</th>';
-    var rowTemp             = '<tr><th style="' + thStyle + '">最高気温</th>';
-    var rowWindDir          = '<tr><th style="' + thStyle + '">風向</th>';
-    var rowWindSpeed        = '<tr><th style="' + thStyle + '">最大風速</th>';
-    var rowRainfall         = '<tr><th style="' + thStyle + '">最大降水量</th>';
+    var rowDate       = '<tr><th style="' + thStyle + '">日付</th>';
+    var rowTemp       = '<tr><th style="' + thStyle + '">最高気温</th>';
+    var rowWindDir    = '<tr><th style="' + thStyle + '">風向</th>';
+    var rowWindSpeed  = '<tr><th style="' + thStyle + '">最大風速</th>';
+    var rowRainfall   = '<tr><th style="' + thStyle + '">最大降水量</th>';
+
+    // 天候の行（フラグによって切り替え）
+    var rowWeatherMorning = '';
+    var rowWeatherDaytime = '';
+    var rowWeatherNight   = '';
+
+    if (weatherTelopsFlg) {
+        rowWeatherMorning = '<tr><th style="' + thStyle + '">天気(朝)</th>';
+        rowWeatherDaytime = '<tr><th style="' + thStyle + '">天気(昼)</th>';
+        rowWeatherNight   = '<tr><th style="' + thStyle + '">天気(夜)</th>';
+    } else {
+        rowWeatherDaytime = '<tr><th style="' + thStyle + '">天気(昼)</th>';
+        rowWeatherNight   = '<tr><th style="' + thStyle + '">天気(夜)</th>';
+    }
 
     for (var i = 0; i < tableLabels.length; i++) {
         var dateStr = tableLabels[i][0];
-        var dateColor = "#333";
-        dateColor = com_setGFDashCssColor(dateStr);
+        var dateColor = com_setGFDashCssColor(dateStr);
         
         rowDate += '<td style="' + tdStyle + ' color: ' + dateColor + '  !important;">' + dateStr + '</td>';
         
-        // 今後、平年最高気温との差を表示させる行を追加する
         var temp = (weatherData[i] && weatherData[i][0] != null) ? weatherData[i][0].temp : '-';
         rowTemp += '<td style="' + tdStyle + '">' + temp + '</td>';
 
         var wDir = '-';
         var wSpeed = '-';
-        var wNumDaytimeText = '-';
-        var wNumNightText = '-';
         var wRain = '-'; 
-        var wWeather_num = 0;
+        var pDateFullStr = null;
         
         if (weatherData[i] && weatherData[i][0]) {
             var weatherObj = weatherData[i][0];
+            pDateFullStr = weatherObj.weather_day; // "2026/04/01" の形式を取得
 
             wDir = com_getWindIcon(weatherObj.wind_direction, weatherObj.wind_speed, weatherObj.wind_instant_speed);
             wSpeed = weatherObj.wind_speed != null ? weatherObj.wind_speed : '-';
-
-            if (weatherObj.gaikyo != null) {
-                wWeather_num = com_comvWeatherTxt(weatherObj.gaikyo, weatherObj.rainfall);
-                wNumDaytimeText = com_getWeatherIcon(wWeather_num, true);
-            }
-            if (weatherObj.gaikyo_night != null) {
-                wWeather_num = com_comvWeatherTxt(weatherObj.gaikyo_night, weatherObj.rainfall);
-                wNumNightText = com_getWeatherIcon(wWeather_num, false);
-            }
-
             if (weatherObj.rainfall != null) {
                 wRain = weatherObj.rainfall;
             }
+
+            // --- 旧仕様のアイコン生成処理 ---
+            if (!weatherTelopsFlg) {
+                var wNumDaytimeText = '-';
+                var wNumNightText = '-';
+                if (weatherObj.gaikyo != null) {
+                    var wWeather_num_day = com_comvWeatherTxt(weatherObj.gaikyo, weatherObj.rainfall);
+                    wNumDaytimeText = com_getWeatherIcon(wWeather_num_day, true);
+                }
+                if (weatherObj.gaikyo_night != null) {
+                    var wWeather_num_night = com_comvWeatherTxt(weatherObj.gaikyo_night, weatherObj.rainfall);
+                    wNumNightText = com_getWeatherIcon(wWeather_num_night, false);
+                }
+                rowWeatherDaytime += '<td style="' + tdStyle + '">' + wNumDaytimeText + '</td>';
+                rowWeatherNight += '<td style="' + tdStyle + '">' + wNumNightText + '</td>';
+            }
+        } else {
+            if (!weatherTelopsFlg) {
+                rowWeatherDaytime += '<td style="' + tdStyle + '">-</td>';
+                rowWeatherNight += '<td style="' + tdStyle + '">-</td>';
+            }
         }
         
-        rowWeatherDaytime += '<td style="' + tdStyle + '">' + wNumDaytimeText + '</td>';
-        rowWeatherNight += '<td style="' + tdStyle + '">' + wNumNightText + '</td>';
+        // --- 新仕様のアイコン生成処理 ---
+        if (weatherTelopsFlg) {
+            var telopMorning = '-';
+            var telopDaytime = '-';
+            var telopNight   = '-';
+            
+            // 旧仕様の maxTemp 変数は不要なので削除し、時間帯ごとに取得します。
+            
+            if (pDateFullStr && weatherTelopsData && weatherTelopsData[pDateFullStr]) {
+                var tData = weatherTelopsData[pDateFullStr];
+                
+                // ▼各時間帯（朝・昼・夜）ごとの最高気温を取得してアイコン生成関数に渡す
+                var tempMorning = tData.morning.max_temp || 0;
+                var tempDaytime = tData.daytime.max_temp || 0;
+                var tempNight   = tData.night.max_temp || 0;
+
+                telopMorning = com_getWeatherTelopIcon(tData.morning, false, tempMorning);
+                telopDaytime = com_getWeatherTelopIcon(tData.daytime, false, tempDaytime);
+                telopNight   = com_getWeatherTelopIcon(tData.night, true, tempNight);
+            }
+            rowWeatherMorning += '<td style="' + tdStyle + '">' + telopMorning + '</td>';
+            rowWeatherDaytime += '<td style="' + tdStyle + '">' + telopDaytime + '</td>';
+            rowWeatherNight   += '<td style="' + tdStyle + '">' + telopNight + '</td>';
+        }
+
         rowWindDir += '<td style="' + tdStyle + ' font-size: 14px; font-weight: bold;">' + wDir + '</td>';
         rowWindSpeed += '<td style="' + tdStyle + '">' + wSpeed + '</td>';
         rowRainfall += '<td style="' + tdStyle + '">' + wRain + '</td>';
@@ -396,13 +521,28 @@ function com_set_day_weather_table(tableLabels, weatherData, setRightSpace = fal
 
     rowDate += rightSpacer + '</tr>';
     rowTemp += rightSpacer + '</tr>';
+    if (weatherTelopsFlg) {
+        rowWeatherMorning += rightSpacer + '</tr>';
+    }
     rowWeatherDaytime += rightSpacer + '</tr>';
     rowWeatherNight += rightSpacer + '</tr>';
     rowWindDir += rightSpacer + '</tr>';
     rowWindSpeed += rightSpacer + '</tr>';
     rowRainfall += rightSpacer + '</tr>';
 
-    html += '<tbody>' + rowDate + rowWeatherDaytime + rowWeatherNight + rowTemp + rowWindDir + rowWindSpeed + rowRainfall + '</tbody></table>';
+    if (weatherTelopsFlg) {
+        //表示量が多くなったため、非表示とする。
+        rowWindSpeed = '';
+        rowRainfall = '';
+    }
+
+    var htmlTbody = rowDate;
+    if (weatherTelopsFlg) {
+        htmlTbody += rowWeatherMorning;
+    }
+    htmlTbody += rowWeatherDaytime + rowWeatherNight + rowTemp + rowWindDir + rowWindSpeed + rowRainfall;
+
+    html += '<tbody>' + htmlTbody + '</tbody></table>';
     
     $tableContainer.html(html);
     $tableContainer.show();

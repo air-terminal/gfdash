@@ -73,7 +73,10 @@ function sub001_postView(postParam){
         var chartAveTemp = [];
         var chartXLabelsOption = [];
         var weatherData = [];
-                                
+
+        var weatherTelopsFlg = false;
+        var weatherTelopsData = null;
+
         // 配列をループ処理
         $.each(results, function(key, val) {
             switch(key){
@@ -217,14 +220,21 @@ function sub001_postView(postParam){
                         };
                     });
                     break;
+                case 'weatherTelopsFlg':
+                    weatherTelopsFlg = val;
+                    break;
+                case 'weatherTelopsData':
+                    weatherTelopsData = val;
+                    break;                    
                 case 'weatherData':
                     $.each(val, function(key2, val2) {
-                        tmpWeather = {temp:0,ave_temp:0,wind_speed:0,wind_direction:'',gaiyo:'',gaiyo_night:'', rainfall:0};
+                        tmpWeather = {weather_day:'', temp:0,ave_temp:0,wind_speed:0,wind_direction:'',gaiyo:'',gaiyo_night:'', rainfall:0};
 
                         $.each(val2, function(key3, val3) {
                             switch(key3){
                                 case 'weather_day':
                                     tmpDate = val3.substr(5);
+                                    tmpWeather['weather_day'] = val3;
                                     break;
                                 case 'temp':
                                     tmpWeather['temp'] = val3;
@@ -341,7 +351,7 @@ function sub001_postView(postParam){
         sub001_set_summaryData(detailSum, detailSumOld, uriageSum, uriageSumOld);
 
         // 天候情報表示
-        com_set_day_weather_table(chartXLabels, weatherData);                
+        com_set_day_weather_table(chartXLabels, weatherData, weatherTelopsFlg, weatherTelopsData);                
 
         $("#calendar_saveval").val($("#gf_calendar").val());
         sub001_set_btn();

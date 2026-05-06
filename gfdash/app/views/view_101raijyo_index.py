@@ -175,6 +175,18 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
             #日別天候情報の取得
             dictCtx['weatherData'] = com_get_101weather_data(dictParam['from'], dictParam['to'])
 
+            dictCtx['weatherTelopsFlg'] = False
+            try:
+                Telops_obj = Tz901ComName.objects.filter(code='005', num='0').first()
+                if Telops_obj and Telops_obj.code_name2:
+                    if Telops_obj.code_name2 == 'true':
+                        dictCtx['weatherTelopsFlg'] = True
+                        dictCtx['weatherTelopsData'] = com_get_weather_telops(dictParam['from'], dictParam['to'])
+                    else:
+                        dictCtx['weatherTelopsFlg'] = False
+            except Exception:
+                pass # マスタ未設定時は true を使用
+
         else:
             #時間帯別天候情報の取得
             dictCtx['temperature'], dictCtx['temperature_time'] = com_get_weather_data(dictParam['from'], dictParam['to'], getTimeDetailMode)

@@ -12,3 +12,5 @@ lxml
 html5lib
 beautifulsoup4
 whitenoise
+#dockerではなくローカルで実行する場合は、以下のライブラリをインストールして下さい。
+#python-dotenv

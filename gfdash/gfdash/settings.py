@@ -12,6 +12,14 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+###################################################################
+#dockerを使わずローカル環境で実行する場合は、
+# .envファイルを読み込むために以下のコメントを外して下さい
+# requirements.txtの修正を忘れた場合は、個別インストールを実行して下さい
+# pip install python-dotenv
+###################################################################
+#from dotenv import load_dotenv
+#load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,7 +47,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'app',
-    'utils',
 ]
 
 MIDDLEWARE = [
