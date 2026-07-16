@@ -158,8 +158,11 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma4:e4b')
 # 独自の追加プロンプトを格納するディレクトリ (このディレクトリは .gitignore で非公開にする)
 LLM_CUSTOM_PROMPT_DIR = os.path.join(BASE_DIR, 'custom_prompts')
 
-OLLAMA_NUM_CTX = 4096                  # LLMが確保する記憶領域(トークン数)のデフォルト
-OLLAMA_TIMEOUT = 300                   # APIのタイムアウト秒数（CPU処理などで遅い場合は 600 等に延長）
-OLLAMA_LOG_PROMPT = False
-OLLAMA_ALLOW_MODEL_SELECT = True
-DISABLE_BATCH_EXECUTION = False
+OLLAMA_NUM_CTX = 4096                   # LLMが確保する記憶領域(トークン数)のデフォルト
+OLLAMA_TIMEOUT = 300                    # APIのタイムアウト秒数（CPU処理などで遅い場合は 600 等に延長）
+OLLAMA_LOG_PROMPT = False               
+OLLAMA_ALLOW_MODEL_SELECT = True        # Ollamaが使用するローカルLLMの切り替え機能フラグ(固定したい場合はFalseとしてください)
+
+# AI予測やLLMレポート生成などの重いバッチ処理を無効化するかどうか
+# ※OllamaやProphetの環境構築が完了し、実際に機能を使用する際は False に書き換えてください。
+DISABLE_BATCH_EXECUTION = True
