@@ -1,0 +1,120 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <link href="/static/vendors/dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    /* 🌟 1. 親要素とリンク全体の横幅制限を強制解除し、コンテンツ幅(文字数)に合わせて自動拡張する */
+    html body .top_nav .navbar-right li,
+    html body .top_nav .navbar-right li a.user-profile {
+        width: auto !important;
+        min-width: 110px !important;
+        max-width: none !important;
+        white-space: nowrap !important; /* テキストの自動折り返しを絶対禁止 */
+    }
+
+    /* 🌟 2. どんな開閉状態・画面幅でも、絶対に崩れないFlexbox横並び構造を強制適用する */
+    html body.nav-sm .top_nav .navbar-right li a.user-profile,
+    html body.nav-md .top_nav .navbar-right li a.user-profile,
+    html body .top_nav .navbar-right li a.user-profile {
+        display: -webkit-inline-box !important;
+        display: -ms-inline-flexbox !important;
+        display: inline-flex !important;      /* 横並びを強制 */
+        -webkit-box-align: center !important;
+        -ms-flex-align: center !important;
+        align-items: center !important;        /* アイコンと文字の上下中央を揃える */
+        -webkit-box-orient: horizontal !important;
+        -webkit-box-direction: normal !important;
+        -ms-flex-direction: row !important;
+        flex-direction: row !important;        /* 左から右へ一直線に整列 */
+        -ms-flex-wrap: nowrap !important;
+        flex-wrap: nowrap !important;          /* どんなことがあっても絶対に段落ちさせない */
+        float: none !important;
+    }
+    
+    /* 🌟 3. アイコン画像のテーマ標準のfloatやマージンを完全抹消し、Flexboxに従わせる */
+    html body.nav-sm .top_nav .navbar-right li a.user-profile img,
+    html body.nav-md .top_nav .navbar-right li a.user-profile img,
+    html body .top_nav .navbar-right li a.user-profile img {
+        float: none !important;                /* 回り込み段落ちの元凶を完全削除 */
+        display: inline-block !important;
+        margin-top: 0 !important;              /* 上下の位置ズレを相殺 */
+        margin-bottom: 0 !important;
+        margin-right: 8px !important;         /* アイコンとユーザー名の間の余白を固定 */
+        vertical-align: middle !important;
+    }
+
+    /* 🌟 4. 右側の小さな下矢印アイコンの位置も追従して固定する */
+    html body.nav-sm .top_nav .navbar-right li a.user-profile .fa-angle-down,
+    body.nav-md .top_nav .navbar-right li a.user-profile .fa-angle-down,
+    body .top_nav .navbar-right li a.user-profile .fa-angle-down {
+        margin-left: 6px !important;
+        display: inline-block !important;
+    }
+  </style> 
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+      
+      {% if not disable_batch_execution %}      
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-file-export"></i> AIデータの出力 (Export)</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>現在システムに保存されている「Prophet予測値」および「LLM分析レポート」を、表示用サーバへ移行するためのJSONファイルとして一括ダウンロードします。</p>
+              <div class="form-group" style="margin-top: 15px;">
+                <button id="btn_export" class="btn btn-primary" type="button" onclick="btnExport()">
+                  <i class="fa-solid fa-download"></i> 同期用JSONファイルをダウンロード
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-file-import"></i> AIデータの取込 (Import)</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>クラウドや他システムでエクスポートされたJSONファイルを下の枠内にドラッグアンドドロップし、本番機へインポート（上書き同期）します。</p>
+              <form method="post" enctype="multipart/form-data" class="dropzone clsbox" id="myDropzone">
+                <div class="fallback">
+                  <input id="file" name="file" type="file" />
+                  <input type="submit" value="Upload"/>
+                </div>
+              </form>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_submit" class="btn btn-success" type="submit" onclick="btnSubmit()">
+                  <i class="fa-solid fa-cloud-arrow-up"></i> インポートを実行
+                </button>
+                <button id="btn_cancel" class="btn btn-default" type="button" onclick="btnCancel()">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <script src="/static/vendors/dropzone/dist/min/dropzone.min.js"></script>
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+  <script src="/static/build/js/customjs_905.js"></script>
+{% endblock javascripts %}

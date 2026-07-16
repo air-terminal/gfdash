@@ -145,3 +145,21 @@ LOGOUT_REDIRECT_URL = 'login'
 # True: ログイン不要で全画面閲覧可能 / False: 通常のログイン必須モード
 # ** インターネット上でTrueとする場合、誰でも見れる状態となるので注意すること **
 IS_SAMPLE_MODE = False
+
+# ==========================================
+# LLM (Ollama) / Batch Execution Settings
+# ==========================================
+# OllamaのAPIエンドポイント (Dockerのネットワーク構成に合わせて .env で上書き可能)
+OLLAMA_API_URL = os.environ.get('OLLAMA_API_URL', 'http://host.docker.internal:11434/api/generate')
+
+# 使用するLLMモデル名 (デフォルトは qwen2.5:7b を想定)
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma4:e4b')
+
+# 独自の追加プロンプトを格納するディレクトリ (このディレクトリは .gitignore で非公開にする)
+LLM_CUSTOM_PROMPT_DIR = os.path.join(BASE_DIR, 'custom_prompts')
+
+OLLAMA_NUM_CTX = 4096                  # LLMが確保する記憶領域(トークン数)のデフォルト
+OLLAMA_TIMEOUT = 300                   # APIのタイムアウト秒数（CPU処理などで遅い場合は 600 等に延長）
+OLLAMA_LOG_PROMPT = False
+OLLAMA_ALLOW_MODEL_SELECT = True
+DISABLE_BATCH_EXECUTION = False

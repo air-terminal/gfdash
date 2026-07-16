@@ -9,11 +9,14 @@ from django.http.response import JsonResponse
 from django.urls import path
 from pathlib import Path
 import codecs
+import os
 
 # ▼ 設定クラスの読み込み
 from .config_custom import CustomSystemConfig as Config
 # ▼ モデルの読み込み
 from ..models import Tz910Permission
+
+from pathlib import Path  # ファイルの先頭でインポートしてください
 
 # ▼ メインのHTMLレンダリング関数
 def gentella_html(request):
@@ -87,34 +90,45 @@ def post_request(request, load_template):
     return json.dumps({'error': f'View function for {load_template} is not defined'}, ensure_ascii=False)
 
 class gentella_upload(View):
-    # template_name や form_class は不要なので削除
-
     def post(self, request, *args, **kwargs):
         # Dropzone (JS側) の paramName: "file" に合わせて 'file' で取得する
         files = request.FILES.getlist('file')
         
-        # 保険：もし空なら従来の 'file_field' でも試す
         if not files:
             files = request.FILES.getlist('file_field')
 
-        # ファイルが受け取れなかった場合は、ステータス400(Bad Request)を返す
         if not files:
            return JsonResponse({'form': False, 'error': 'ファイルが受信できませんでした'}, status=400)
 
         for f in files:
             fileNamePath = Path(str(settings.MEDIA_ROOT) + "/" + f.name).resolve()
-            fileNamePathOriginal = Path(str(settings.MEDIA_ROOT) + "/" + f.name + ".org").resolve()
             
-            with open(fileNamePathOriginal, 'wb+') as destination:
-                for chunk in f.chunks():
-                    destination.write(chunk)
+            # 親フォルダを自動作成
+            fileNamePath.parent.mkdir(parents=True, exist_ok=True)
 
-            # Shift-JISからUTF-8に変換
-            with codecs.open(fileNamePathOriginal, 'r', 'shift_jis') as file:
-                content = file.read()
-        
-            with codecs.open(fileNamePath, 'w', 'utf-8') as file:
-                file.write(content)
+            # 🌟 拡張子による条件分岐を追加
+            if fileNamePath.suffix.lower() == '.json':
+                # 同期用JSONファイルは最初からUTF-8なので、変換せずそのままバイナリで保存する
+                with open(fileNamePath, 'wb+') as destination:
+                    for chunk in f.chunks():
+                        destination.write(chunk)
+            else:
+                # 従来のCSV等の場合は、Shift-JIS -> UTF-8 の変換ロジックを通す
+                fileNamePathOriginal = Path(str(settings.MEDIA_ROOT) + "/" + f.name + ".org").resolve()
+                
+                with open(fileNamePathOriginal, 'wb+') as destination:
+                    for chunk in f.chunks():
+                        destination.write(chunk)
+
+                try:
+                    with codecs.open(fileNamePathOriginal, 'r', 'shift_jis') as file:
+                        content = file.read()
+                except UnicodeDecodeError:
+                    with codecs.open(fileNamePathOriginal, 'r', 'utf-8') as file:
+                        content = file.read()
+            
+                with codecs.open(fileNamePath, 'w', 'utf-8') as file:
+                    file.write(content)
 
         return JsonResponse({'form': True})
 

@@ -25,9 +25,13 @@ class BaseSystemConfig:
         '320tanka_data.html': '客単価情報',
         '330ticket_data.html': 'クーポン利用情報',
         '340zennen_hikaku.html': '前年情報比較',
+    #AI予測分析系
+        '410raijyo_forecast.html': '来場者予測(AI)',        
+        '490ai_batch_run.html': 'AIバッチ手動実行',        
     #メンテナンス系
         '901weather_upload.html': '天候情報アップロード',
         '903normal_temprature_upload.html': '平年気温情報アップロード',
+        '905ai_data_sync.html': '来場者予測／レポートデータメンテナンス',
     }
 
     RESTRICTED_PAGES = {
@@ -42,6 +46,8 @@ class BaseSystemConfig:
         """特別なGET処理が必要な画面のみ定義"""
         return {
             '001dashbord.html': getattr(views_module, 'get001_main', None),
+            '490ai_batch_run.html': getattr(views_module, 'get490_main', None),            
+            '905ai_data_sync.html': getattr(views_module, 'get905_main', None),
         }
 
     @classmethod
@@ -63,6 +69,9 @@ class BaseSystemConfig:
             '320tanka_data.html': getattr(views_module, 'post320_main', None),
             '330ticket_data.html': getattr(views_module, 'post330_main', None),
             '340zennen_hikaku.html': getattr(views_module, 'post340_main', None),
+            '410raijyo_forecast.html': getattr(views_module, 'post410_main', None),
+            '490ai_batch_run.html': getattr(views_module, 'post490_main', None),
             '901weather_upload.html': getattr(views_module, 'post901_main', None),
             '903normal_temprature_upload.html': getattr(views_module, 'post903_main', None),
+            '905ai_data_sync.html': getattr(views_module, 'post905_main', None),
         }

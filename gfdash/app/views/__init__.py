@@ -15,5 +15,8 @@ from .view_310nenkaihi_data import post310_main
 from .view_320tanka_data import post320_main
 from .view_330ticket_data import post330_main
 from .view_340zennen_hikaku import post340_main
+from .view_410raijyo_forecast import post410_main
+from .view_490ai_batch_run import get490_main,post490_main
 from .view_901weather_upload import post901_main
 from .view_903normal_temprature_upload import post903_main
+from .view_905ai_data_sync import get905_main,post905_main

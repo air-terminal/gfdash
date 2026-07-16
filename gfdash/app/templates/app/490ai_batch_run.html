@@ -1,0 +1,145 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet" type="text/css">
+  <link href="/static/build/css/custom_gf.css" rel="stylesheet" type="text/css">
+  <style>
+    /* ログ出力用のコンソール風スタイル */
+    .terminal-log {
+        background-color: #1E1E1E;
+        color: #00FF00;
+        font-family: 'Courier New', Courier, monospace;
+        padding: 15px;
+        height: 300px;
+        overflow-y: scroll;
+        border-radius: 5px;
+        font-size: 13px;
+        white-space: pre-wrap;
+    }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2><i class="fa-solid fa-cogs"></i> AIバッチ手動実行コントロール</h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+            <p>サーバー上で動作するAI予測・分析のバッチ処理を画面から直接キックします。<br>
+               <span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> LLMの生成には数分かかる場合があります。実行中は画面を閉じないでください。</span></p>
+
+            {% if disable_batch_execution %}
+            <div class="alert alert-warning" style="margin-top: 15px;">
+              <i class="fa-solid fa-triangle-exclamation"></i> デモモードまたはLLM未設定環境のため、バッチの実行は無効化されています。
+            </div>
+            {% endif %}
+
+            <div class="row" style="margin-top: 20px;">
+              <div class="col-md-6 col-sm-6 col-xs-12">
+                <div class="panel panel-default">
+                  <div class="panel-heading"><i class="fa-solid fa-chart-line"></i> Prophet 来場者予測の実行</div>
+                  <div class="panel-body">
+                    <p>過去の実績データから、未来30日間の日別来場者予測を再生成します。</p>
+                    <form class="form-horizontal form-label-left" style="margin-bottom: 15px;">
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label class="control-label col-md-4 col-sm-4 col-xs-12">予測期間</label>
+                        <div class="col-md-8 col-sm-8 col-xs-12">
+                          <select id="forecast_periods" class="form-control">
+                            <option value="30">30日間 (約1ヶ月)</option>
+                            <option value="90">90日間 (約3ヶ月)</option>
+                            <option value="120" selected>120日間 (約4ヶ月) ※推奨</option>
+                            <option value="180">180日間 (半年)</option>
+                            <option value="365">365日間 (1年)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </form>
+                    <div class="text-right">
+                      <button type="button" class="btn btn-success" onclick="runBatch('forecast')" {% if disable_batch_execution %}disabled{% endif %}>
+                        <i class="fa-solid fa-play"></i> 予測バッチを実行
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-md-6 col-sm-6 col-xs-12">
+                <div class="panel panel-default">
+                  <div class="panel-heading"><i class="fa-solid fa-robot"></i> LLM 分析レポートの生成</div>
+                  <div class="panel-body">
+                    <form id="llm-form" class="form-horizontal form-label-left">
+                      <div class="form-group">
+                        <label class="control-label col-md-3 col-sm-3 col-xs-12">対象年月</label>
+                        <div class="col-md-6 col-sm-6 col-xs-12">
+                          <div class="input-group date" style="margin-bottom: 0;">
+                            <span class="input-group-addon"><i class="fa-solid fa-calendar"></i></span>
+                            <input type="text" id="llm_ym" class="form-control" value="{{ latest_ym }}">
+                          </div>
+                        </div>
+                      </div>
+                      <div class="form-group">
+                        <label class="control-label col-md-3 col-sm-3 col-xs-12">モード</label>
+                        <div class="col-md-6 col-sm-6 col-xs-12">
+                          <select id="llm_mode" class="form-control">
+                            <option value="review">当月振り返り (review)</option>
+                            <option value="forecast_1m">来月予測 (forecast_1m)</option>
+                            <option value="forecast_3m">３ヶ月予測 (forecast_3m)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {% if allow_model_select %}
+                      <div class="form-group">
+                        <label class="control-label col-md-3 col-sm-3 col-xs-12">使用モデル</label>
+                        <div class="col-md-9 col-sm-9 col-xs-12">
+                          <select id="llm_model" class="form-control">
+                            {% for m in ollama_models %}
+                              <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
+                            {% empty %}
+                              <option value="">(Ollamaから取得できませんでした)</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                      </div>
+                      {% endif %}
+
+                      <div class="form-group">
+                        <div class="col-md-9 col-sm-9 col-xs-12 col-md-offset-3">
+                          <button type="button" class="btn btn-primary" onclick="runBatch('llm')" {% if disable_batch_execution %}disabled{% endif %}>
+                            <i class="fa-solid fa-play"></i> LLMバッチを実行
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 10px;">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+                <h4><i class="fa-solid fa-terminal"></i> 実行ログ</h4>
+                <div id="batch_console" class="terminal-log">
+待機中... 実行するバッチを選択してください。
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+  <script src="/static/build/js/customjs_490.js"></script>
+{% endblock javascripts %}

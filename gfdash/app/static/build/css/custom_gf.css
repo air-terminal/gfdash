@@ -506,3 +506,120 @@
     background-color: #3498DB !important; /* 分析対象は青 */
     border-color: #2980B9 !important;
 }
+
+
+/*350kikan_hikaku用css*/
+/* コントロールエリアのレイアウト調整 */
+.compare-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+.compare-controls .form-group {
+    margin-bottom: 0 !important;
+}
+    
+/* モーダルがGentelellaのパネル群に埋もれないための強制レイヤー設定 */
+/*
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+.modal {
+    z-index: 1050 !important;
+}
+*/
+
+/* =========================================================
+    2. 【重要】Bootstrap 4 完全移行に伴う表示競合解消パッチ
+   ========================================================= */
+/* タブ切り替え時に文字が透明化（空白）して隠れてしまうバグを強制リセット */
+.tab-content > .tab-pane {
+    display: none !important;
+    visibility: hidden !important;    
+    opacity: 0 !important;
+}
+
+/* アクティブ（選択中）になったタブだけを完璧に浮き上がらせます */
+.tab-content > .tab-pane.active.show {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transition: opacity 0.15s linear; /* 滑らかな切り替えアニメーション */
+}
+
+/* モーダル表示時に画面が真っ白になったり、閉じられなくなったりする古いCSSとの衝突を制圧 */
+.modal.fade.show {
+    opacity: 1 !important;
+    display: block !important;
+    background-color: rgba(0, 0, 0, 0.5) !important; /* 背景の黒い半透明マスク */
+}
+.modal.fade.show .modal-dialog {
+    transform: none !important;
+}
+/* モーダル表示時に余分な背景マスクが二重に生成されるのを防ぐ */
+body.modal-open .modal-backdrop {
+    display: none !important;
+}
+
+/* =========================================================
+    550画面：最初のタイルを他のタイルと完全に同じ美しい余白に揃える
+   ========================================================= */
+/* =========================================================
+    KPIパネル：縦線と文字の重なりを解消（すべてのタイルに適用）
+   ========================================================= */
+/* 2〜4番目のタイルも含め、すべてのタイルに20pxの美しい余白を強制します */
+.tile_count .tile_stats_count {
+    padding-left: 20px !important;
+}
+
+/* 1番目のタイルだけは確実に縦線を非表示にします */
+.tile_count .tile_stats_count:first-child::before {
+    border-left: 0 !important;
+    display: none !important;
+}
+
+/* =========================================================
+    AI分析レポート内 (marked.js出力) の見出しサイズ調整
+   ========================================================= */
+#ai_report_forecast h1, 
+#ai_report_review h1 {
+    font-size: 18px !important;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #E6E9ED;
+    padding-bottom: 5px;
+}
+
+#ai_report_forecast h2, 
+#ai_report_review h2 {
+    font-size: 16px !important;
+    font-weight: bold;
+    color: #34495e;
+    margin-top: 18px;
+    margin-bottom: 10px;
+}
+
+#ai_report_forecast h3, 
+#ai_report_review h3 {
+    font-size: 15px !important;
+    font-weight: bold;
+    color: #4B5F71;
+    margin-top: 15px;
+    margin-bottom: 8px;
+}
+
+#ai_report_forecast h4, 
+#ai_report_review h4,
+#ai_report_forecast h5, 
+#ai_report_review h5,
+#ai_report_forecast h6, 
+#ai_report_review h6 {
+    font-size: 14px !important;
+    font-weight: bold;
+    color: #4B5F71;
+    margin-top: 12px;
+    margin-bottom: 5px;
+}

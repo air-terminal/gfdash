@@ -100,7 +100,29 @@ erDiagram
 
 ---
 
-### 3.3 マスタ・管理テーブル
+### 3.3 予測テーブル 
+
+#### tz310_forecast (reserve)
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
+| :--- | :--- | :--- | :--- | :--- |
+| `business_day` | 予測対象日 | DATE | **PK** | |
+| `target_cls` | 予測対象区分 | VARCHAR(255) | **PK** |  |
+| `yhat` | 予測値 | FLOAT | | |
+| `yhat_lower` | 予測下限値 | FLOAT | | |
+| `yhat_upper` | 予測上限値 | FLOAT | | |
+| `input_date` | データ入力日 | DATE | | |
+
+#### tz302_llm_analysis (reserve)
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
+| :--- | :--- | :--- | :--- | :--- |
+| `target_month` | 対象月 | DATE | **PK** | |
+| `report_cls` | レポート区分 | VARCHAR(20) | **PK** |  |
+| `report_text` | AI分析レポート | TEXT | | |
+| `input_date` | データ入力日 | DATE | | |
+
+---
+
+### 3.4 マスタ・管理テーブル
 
 #### tz901_com_name (名前マスタ)
 コード値に対する名称を管理します。

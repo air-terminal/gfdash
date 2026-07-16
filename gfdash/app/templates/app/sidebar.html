@@ -89,6 +89,15 @@
     </ul>      
     {% endif %}
 
+    <ul class="nav side-menu">
+      <li><a><i class="fa fa-line-chart"></i> AI予測分析 <span class="fa fa-chevron-down"></span></a>
+        <ul class="nav child_menu">
+          <li><a href="410raijyo_forecast.html">来場者予測推移</a></li>
+          <li><a href="490ai_batch_run.html">AIバッチ手動実行</a></li> </ul>
+        </ul>
+      </li>
+    </ul>      
+
     {% include "app/sidebar_custom.html" %}
 
     {% if request.user|is_any_allowed:'901weather_upload.html, 903normal_temprature_upload.html' %}
@@ -100,6 +109,9 @@
           {% endif %}
           {% if request.user|is_allowed:'903normal_temprature_upload.html' %}
             <li><a href="903normal_temprature_upload.html">平年気温情報アップロード</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'905ai_data_sync.html' %}
+            <li><a href="905ai_data_sync.html">来場者予測／レポート<br>データメンテナンス</a></li>
           {% endif %}
         </ul>
       </li>

@@ -1,0 +1,146 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+    <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet" type="text/css">
+    <link href="/static/build/css/custom_gf.css" rel="stylesheet" type="text/css">
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <input type="hidden" id="calendar_saveval" value="">
+    <input type="hidden" id="calendar_initval" value="">
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="dashboard_graph x_panel">
+          
+          <div class="x_title">
+            <div class="col-md-6">
+              <h2>AI来場者予測推移 <small id="forecast_header" class="count"></small></h2>
+            </div>
+
+            <div class="col-md-6">
+              <div class="gf_custom_menu_parts pull-right">
+                <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
+                <div class="input-group date" style="margin-bottom: 0px;">
+                  <span class="input-group-addon"><i class="fa-solid fa-calendar-days"></i></span>
+                  <input id="gf_calendar" type="text" class="form-control" style="width:7em;">
+                </div>
+                <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="btnNextMonth()"></button>
+              </div>
+            </div>
+            <div class="clearfix"></div>
+          </div>
+
+          <div class="x_content">
+            
+            <div class="row tile_count" style="margin-top: 0; margin-bottom: 10px;">
+              <div class="col-md-3 col-sm-6 col-xs-6 tile_stats_count gf_first_tile" style="padding-bottom: 5px;">
+                <span class="count_top"><i class="fa-solid fa-flag-checkered" style="color: #E74C3C;"></i> 選択月の着地見込み</span>
+                <div class="count" id="kpi_landing">0</div>
+                <span class="count_bottom">現在の実績 ＋ 残り日数のAI予測</span>
+              </div>
+              
+              <div class="col-md-3 col-sm-6 col-xs-6 tile_stats_count" style="padding-bottom: 5px;">
+                <span class="count_top"><i class="fa fa-user" style="color: #1ABB9C;"></i> 現在の月間実績</span>
+                <div class="count" id="kpi_actual">0</div>
+                <span class="count_bottom">集計済みの確定データ</span>
+              </div>
+              <div class="col-md-3 col-sm-6 col-xs-6 tile_stats_count" style="padding-bottom: 5px;">
+                <span class="count_top"><i class="fa fa-line-chart" style="color: #3498DB;"></i> AIの純粋な月間予測</span>
+                <div class="count" id="kpi_forecast_total">0</div>
+                <span class="count_bottom">1日〜月末までの予測値合計</span>
+              </div>
+              <div class="col-md-3 col-sm-6 col-xs-6 tile_stats_count" style="padding-bottom: 5px;">
+                <span class="count_top"><i class="fa fa-history" style="color: #9B59B6;"></i> 前年同月実績</span>
+                <div class="count" id="kpi_prev_year_same_month">0</div>
+                <span class="count_bottom">前年同月の最終確定データ合計</span>
+              </div>
+            </div>
+
+            <div id="sync_scroll_container" style="overflow-x: hidden; position: relative; border: 1px solid #E6E9ED;">
+              <div id="chart_wrapper" style="height: 380px; position: relative; padding: 10px;">
+                <canvas id="chart_forecast_canvas"></canvas>
+              </div>
+            </div>
+
+            <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; border: 1px solid #ddd;">
+              <h5><i class="fa-solid fa-circle-info text-info"></i> グラフの見方</h5>
+              <div class="row">
+                <div class="col-md-6">
+                  <strong>【日別データ（左軸）】</strong>
+                  <ul style="margin-bottom: 10px; padding-left: 20px;">
+                    <li><strong style="color: rgba(38, 185, 154, 1);">■ 実績来場者数（太い実線）</strong>: 実際に来場されたお客様の総数（本日まで）です。</li>
+                    <li><strong style="color: rgba(3, 88, 106, 1);">■ AI予測値（太い点線）</strong>: AIが弾き出した日別の予測値です。</li>
+                    <li><strong>■ AI予測のブレ幅（薄青色の帯）</strong>: 予測の信頼区間です。客足がこの範囲内に収まる確率が高いことを示します。</li>
+                  </ul>
+                </div>
+                <div class="col-md-6">
+                  <strong>【累計データ（右軸）】</strong>
+                  <ul style="margin-bottom: 0; padding-left: 20px;">
+                    <li><strong style="color: rgba(230, 126, 34, 0.8);">■ 累計実績（細いオレンジ実線）</strong>: 当月1日からの実績の積み上げ推移です。</li>
+                    <li><strong style="color: rgba(155, 89, 182, 0.7);">■ 累計予測（細いパープル点線）</strong>: AI予測の積み上げ曲線です。月末の到達点が「AIの純粋な月間予測」となります。</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 15px;">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel" style="border: 1px solid #CCD0D7; background-color: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div class="x_title" style="margin-bottom: 12px; padding-bottom: 5px;">
+                    <h3 style="font-size: 16px !important; font-weight: bold !important; color: #2A3F54; margin: 0;">
+                      <i class="fa-solid fa-robot text-primary"></i> AIアドバイザーの月次分析レポート
+                    </h3>
+                    <div class="clearfix"></div>
+                  </div>
+                  <div class="x_content" style="padding: 0 10px;">
+                    
+                    <div style="margin-bottom: 15px; border-bottom: 1px dashed #E6E9ED; padding-bottom: 10px;">
+                      <h4 onclick="$('#ai_report_forecast_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');" 
+                          style="font-size: 14px; font-weight: bold; color: #3498DB; border-left: 4px solid #3498DB; padding-left: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;">
+                        <i class="fa-solid fa-line-chart"></i> 該当月の見通し・先行予測
+                        <i class="fa fa-chevron-up pull-right gf-toggle-icon" style="font-size: 11px; margin-top: 4px; color: #95A5A6;"></i>
+                      </h4>
+                      <div id="ai_report_forecast_wrap">
+                        <div id="ai_report_forecast" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
+                          読み込み中...
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style="margin-bottom: 5px;">
+                      <h4 onclick="$('#ai_report_review_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');" 
+                          style="font-size: 14px; font-weight: bold; color: #1ABB9C; border-left: 4px solid #1ABB9C; padding-left: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;">
+                        <i class="fa-solid fa-history"></i> 当月の営業振り返り・総括
+                        <i class="fa fa-chevron-up pull-right gf-toggle-icon" style="font-size: 11px; margin-top: 4px; color: #95A5A6;"></i>
+                      </h4>
+                      <div id="ai_report_review_wrap">
+                        <div id="ai_report_review" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
+                          読み込み中...
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </div>            
+          
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super}}
+  <script src="/static/gf_vendors/marked/marked.min.js"></script>  
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <script src="/static/build/js/customjs_410.js"></script>
+{% endblock javascripts %}
