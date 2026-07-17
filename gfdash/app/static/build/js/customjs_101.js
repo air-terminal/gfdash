@@ -657,7 +657,7 @@ function btnToggleTimeMode(){
     if(sub101_getTimeOption() === 'hour'){
         sub101_initDetailOption();
     }
-console.log('1');
+
     var getDate = new Date($("#calendar_initval").val());
 
     let initParam = {
@@ -1216,8 +1216,7 @@ function sub101_set_chatjs_detail_day(chartXLabels, chartResultsDetail, chart_pl
     if (tmpHeinenFlg){
         tmpKey2 = sub101_getChartOption();
         // [0][0]にしないといけない理由(pushでせっとしたから？直していないです)
-//        $.each(chartHeinenTemp[0][0], function(key, val) {
-        $.each(chartHeinenTemp, function(key, val) {
+        $.each(chartHeinenTemp[0][0], function(key, val) {
             $.each(val, function(key2, val2) {
                 if(key2 === tmpKey2){
                     tmpData3.push(val2);

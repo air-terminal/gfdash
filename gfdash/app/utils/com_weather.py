@@ -200,8 +200,27 @@ def com_get_weather_telops(pGetFrom, pGetTo):
         "雨一時雷": 305, "雷雨": 3005,
         
         # --- 雪・雷・その他 ---
+        "晴れのち雷": 105, 
+        "雷のち晴れ": 105,
+        "晴れ一時雷": 105,
+        "雷一時晴れ": 105,
+        "晴れときどき雷": 107,
+        "雷ときどき晴れ": 107,
+        "曇りのち雷": 205,
+        "雷のち曇り": 205,
+        "曇り一時雷": 205,
+        "雷一時曇り": 205,
+        "曇りときどき雷": 207,
+        "雷ときどき曇り": 207,
+        "雨のち雷": 305,
+        "雷のち雨": 305,        
+        "雨一時雷": 305,
+        "雷一時雨": 305,
+        "雨ときどき雷": 305,
+        "雷ときどき雨": 305,
         "雪": 400, "雪のち晴れ": 411, "雪のち曇り": 413, "雪のち雨": 414,
         "雷": 500, "-": 999
+
     }
 
     # 気象庁天気記号(tz105.weather_num) をダッシュボード用の基本天候へ変換
@@ -223,7 +242,11 @@ def com_get_weather_telops(pGetFrom, pGetTo):
 
         for d in hourly_data:
             base_weather = WEATHER_NUM_TO_STR.get(d['weather_num'], "-")
-            processed.append(base_weather)
+            
+            # ▼▼▼ 追加：天気が不明('-')な時間は配列に追加せず無視する ▼▼▼
+            if base_weather != "-":
+                processed.append(base_weather)
+            # ▲▲▲ 追加ここまで ▲▲▲
             
             # その時間帯の最大雨量を記録
             if d['rainfall'] > max_rain_in_slot:
@@ -232,6 +255,11 @@ def com_get_weather_telops(pGetFrom, pGetTo):
             # その時間帯の最大気温を記録
             if 'temp' in d and d['temp'] > max_temp_in_slot:
                 max_temp_in_slot = d['temp']                
+
+        # ▼▼▼ 追加：もし有効な天気が1つもなかった場合はハイフンを返す ▼▼▼
+        if not processed:
+            return {"telop": TELOP_MAP["-"], "rain_level": 0, "max_temp": max_temp_in_slot if max_temp_in_slot != -999.0 else 0}
+        # ▲▲▲ 追加ここまで ▲▲▲
 
         # 雨量レベルの判定
         rain_level = 0
@@ -263,23 +291,30 @@ def com_get_weather_telops(pGetFrom, pGetTo):
                 # 最初と最後が同じ場合（例: 晴れ→曇り→晴れ）
                 middles = compressed[1:-1]
                 
-                # 間に挟まれた天候の中で、一番悪天候なものを優先してピックアップ
-                if '雷' in middles:
-                    middle = '雷'
-                elif '雪' in middles:
-                    middle = '雪'
-                elif '雨' in middles:
-                    middle = '雨'
-                elif '曇り' in middles:
-                    middle = '曇り'
+                # ★追加：ベースの天気と同じものを間の天気候補から除外する
+                filtered_middles = [m for m in middles if m != first]
+                
+                if not filtered_middles:
+                    result_str = first
                 else:
-                    middle = middles[0]
+                    # 間に挟まれた天候の中で、一番悪天候なものを優先してピックアップ
+                    if '雷' in filtered_middles:
+                        middle = '雷'
+                    elif '雪' in filtered_middles:
+                        middle = '雪'
+                    elif '雨' in filtered_middles:
+                        middle = '雨'
+                    elif '曇り' in filtered_middles:
+                        middle = '曇り'
+                    else:
+                        middle = filtered_middles[0]
 
-                # 採用した悪天候が、その時間帯に1回(1時間)だけなら「一時」、複数回なら「ときどき」
-                if processed.count(middle) <= 1:
-                    result_str = f"{first}一時{middle}"
-                else:
-                    result_str = f"{first}ときどき{middle}"
+                    # 採用した悪天候が、その時間帯に1回(1時間)だけなら「一時」、複数回なら「ときどき」
+                    # ※ここも filtered_middles ではなく全体の processed からカウント
+                    if processed.count(middle) <= 1:
+                        result_str = f"{first}一時{middle}"
+                    else:
+                        result_str = f"{first}ときどき{middle}"
 
         return {
             "telop": TELOP_MAP.get(result_str, 999), 
