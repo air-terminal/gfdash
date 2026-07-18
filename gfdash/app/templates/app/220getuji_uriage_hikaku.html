@@ -21,12 +21,13 @@
       <div class="row">
         <div class="col-md-12 col-sm-12 col-xs-12">
           <div class="x_panel">
-            <div class="x_title">
-              <div class="col-md-9">
+            <!-- 1. 上部コントロールエリアをFlexbox構造に最適化 -->
+            <div class="x_title gf_dashboard_header_flex">
+              <div class="gf_header_title">
                 <h2 id="gf_header"><small></small></h2>
               </div>
 
-              <div class="col-md-3">
+              <div class="gf_header_controls">
                 <div class="gf_custom_menu_parts">
                   <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
                   <div class="input-group date" style="margin-bottom: 0px;">
@@ -39,8 +40,13 @@
               <div class="clearfix"></div>
             </div>
 
+            <!-- 2. グラフエリア（スマホ時のみ横スクロールさせる枠を追加） -->
             <div class="x_content">
-              <canvas id="chart_plot_mix" ></canvas>
+              <div class="gf_chart_scroll_container">
+                <div class="gf_chart_wrapper_220">
+                  <canvas id="chart_plot_mix" ></canvas>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -73,28 +79,30 @@
               </div>
             </div>
 
-
+            <!-- 3. テーブルエリア（右はみ出しを防ぎ、横スクロールさせる枠を追加） -->
             <div class="x_content gf_custom">
-              <table id="datatable_gf" class="table table-striped table-bordered">
-                <thead>
-                  <tr>
-                    <th rowspan="2">年</th>
-                    <th rowspan="2">現金有高</th>
-                    <th rowspan="2">出金</th>
-                    <th colspan="3" class="category-head" id="txt001"></th>
-                    <th colspan="2" class="category-head">集計</th>
-                  </tr>
-                  <tr class="category">
-                    <th id="txt011"></th>
-                    <th id="txt012"></th>
-                    <th id="txt013"></th>
-                    <th>売上</th>
-                    <th>基準年比</th>
-                  </tr>
-                </thead>
-                <tfoot class="table-group-divider">
-                </tfoot>
-              </table>
+              <div class="gf_table_scroll_container_220">
+                <table id="datatable_gf" class="table table-striped table-bordered">
+                  <thead>
+                    <tr>
+                      <th rowspan="2">年</th>
+                      <th rowspan="2">現金有高</th>
+                      <th rowspan="2">出金</th>
+                      <th colspan="3" class="category-head" id="txt001"></th>
+                      <th colspan="2" class="category-head">集計</th>
+                    </tr>
+                    <tr class="category">
+                      <th id="txt011"></th>
+                      <th id="txt012"></th>
+                      <th id="txt013"></th>
+                      <th>売上</th>
+                      <th>基準年比</th>
+                    </tr>
+                  </thead>
+                  <tfoot class="table-group-divider">
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </div>
         </div>

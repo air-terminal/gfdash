@@ -15,13 +15,14 @@
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="dashboard_graph x_panel">
           
-          <div class="x_title">
-            <div class="col-md-6">
+          <!-- 1. 上部コントロールエリアをFlexbox構造に最適化（iPad・PCで右寄せ） -->
+          <div class="x_title gf_dashboard_header_flex">
+            <div class="gf_header_title">
               <h2>AI来場者予測推移 <small id="forecast_header" class="count"></small></h2>
             </div>
 
-            <div class="col-md-6">
-              <div class="gf_custom_menu_parts pull-right">
+            <div class="gf_header_controls">
+              <div class="gf_custom_menu_parts">
                 <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
                 <div class="input-group date" style="margin-bottom: 0px;">
                   <span class="input-group-addon"><i class="fa-solid fa-calendar-days"></i></span>
@@ -59,8 +60,9 @@
               </div>
             </div>
 
-            <div id="sync_scroll_container" style="overflow-x: hidden; position: relative; border: 1px solid #E6E9ED;">
-              <div id="chart_wrapper" style="height: 380px; position: relative; padding: 10px;">
+            <!-- 2. グラフエリア（スマホ時のみ横スクロールさせる枠を追加・インライン高さを除去） -->
+            <div id="sync_scroll_container" class="gf_chart_scroll_container" style="position: relative; border: 1px solid #E6E9ED;">
+              <div id="chart_wrapper" class="gf_chart_wrapper_410" style="position: relative; padding: 10px;">
                 <canvas id="chart_forecast_canvas"></canvas>
               </div>
             </div>

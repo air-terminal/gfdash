@@ -356,6 +356,16 @@ function sub001_postView(postParam){
         $("#calendar_saveval").val($("#gf_calendar").val());
         sub001_set_btn();
 
+        // ▼ここから追加：描画後にスクロールバーを右端（最新日）に合わせる▼
+        setTimeout(function() {
+            var scrollContainer = document.getElementById('sync_scroll_container');
+            if (scrollContainer) {
+                // スクロール位置を、全体の幅の最大値（一番右）に設定する
+                scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+            }
+        }, 100); // グラフやテーブルの描画完了を少し待つための100ミリ秒
+        // ▲ここまで追加▲        
+
     }).fail(function (jqXHR, textStatus, errorThrown) {
         // 通信失敗時の処理
         console.log("ajax通信に失敗しました");

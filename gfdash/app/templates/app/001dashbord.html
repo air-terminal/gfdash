@@ -59,14 +59,19 @@
           <div class="row x_title">
             -->
         <div class="dashboard_graph x_panel">
-          <div class="x_title">
-            <div class="col-md-6">
+          <!-- 専用のFlexboxクラス（gf_dashboard_header_flex）を適用 -->
+          <!-- 重複をすべて排除したクリーンなヘッダーエリア -->
+          <div class="x_title gf_dashboard_header_flex">
+            
+            <!-- 左側：日付期間タイトル -->
+            <div class="gf_header_title">
               <h3><small class="count txt001"></small></h3>
             </div>
 
-            <div class="col-md-3">
+            <!-- 右側：操作ボタン群（ここに入っている要素がすべて1行に並びます） -->
+            <div class="gf_header_controls">
 {% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}
-              <div id="toggleBtn" class="btn-group pull-right" data-toggle="buttons">
+              <div id="toggleBtn" class="btn-group" data-toggle="buttons">
                 <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
                   <input type="radio" name="chart_mode" value="raijyo" onchange="btnToggleChartMode()" checked>来場者
                 </label>
@@ -77,11 +82,8 @@
 {% else %}
               <input type="radio" name="chart_mode" value="raijyo" checked style="display:none;">
 {% endif %}              
-            </div>
 
-
-            <div class="col-md-3">
-              <div class="gf_custom_menu_parts pull-right">
+              <div class="gf_custom_menu_parts">
                 <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
                 <div class="input-group date" style="margin-bottom: 0px;">
                   <span class="input-group-addon"><i class="glyphicon glyphicon-calendar fa-solid fa-calendar-days"></i></span>
@@ -95,13 +97,18 @@
           </div>
 
           <div class="x_content">
+            <!-- ▼ ここから追加：グラフとテーブルを一緒に横スクロールさせるための枠 ▼ -->
+            <div id="sync_scroll_container" style="width: 100%;">
+              
+              <div id="chart_wrapper" style="height: 300px; width: 100%; position: relative;">
+                <span id="chart_y_label" style="position: absolute; top: 5px; left: 0; width: 80px; text-align: center; font-size: 12px; font-weight: bold; color: #5A738E;"></span>
+                <canvas id="chart_plot_02b"></canvas>
+              </div>
 
-            <div id="chart_wrapper" style="height: 300px; width: 100%; position: relative;">
-              <span id="chart_y_label" style="position: absolute; top: 5px; left: 0; width: 80px; text-align: center; font-size: 12px; font-weight: bold; color: #5A738E;"></span>
-              <canvas id="chart_plot_02b"></canvas>
+              <div id="weather_table_container" style="display: none; margin-top: 0px;"></div>
+            
             </div>
-
-            <div id="weather_table_container" style="display: none; margin-top: 0px; overflow-x: auto;"></div>
+            <!-- ▲ ここまで追加 ▲ -->
             <span id="weather_table_exp">
               <span>最大風速(矢印)：</span>
               <span class="fa-solid fa-angle-right" style="display: inline-block;"></span><span>5m/sまで</span>

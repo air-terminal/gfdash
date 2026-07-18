@@ -529,6 +529,52 @@ function sub101_postView(postParam){
         $("#calendar_saveval").val($("#gf_calendar").val());
         sub101_set_btn();
 
+        (function() {
+            var attempts = 0;
+            function doCenteringScroll() {
+                var scrollContainer = document.getElementById('sync_scroll_container');
+                var wrapper = document.getElementById('chart_wrapper');
+                
+                if (!scrollContainer || !wrapper || chartXLabels.length === 0) return;
+
+                // 横スクロール可能な幅（1200px）がDOMにまだ反映されていない場合は、50ミリ秒待ってリトライ（最大10回）
+                if (sub101_getChartMode() === 'detail' && scrollContainer.scrollWidth <= scrollContainer.clientWidth) {
+                    if (attempts < 10) {
+                        attempts++;
+                        setTimeout(doCenteringScroll, 50);
+                        return;
+                    }
+                }
+
+                // 1. ターゲットにする日数を決定
+                var initVal = $("#calendar_initval").val();
+                var displayDate = initVal ? new Date(initVal) : new Date();
+                var today = new Date();
+                var targetIndex = chartXLabels.length; // デフォルトは月末
+                
+                if (displayDate.getFullYear() === today.getFullYear() && displayDate.getMonth() === today.getMonth()) {
+                    targetIndex = today.getDate(); // 今月なら本日
+                } else if (displayDate.getTime() > today.getTime()) {
+                    targetIndex = 1; // 未来なら月初
+                }
+                
+                // 2. ど真ん中に持ってくるためのスクロール位置を計算
+                var headerWidth = 80; 
+                var totalWidth = scrollContainer.scrollWidth;
+                var clientWidth = scrollContainer.clientWidth;
+                var dataWidth = totalWidth - headerWidth;
+                var perDayWidth = dataWidth / chartXLabels.length;
+                
+                var targetLeft = headerWidth + (perDayWidth * (targetIndex - 0.5));
+                var scrollLeftPosition = targetLeft - (clientWidth / 2);
+                
+                // 3. スクロールを実行
+                scrollContainer.scrollLeft = Math.max(0, scrollLeftPosition);
+            }
+            // 初回呼び出し
+            setTimeout(doCenteringScroll, 100);
+        })();
+
         $("#weather_table_container [style*='color']").each(function() {
             $(this).css("-webkit-print-color-adjust", "exact");
         });              

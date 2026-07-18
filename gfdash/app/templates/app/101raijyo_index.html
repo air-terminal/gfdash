@@ -22,13 +22,17 @@
     <div class="row">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="dashboard_graph x_panel">
-          <div class="x_title">
-            <div class="col-md-6">
-              <h2>月間来場者数　<small class="count txt001"></small></h2>
+          <!-- 001画面と共通のFlexboxヘッダーを適用 -->
+          <div class="x_title gf_dashboard_header_flex">
+            
+            <!-- 左側：タイトルエリア -->
+            <div class="gf_header_title">
+              <h2>月間来場者数 <small class="count txt001"></small></h2>
             </div>
 
-            <div class="col-md-3">
-              <div id="toggleBtn" class="btn-group pull-right" data-toggle="buttons">
+            <!-- 右側：操作ボタン・カレンダーエリア（PC・iPadでは1行で右端に寄ります） -->
+            <div class="gf_header_controls">
+              <div id="toggleBtn" class="btn-group" data-toggle="buttons">
                 <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
                   <input type="radio" name="chart_mode" value="detail" onchange="btnToggleChartMode()" checked>&nbsp;詳細&nbsp;
                 </label>
@@ -36,10 +40,8 @@
                   <input type="radio" name="chart_mode" value="total" onchange="btnToggleChartMode()" >累計数
                 </label>
               </div>
-            </div>
 
-            <div class="col-md-3">
-              <div class="gf_custom_menu_parts pull-right">
+              <div class="gf_custom_menu_parts">
                 <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
                 <div class="input-group date" style="margin-bottom: 0px;">
                   <span class="input-group-addon"><i class="fa-solid fa-calendar-days"></i></span>
@@ -51,6 +53,7 @@
             
             <div class="clearfix"></div>
           </div>
+
           <div class="x_content">
 
             <div class="x_title gf_smart_toolbar" style="background: #f8f9fa; padding: 12px; border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 25px; border: 1px solid #ddd; margin-bottom: 15px;">

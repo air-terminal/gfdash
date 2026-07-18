@@ -20,12 +20,13 @@
       <div class="row">
         <div class="col-md-12 col-sm-12 col-xs-12">
           <div class="x_panel">
-            <div class="row x_title">
-              <div class="col-md-6 col-sm-6">
+            <!-- 1. 上部コントロールエリアをFlexbox構造に最適化（iPad・PCで右寄せ） -->
+            <div class="x_title gf_dashboard_header_flex">
+              <div class="gf_header_title">
                 <h2 id="gf_header"><small></small></h2>
               </div>
-              <div class="col-md-6 col-sm-6">
-                <div class="gf_custom_menu_parts pull-right">
+              <div class="gf_header_controls">
+                <div class="gf_custom_menu_parts">
                   <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="sub340_btnPrevMonth()"></button>
                   <div class="input-group date" style="margin-bottom: 0px;">
                     <span class="input-group-addon"><i class="glyphicon glyphicon-calendar fa-solid fa-calendar-days"></i></span>
@@ -34,23 +35,23 @@
                   <button id="tbn_next_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="sub340_btnNextMonth()"></button>
                 </div>
               </div>
+              <div class="clearfix"></div>
             </div>
             <br>
+            
+            <!-- 2. グラフと表を統合し、一緒に同期スクロールさせる枠 -->
             <div class="x_content gf_custom">
-              
-              <canvas id="chart_plot_mix"  height="80"></canvas>
-  
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-      <div class="row">
-        <div class="col-md-12 col-sm-12 col-xs-12">
-          <div class="x_panel">
-            <div class="x_content gf_custom">
-              <div id="hikaku_table_container" style="display: none; overflow-x: auto;"></div>            
+              <div class="gf_unified_scroll_container_340">
+                <div class="gf_unified_wrapper_340">
+                  <!-- 上段：グラフ -->
+                  <canvas id="chart_plot_mix" height="80"></canvas>
+                  
+                  <br>
+                  
+                  <!-- 下段：動的生成される比較テーブル（JSで書き換えられます） -->
+                  <div id="hikaku_table_container" style="display: none;"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
