@@ -1,4 +1,57 @@
-# 環境変数ファイル（絶対に公開しない！）
-.env_dev
+# ============================================================
+#  gfdash .gitignore
+#  ※ 顧客の実データ・生成物・秘密情報を公開しないための設定
+# ============================================================
+
+# --- 環境変数ファイル（絶対に公開しない！） ---
 .env
+.env_dev
+.env.*
+!.env.example
 dev_params.json
+!dev_params.example.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# --- エディタ / IDE / OS ---
+*.code-workspace
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- 実データ・アップロード物（顧客データを含むため公開厳禁） ---
+gfdash/media/*
+!gfdash/media/.gitkeep
+*_gf.csv
+*.csv.org
+
+# --- サイト固有のマスタデータ（施設名・観測地点・経営数値を含むため公開厳禁） ---
+containers/postgres/sql/*_gf.sql
+
+# --- LLM 独自プロンプト（settings.LLM_CUSTOM_PROMPT_DIR） ---
+gfdash/custom_prompts/*
+!gfdash/custom_prompts/.gitkeep
+
+# --- 生成物・ログ ---
+forecast.json
+revised_*.csv
+gfdash/logs/
+*.log
+gfdash/staticfiles/
+
+# --- ローカル環境固有の上書き設定 ---
+docker-compose.override.yml
+
+# --- Claude Code のローカル設定 ---
+CLAUDE.local.md
+.claude/settings.local.json

@@ -133,7 +133,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATICFILES_URL = [BASE_DIR / "static_local"]
+
+# collectstatic の出力先。未設定だと collectstatic が ImproperlyConfigured で
+# 失敗し、DEBUG=False 時に静的ファイルが配信されなくなる。
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
@@ -160,9 +163,12 @@ LLM_CUSTOM_PROMPT_DIR = os.path.join(BASE_DIR, 'custom_prompts')
 
 OLLAMA_NUM_CTX = 4096                   # LLMが確保する記憶領域(トークン数)のデフォルト
 OLLAMA_TIMEOUT = 300                    # APIのタイムアウト秒数（CPU処理などで遅い場合は 600 等に延長）
-OLLAMA_LOG_PROMPT = False               
+# Ollama に送るプロンプトをログ出力するか（開発時の調査用）
+# .env / docker-compose の環境変数で上書きできます
+OLLAMA_LOG_PROMPT = os.environ.get('OLLAMA_LOG_PROMPT', 'False') == 'True'
 OLLAMA_ALLOW_MODEL_SELECT = True        # Ollamaが使用するローカルLLMの切り替え機能フラグ(固定したい場合はFalseとしてください)
 
 # AI予測やLLMレポート生成などの重いバッチ処理を無効化するかどうか
-# ※OllamaやProphetの環境構築が完了し、実際に機能を使用する際は False に書き換えてください。
-DISABLE_BATCH_EXECUTION = True
+# ※OllamaやProphetの環境構築が完了し、実際に機能を使用する際は
+#   .env に DISABLE_BATCH_EXECUTION=False を設定してください（コードの書き換えは不要）。
+DISABLE_BATCH_EXECUTION = os.environ.get('DISABLE_BATCH_EXECUTION', 'True') == 'True'

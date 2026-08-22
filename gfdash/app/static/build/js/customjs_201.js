@@ -768,7 +768,7 @@ function sub201_set_chatjs_gf(chartXLabels, chart_plot_02_data, chart_plot_02_da
                             autoSkip: false,
                             // コールバック関数を使ってラベルの色を動的に変更
                             color: function(context) {
-                                return sub201_setChartLabelColor(context);
+                                return com_setChartLabelColor(context);
                             }
                         }
                     },
@@ -1001,7 +1001,7 @@ function sub201_set_chatjs_detail(chartXLabels, chartResultsDetail) {
                             autoSkip: false,
                             // コールバック関数を使ってラベルの色を動的に変更
                             color: function(context) {
-                                return sub201_setChartLabelColor(context);
+                                return com_setChartLabelColor(context);
                             }
                         }
                     },
@@ -1054,23 +1054,6 @@ function sub201_getDetail2Option(){
     }
     return chartOption;
 }
-
-function sub201_setChartLabelColor(context){
-    const label = context.tick.label;
-    // ラベルが「特定の文字」を含む場合に赤色にする
-    if (label.includes('㈷')) {
-        return 'red';
-    }
-    if (label.includes('㈯')) {
-        return 'blue';
-    }
-    if (label.includes('㈰')) {
-        return 'red';
-    }
-    // それ以外はデフォルトの色
-    return '#666';
-}
-
 
 $(document).ready(function() {
     initFor201();

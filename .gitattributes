@@ -1,0 +1,33 @@
+# ============================================================
+# 改行コード統一設定
+#   Windows(VSCode) と Linux(Docker開発コンテナ) で同じ作業ツリーを
+#   共有しても差分が出ないよう、作業ツリー側も LF に固定します。
+# ============================================================
+
+# 既定: テキストと判定したものは作業ツリーでも LF
+* text=auto eol=lf
+
+# シェルスクリプト類は必ず LF（CRLF だと Docker 内で exec エラーになる）
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+entrypoint.sh text eol=lf
+
+# データファイル: 文字コード(Shift-JIS等)は保持したまま改行のみ LF に統一
+# ※Shift-JIS の2バイト目に 0x0A/0x0D は現れないため変換は安全
+*.csv text eol=lf
+*.org text eol=lf
+
+# バイナリ
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+*.zip   binary
+*.xlsx  binary

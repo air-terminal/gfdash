@@ -273,6 +273,34 @@ class Tz202ClerkReport(models.Model):
         managed = False
         db_table = 'tz202_clerk_report'
 
+class Tz301AttendanceForecast(models.Model):
+    business_day = models.DateField(verbose_name="予測対象日")
+    target_cls = models.CharField(max_length=255, verbose_name="予測対象区分")
+    yhat = models.FloatField(verbose_name="予測値")
+    yhat_lower = models.FloatField(verbose_name="予測下限値")
+    yhat_upper = models.FloatField(verbose_name="予測上限値")
+    input_date = models.DateField(auto_now_add=True, verbose_name="データ入力日")
+
+    class Meta:
+        managed = False  # 👈 手動SQL管理のため、他のモデルに合わせて追加！
+        db_table = 'tz301_forecast'  # ※gfスキーマなら 'gf"."tz301_forecast' に変更
+        unique_together = (('business_day', 'target_cls'),)
+        verbose_name = "来場者予測情報"
+        verbose_name_plural = "来場者予測情報"
+
+class Tz302LlmAnalysis(models.Model):
+    target_month = models.DateField(verbose_name="対象月")
+    report_cls = models.CharField(max_length=20, verbose_name="レポート区分")
+    report_text = models.TextField(verbose_name="AI分析レポート")
+    input_date = models.DateField(auto_now_add=True, verbose_name="データ入力日")
+
+    class Meta:
+        managed = False  # 他のモデルに合わせてFalseに
+        db_table = 'tz302_llm_analysis' # ※gfスキーマなら 'gf"."tz302_llm_analysis'
+        unique_together = (('target_month', 'report_cls'),)
+        verbose_name = "AI月次分析レポート"
+        verbose_name_plural = "AI月次分析レポート"
+
 class Tz901ComName(models.Model):
     code = models.IntegerField(primary_key=True)
     num = models.IntegerField(blank=False, null=False)

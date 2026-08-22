@@ -98,3 +98,37 @@ function runBatch(batchType) {
         if (typeof NProgress != 'undefined') { NProgress.done(); }
     });
 }
+
+function btnPrevMonth() {
+    var $dateGroup = $('#llm_ym').closest('.input-group.date');
+    // Datepickerから現在設定されている日付を取得
+    var currentDate = $dateGroup.datepicker('getDate');
+    
+    // 万が一取得できない場合は input の value から生成
+    if (!currentDate) {
+        var val = $('#llm_ym').val();
+        if(val) currentDate = new Date(val + '-01');
+    }
+    
+    if (currentDate) {
+        // 1ヶ月前にセットしてカレンダーを更新
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        $dateGroup.datepicker('update', currentDate);
+    }
+}
+
+function btnNextMonth() {
+    var $dateGroup = $('#llm_ym').closest('.input-group.date');
+    var currentDate = $dateGroup.datepicker('getDate');
+    
+    if (!currentDate) {
+        var val = $('#llm_ym').val();
+        if(val) currentDate = new Date(val + '-01');
+    }
+    
+    if (currentDate) {
+        // 1ヶ月後にセットしてカレンダーを更新
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        $dateGroup.datepicker('update', currentDate);
+    }
+}

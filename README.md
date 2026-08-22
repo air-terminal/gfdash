@@ -154,9 +154,17 @@ cd gfdash
 
 **2. デモ用パラメータの投入**  
 初期設定やデモ用のパラメータが記載されたSQL (`02_tz901_setup_for_Demo.sql`) をデータベースに流し込みます。
+環境に合わせてSQLを実行してください。同梱の docker compose 環境の場合、
+web コンテナ経由で流し込めます（web イメージに postgresql-client が含まれています）。
+
 ```bash
-# PostgreSQL of コンテナ等の環境に合わせてSQLを実行してください
-# (例: psql -U ユーザー名 -d データベース名 < ../demo_data/sql/02_tz901_setup_for_Demo.sql)
+docker compose exec web sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -f /code/demo_data/sql/02_tz901_setup_for_Demo.sql'
+```
+
+Docker を使わない場合:
+
+```bash
+psql -U ユーザー名 -d データベース名 -f ../demo_data/sql/02_tz901_setup_for_Demo.sql
 ```
 
 **3. ダミー来場者データの生成**  
@@ -167,8 +175,25 @@ python manage.py gen_revised_csv
 
 **4. 生成した来場者・売上データのインポート**  
 生成されたダミーデータをシステム（データベース）に一括インポートします。
+`import_sim_data` は「取り込み先テーブル」と「CSVファイル」の2つを引数に取ります。
+手順3で生成された4つのCSVを、それぞれ対応するテーブルへ取り込んでください。
+
 ```bash
-python manage.py import_sim_data
+python manage.py import_sim_data ta215 revised_ta215.csv
+python manage.py import_sim_data tb120 revised_tb120.csv
+python manage.py import_sim_data tz201 revised_tz201.csv
+python manage.py import_sim_data ta220 revised_ta220.csv
+```
+
+docker compose 環境の場合は、`manage.py` のあるディレクトリを指定して実行します
+（手順3も同様です）。
+
+```bash
+docker compose exec -w /code/gfdash web python3 manage.py gen_revised_csv
+docker compose exec -w /code/gfdash web python3 manage.py import_sim_data ta215 revised_ta215.csv
+docker compose exec -w /code/gfdash web python3 manage.py import_sim_data tb120 revised_tb120.csv
+docker compose exec -w /code/gfdash web python3 manage.py import_sim_data tz201 revised_tz201.csv
+docker compose exec -w /code/gfdash web python3 manage.py import_sim_data ta220 revised_ta220.csv
 ```
 
 **5. 天候データのアップロード（画面操作）**  
