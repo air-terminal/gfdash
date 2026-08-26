@@ -18,7 +18,11 @@ asgiref==3.9.1
 Django==6.0
 sqlparse==0.5.0
 typing_extensions==4.7.1
-psycopg2==2.9.12
+# psycopg2 は psycopg2-binary と同じ psycopg2 モジュールを提供します。
+# 両方入れると psycopg2 のソースビルドだけでイメージ作成が15分近くかかるため、
+# ビルド済み wheel の psycopg2-binary のみを使います(2026-08-26)。
+# 自前ビルド版に切り替える場合は、下の行を psycopg2==2.9.12 に変え、
+# Dockerfile に libpq-dev / gcc の導入を追加してください。
 psycopg2-binary==2.9.12
 django-bootstrap5==26.2
 python-dateutil==2.9.0.post0

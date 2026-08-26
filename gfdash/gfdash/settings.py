@@ -34,7 +34,14 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'default-insecure-key-for-dev')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# カンマ区切りで指定する。例: ALLOWED_HOSTS=example.com,192.168.0.10
+# 既定は '*'(従来どおり)。インターネットに公開する場合は必ず絞ること。
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '*').split(',') if h.strip()]
+
+# CSRF を通すオリジン。スキーム込みで指定する。
+# 例: CSRF_TRUSTED_ORIGINS=https://example.com,http://192.168.0.10:8000
+# 未設定なら空(従来どおり)。データ更新画面が 403 になる場合はここを設定する。
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
 
 
 # Application definition
@@ -136,9 +143,27 @@ STATIC_URL = 'static/'
 
 # collectstatic の出力先。未設定だと collectstatic が ImproperlyConfigured で
 # 失敗し、DEBUG=False 時に静的ファイルが配信されなくなる。
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+# STATIC_ROOT=/var/www/gfdash/static のように、環境変数で配信先を指定できる。
+# nginx などが別の場所を見ている本番環境で使う。未設定なら BASE_DIR/staticfiles。
+STATIC_ROOT = os.environ.get('STATIC_ROOT') or (BASE_DIR / 'staticfiles')
 
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# 静的ファイルの配信方式。whitenoise が gzip / brotli 版を生成して配信する。
+# ファイル名にハッシュを付けたい場合は環境変数で
+#   STATICFILES_BACKEND=whitenoise.storage.CompressedManifestStaticFilesStorage
+# を指定する。ただし CSS 内の参照が1つでも解決できないと collectstatic が失敗する。
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': os.environ.get(
+            'STATICFILES_BACKEND',
+            'whitenoise.storage.CompressedStaticFilesStorage',
+        ),
+    },
+}
+
+MEDIA_ROOT = os.environ.get('MEDIA_ROOT') or os.path.join(BASE_DIR, 'media')
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = '/'  # ログイン成功時はダッシュボード(index.htmlルート)へ
@@ -147,7 +172,7 @@ LOGOUT_REDIRECT_URL = 'login'
 # サンプル公開モードの設定
 # True: ログイン不要で全画面閲覧可能 / False: 通常のログイン必須モード
 # ** インターネット上でTrueとする場合、誰でも見れる状態となるので注意すること **
-IS_SAMPLE_MODE = False
+IS_SAMPLE_MODE = os.environ.get('IS_SAMPLE_MODE', 'False') == 'True'
 
 # ==========================================
 # LLM (Ollama) / Batch Execution Settings
@@ -166,7 +191,7 @@ OLLAMA_TIMEOUT = 300                    # APIのタイムアウト秒数（CPU�
 # Ollama に送るプロンプトをログ出力するか（開発時の調査用）
 # .env / docker-compose の環境変数で上書きできます
 OLLAMA_LOG_PROMPT = os.environ.get('OLLAMA_LOG_PROMPT', 'False') == 'True'
-OLLAMA_ALLOW_MODEL_SELECT = True        # Ollamaが使用するローカルLLMの切り替え機能フラグ(固定したい場合はFalseとしてください)
+OLLAMA_ALLOW_MODEL_SELECT = os.environ.get('OLLAMA_ALLOW_MODEL_SELECT', 'True') == 'True'
 
 # AI予測やLLMレポート生成などの重いバッチ処理を無効化するかどうか
 # ※OllamaやProphetの環境構築が完了し、実際に機能を使用する際は
