@@ -30,19 +30,24 @@ function com_csrfSafeMethod(method) {
     return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
 }
 
-function com_tableDataEditColor(){
-    //    jQuery(function($) {
-        $('.dt-scroll-body td').filter(function() {
-            return parseInt($(this).text()) < 0;
-        }).addClass('minus');
-    //    });      
-        $('.dt-scroll-foot td').filter(function() {
-            return parseInt($(this).text()) < 0;
-        }).addClass('minus');
-        $('.dt-scroll-foot td').filter(function() {
-            return parseInt($(this).text()) >= 0;
-        }).removeClass('minus');
-    
+function com_toNumber(pText){
+    var s = String(pText == null ? '' : pText).replace(/[^\d.\-+]/g, '');
+    if (s === '' || s === '-' || s === '+' || s === '.') { return null; }
+    var n = Number(s);
+    return isNaN(n) ? null : n;
+}
+
+function com_tableDataEditColor(pTarget){
+    var $table = $(pTarget || '#datatable_gf');
+    // スクロール表示の有無でヘッダ・フッタの複製構造が変わるため、
+    // ラッパー(.dt-container)ごと拾って tbody/tfoot を直接判定する
+    var $scope = $table.closest('.dt-container');
+    var $targets = ($scope.length ? $scope.find('table') : $table).find('tbody td, tfoot td');
+
+    $targets.each(function(){
+        var n = com_toNumber($(this).text());
+        $(this).toggleClass('minus', n !== null && n < 0);
+    });
 }
 
 

@@ -182,7 +182,7 @@ function sub110_postView(initParam){
 
         // 表の表示
         sub110_drawTable(tmp);
-        editColor();
+        com_tableDataEditColor();
 
         //ボタンの設定
         var initDate = new Date($("#calendar_initval").val());
@@ -220,47 +220,6 @@ function sub110_postView(initParam){
     return false;
 }
 
-
-function sub110_drawTable_old(jsonData){
-
-    var table=$('#datatable_gf').DataTable({
-        'data'        :jsonData,
-        'paging'      :false,
-        'pageLength'  :5,
-        'lengthChange':false,
-        'searching'   :false,
-        'ordering'    :false,
-        'info'        :false,
-        'autoWidth'   :true,
-        'scrollX'     :false,
-        'scrollY'     :false,
-        destroy: true,
-        'columns'     :[
-            {data:"business_day"},
-            {data:"morning"},
-            {data:"afternoon"},
-            {data:"day"},
-            {data:"night"},
-            {data:"int_school"},
-            {data:"other"},
-            {data:"school"},
-            {data:"member"},
-            {data:"visitor"},
-            {data:"all"},
-            {data:"sum"},
-            {data:"oldSum"},
-            {data:"compSum"}
-        ],
-
-        // 日本語表示
-//        language:{"url": "//cdn.datatables.net/plug-ins/1.10.16/i18n/Japanese.json"}
-
-    }).on( 'draw.dt', function () {
-        editColor();
-        setcolor('#datatable_gf');
-    } );
-
-}
 
 function sub110_drawTable(jsonData){
 
@@ -361,42 +320,6 @@ function btnNextMonth(){
 
     sub110_postView(initParam);
 }
-
-function editColor(){
-    $('.dt-scroll-body td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) >= 0;
-    }).removeClass('minus');
-
-}
-
-function editFotterColor(){
-    $('.dt-scroll-foot td').filter(function() {
-        console.log($(this).text());
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-}
-    
-
-// tableに色を塗る
-function setcolor(classname) {
-    var rank = $(classname);
-  
-    var arr = [];
-    $.each(rank, function(_, v) {
-        var num = parseFloat($(v).text());
-        if (num) {
-            arr.push(num);
-        }
-    });
-
-}
-
 
 // 初期処理
 $(document).ready(function() {

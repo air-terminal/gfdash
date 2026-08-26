@@ -164,7 +164,7 @@ function sub220_postView(initParam){
 
         // 表の表示
         sub220_drawTable(tmp);
-        sub220_editColor();
+        com_tableDataEditColor();
 
         // datepickerの設定
         sub220_setDatepicker(initParam.getMode);
@@ -515,18 +515,6 @@ function btnToggleTableOption(){
 
 }
 
-function sub220_editColor(){
-    $('.dt-scroll-body td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) >= 0;
-    }).removeClass('minus');
-
-}
 
 function sub220_getTableOption(){
     var result = $('input[name="table_option"]:checked');

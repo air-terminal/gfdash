@@ -350,7 +350,7 @@ function sub215_postView(initParam){
 
         // 表の表示
         sub215_drawTable(tmp);
-        sub215_editColor();
+        com_tableDataEditColor();
 
         //ボタンの設定
         var initDate = new Date($("#calendar_initval").val());
@@ -700,18 +700,6 @@ function btnToggleTableOption(){
 
 }
 
-function sub215_editColor(){
-    $('.dt-scroll-body td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) < 0;
-    }).addClass('minus');
-    $('.dt-scroll-foot td').filter(function() {
-        return parseInt($(this).text()) >= 0;
-    }).removeClass('minus');
-
-}
 
 function sub215_getTableOption(){
     var result = $('input[name="table_option"]:checked');
