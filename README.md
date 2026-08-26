@@ -136,6 +136,29 @@
       **※日別値、時別値を登録するには、デモンストレーションモード=OFF、Superuser権限のユーザーにて作業を行って下さい**  
       画面の「メンテナンス」「天候情報アップロード」画面より、日別値、時別値の取得でダウンロードしたcsvファイルを画面に登録し、"Upload"ボタンを押下して下さい。csvファイルは複数同時登録することができます。  
 
+### 開発時に自動リロードを使う
+
+既定の `command` は gunicorn です。Django の開発サーバ (`runserver`) は
+公式に本番利用が非推奨とされているためです。
+
+コードを編集しながら開発する場合は、リポジトリ直下に `docker-compose.override.yml`
+を作成して `command` を差し替えてください。このファイルは `.gitignore` 済みで、
+`docker-compose` が自動的に読み込みます。
+
+```yaml
+services:
+  web:
+    command: python3 gfdash/manage.py runserver 0.0.0.0:8080
+```
+
+ワーカー数は環境変数 `GUNICORN_WORKERS` で変更できます (既定 2)。
+メモリの少ない環境では 1 に、CPU に余裕がある環境では増やしてください。
+
+```bash
+# .env
+GUNICORN_WORKERS=4
+```
+
 ### 手動で構築する場合
 マスタデータの設定の上、PostgreSQLのテーブル定義SQLを以下の順序で実行してください。
 ```bash

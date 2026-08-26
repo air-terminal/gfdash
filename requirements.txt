@@ -12,6 +12,7 @@ lxml
 html5lib
 beautifulsoup4
 whitenoise
+gunicorn
 prophet
 #dockerではなくローカルで実行する場合は、以下のライブラリをインストールして下さい。
 #python-dotenv

@@ -21,7 +21,9 @@ services:
     build: .
     restart: always
     entrypoint: /code/entrypoint.sh
-    command: python3 gfdash/manage.py runserver 0.0.0.0:8080
+    # 本番サーバ。Django 開発サーバ(runserver)は本番利用が非推奨のため gunicorn を使う。
+    # 開発中に自動リロードが欲しい場合は docker-compose.override.yml で差し替える(README 参照)。
+    command: gunicorn --chdir gfdash gfdash.wsgi:application --bind 0.0.0.0:8080 --workers ${GUNICORN_WORKERS:-2} --timeout 120 --access-logfile - --error-logfile -
     volumes:
       - .:/code
     ports:
