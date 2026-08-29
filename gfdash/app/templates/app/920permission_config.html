@@ -1,0 +1,137 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    .gf_perm_table td, .gf_perm_table th { vertical-align: middle; }
+    .gf_perm_group td { background-color: #f5f7fa; font-weight: bold; }
+    .gf_perm_changed { background-color: #fffbe6; }
+    .gf_perm_select { max-width: 160px; display: inline-block; }
+    .gf_perm_note { color: #999; font-size: 0.9em; }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-user-shield"></i> 画面の権限設定</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>各画面を開くために必要な権限を設定します。</p>
+
+              <table class="table table-bordered" style="max-width: 760px;">
+                <thead>
+                  <tr><th style="width: 130px;">権限</th><th>開ける利用者</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>非表示</td><td>誰も開けません（Admin でも開けません）</td></tr>
+                  <tr><td>Staff</td><td>ログインしている全員</td></tr>
+                  <tr><td>Manager</td><td>Manager グループと Admin</td></tr>
+                  <tr><td>Admin</td><td>Admin のみ</td></tr>
+                </tbody>
+              </table>
+
+              <div class="alert alert-info" role="alert">
+                <i class="fa fa-info-circle"></i>
+                <b>未設定</b>と表示されている画面は、まだ個別の設定がなく、画面の種別ごとの
+                既定値で動作しています。そのままにしておくと、今後の更新で既定値が変わった際に
+                自動で追随します。変更して保存すると、以降はこの画面の設定が優先されます。
+              </div>
+
+              <div class="alert alert-warning" role="alert">
+                <i class="fa fa-exclamation-triangle"></i>
+                「画面の権限設定」自身の権限は変更できません。誤って設定するとこの画面を開けなくなり、
+                データベースを直接編集しないと元に戻せなくなるためです。
+              </div>
+
+              <div class="ln_solid"></div>
+
+              <div class="table-responsive">
+                <table class="table table-hover gf_perm_table">
+                  <thead>
+                    <tr>
+                      <th style="width: 38%;">画面</th>
+                      <th style="width: 32%;">ファイル名</th>
+                      <th style="width: 30%;">必要な権限</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for group in page_groups %}
+                      <tr class="gf_perm_group">
+                        <td colspan="3">{{ group.group_name }}</td>
+                      </tr>
+                      {% for page in group.pages %}
+                        <tr data-template="{{ page.template_name }}">
+                          <td>{{ page.page_name }}</td>
+                          <td class="gf_perm_note">{{ page.template_name }}</td>
+                          <td>
+                            {% if page.is_fixed %}
+                              <select class="form-control gf_perm_select" disabled>
+                                {% for lv in permission_levels %}
+                                  <option value="{{ lv.value }}" {% if lv.value == page.level %}selected{% endif %}>{{ lv.label }}</option>
+                                {% endfor %}
+                              </select>
+                              <span class="gf_perm_note">固定</span>
+                            {% else %}
+                              <select class="form-control gf_perm_select gf_perm_input"
+                                      data-template="{{ page.template_name }}"
+                                      data-initial="{{ page.level }}"
+                                      onchange="sub920_onChange(this)">
+                                {% for lv in permission_levels %}
+                                  <option value="{{ lv.value }}" {% if lv.value == page.level %}selected{% endif %}>{{ lv.label }}</option>
+                                {% endfor %}
+                              </select>
+                              {% if page.is_default %}
+                                <span class="gf_perm_note" data-role="default-mark">未設定</span>
+                              {% endif %}
+                            {% endif %}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="ln_solid"></div>
+
+              <div class="form-group">
+                <button id="btn_save" class="btn btn-success" type="button" onclick="sub920_btnSave()">
+                  <i class="fa-solid fa-floppy-disk"></i> 保存
+                </button>
+                <button id="btn_reset" class="btn btn-default" type="button" onclick="sub920_btnReset()">
+                  元に戻す
+                </button>
+                <span id="txt_changed" class="gf_perm_note" style="margin-left: 12px;"></span>
+              </div>
+
+              <p class="gf_perm_note">
+                権限を変更しても、開いているブラウザの表示はすぐには変わりません。
+                対象の利用者が画面を再読み込みすると反映されます。
+              </p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 920permission_config専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_920.js"></script>
+{% endblock javascripts %}

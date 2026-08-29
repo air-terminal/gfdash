@@ -155,17 +155,29 @@ def has_permission(user, template_name):
         return True
 
     # ----------------------------------------------------
-    # 2. 通常モード（DB判定）
+    # 2. 変更を許さない画面（権限設定画面など）
     # ----------------------------------------------------
-    # メンテナンス系(9xx)は定義漏れがそのまま全ユーザーへの開放になるため、
-    # 未定義・判定不能のときは Admin(2) を要求する安全側の既定にする。
-    # 8xx等のカスタム画面は従来どおり 0 (Staff) として扱う。
-    default_level = 2 if template_name.startswith('9') else 0
+    # DBの値によらず固定する。設定を誤って権限設定画面を開けなくなると
+    # DBを直接編集しない限り復旧できなくなるため。
+    if template_name in Config.FIXED_PERMISSION_LEVELS:
+        fixed_level = Config.FIXED_PERMISSION_LEVELS[template_name]
+        # -1 (非表示) は通常判定と同じく Admin であってもブロックする。
+        # 比較だけで判定すると get_user_level() の最小値が -1 のため、
+        # 未ログインを含む全員が通ってしまう。
+        if fixed_level == -1:
+            return False
+        return get_user_level(user) >= fixed_level
+
+    # ----------------------------------------------------
+    # 3. 通常モード（DB判定）
+    # ----------------------------------------------------
+    # DBに定義が無い画面は config の既定値に従う。画面を追加するたびに
+    # DBを更新しなくても妥当な権限で動くようにするための規定。
+    default_level = Config.get_default_permission_level(template_name)
 
     try:
         perm = Tz910Permission.objects.filter(template_name=template_name).first()
         if not perm:
-            # DBに定義がない場合（5xx系など）
             required_level = default_level
         else:
             required_level = perm.required_level
@@ -174,7 +186,7 @@ def has_permission(user, template_name):
         required_level = default_level
 
     # ----------------------------------------------------
-    # 3. 権限レベルの比較
+    # 4. 権限レベルの比較
     # ----------------------------------------------------
     # -1 (非表示) はAdminであっても強制ブロック
     if required_level == -1:

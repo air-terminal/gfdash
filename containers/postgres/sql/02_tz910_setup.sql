@@ -40,6 +40,11 @@ INSERT INTO gf.tz910_permission (template_name, required_level, memo) VALUES
 ('901weather_upload.html', 2, '天候情報アップロード'),
 ('903normal_temprature_upload.html', 2, '平年気温情報アップロード'),
 ('905ai_data_sync.html', 2, '来場者予測／レポートデータメンテナンス'),
-('910weather_station_config.html', 2, '気象観測地点の設定');
+('910weather_station_config.html', 2, '気象観測地点の設定'),
+('920permission_config.html', 2, '画面の権限設定');
 
--- ※カスタム画面（8xx系）などは未定義とし、プログラム側でデフォルト「0」として扱います。
+-- ※ここに無い画面（カスタム画面の8xx系など）は、config_core.py の
+--   DEFAULT_PERMISSION_LEVELS に定義した画面番号ごとの既定値で扱われます。
+--   画面を追加するたびに本ファイルへ追記しなくても妥当な権限で動作します。
+--   なお本ファイルはDBの初回起動時にしか実行されないため、既存環境への
+--   反映は Django のデータマイグレーションで行ってください。

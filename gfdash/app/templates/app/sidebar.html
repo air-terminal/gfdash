@@ -100,7 +100,7 @@
 
     {% include "app/sidebar_custom.html" %}
 
-    {% if request.user|is_any_allowed:'901weather_upload.html, 903normal_temprature_upload.html, 905ai_data_sync.html, 910weather_station_config.html' %}
+    {% if request.user|is_any_allowed:'901weather_upload.html, 903normal_temprature_upload.html, 905ai_data_sync.html, 910weather_station_config.html, 920permission_config.html' %}
     <ul class="nav side-menu">
       <li><a><i class="fa fa-cog"></i> メンテナンス <span class="fa fa-chevron-down"></span></a>
         <ul class="nav child_menu">
@@ -115,6 +115,9 @@
           {% endif %}
           {% if request.user|is_allowed:'910weather_station_config.html' %}
             <li><a href="910weather_station_config.html">気象観測地点の設定</a></li>
+          {% endif %}
+          {% if request.user|is_allowed:'920permission_config.html' %}
+            <li><a href="920permission_config.html">画面の権限設定</a></li>
           {% endif %}
         </ul>
       </li>

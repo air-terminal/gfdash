@@ -21,10 +21,19 @@ class CustomSystemConfig(BaseSystemConfig):
         # 例: '5xxhogehoge.html': '予約管理',
     }
 
-    # カスタムの制限ページを追加
-    RESTRICTED_PAGES = BaseSystemConfig.RESTRICTED_PAGES.union({
-        # 例: '5xxhogehoge.html',
-    })
+    # カスタム画面の既定の権限レベルを変更する場合はここで上書きします。
+    # 画面番号の先頭1桁がキーです（-1:Hidden / 0:Staff / 1:Manager / 2:Admin）。
+    # 例: 8xx を Manager 以上に限定する
+    # DEFAULT_PERMISSION_LEVELS = {
+    #     **BaseSystemConfig.DEFAULT_PERMISSION_LEVELS,
+    #     '8': 1,
+    # }
+
+    # 画面グループの見出しを追加する場合はここで上書きします。
+    # PAGE_GROUP_NAMES = {
+    #     **BaseSystemConfig.PAGE_GROUP_NAMES,
+    #     '5': '予約管理',
+    # }
 
     @classmethod
     def get_get_routes(cls, views_module):
