@@ -20,3 +20,4 @@ from .view_490ai_batch_run import get490_main,post490_main
 from .view_901weather_upload import post901_main
 from .view_903normal_temprature_upload import post903_main
 from .view_905ai_data_sync import get905_main,post905_main
+from .view_910weather_station_config import get910_main,post910_main

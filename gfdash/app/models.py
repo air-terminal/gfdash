@@ -252,6 +252,21 @@ class Tz102WeatherAvarage(models.Model):
         managed = False
         db_table = 'tz102_weather_avarage'
 
+class Tz103WeatherStation(models.Model):
+    prec_no = models.CharField(max_length=4, verbose_name="都府県・地方コード")
+    block_no = models.CharField(max_length=8, verbose_name="観測地点コード")
+    station_type = models.CharField(max_length=1, verbose_name="地点種別")  # s:気象官署 / a:アメダス
+    prec_name = models.CharField(max_length=50, verbose_name="都府県・地方名")
+    station_name = models.CharField(max_length=50, verbose_name="観測地点名")
+    has_rainfall = models.BooleanField(default=False, verbose_name="降水量観測")
+    has_wind = models.BooleanField(default=False, verbose_name="風速観測")
+    has_temp = models.BooleanField(default=False, verbose_name="気温観測")
+    end_date = models.DateField(null=True, blank=True, verbose_name="観測終了日")
+
+    class Meta:
+        managed = False
+        db_table = 'tz103_weather_station'
+
 class Tz201DeptReport(models.Model):
     business_day = models.DateField(primary_key=True)
     code = models.IntegerField(blank=True, null=True)

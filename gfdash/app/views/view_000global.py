@@ -157,16 +157,21 @@ def has_permission(user, template_name):
     # ----------------------------------------------------
     # 2. 通常モード（DB判定）
     # ----------------------------------------------------
+    # メンテナンス系(9xx)は定義漏れがそのまま全ユーザーへの開放になるため、
+    # 未定義・判定不能のときは Admin(2) を要求する安全側の既定にする。
+    # 8xx等のカスタム画面は従来どおり 0 (Staff) として扱う。
+    default_level = 2 if template_name.startswith('9') else 0
+
     try:
         perm = Tz910Permission.objects.filter(template_name=template_name).first()
         if not perm:
-            # DBに定義がない場合（5xx系など）は汎用的に「0 (Staff)」として扱う
-            required_level = 0
+            # DBに定義がない場合（5xx系など）
+            required_level = default_level
         else:
             required_level = perm.required_level
     except Exception:
-        # DB接続エラー等の場合は安全側に倒して「0」とする
-        required_level = 0
+        # DB接続エラー等の場合も既定に倒す
+        required_level = default_level
 
     # ----------------------------------------------------
     # 3. 権限レベルの比較

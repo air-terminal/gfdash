@@ -39,6 +39,7 @@ INSERT INTO gf.tz910_permission (template_name, required_level, memo) VALUES
 -- ▼ メンテナンス系（Admin専用: 2）
 ('901weather_upload.html', 2, '天候情報アップロード'),
 ('903normal_temprature_upload.html', 2, '平年気温情報アップロード'),
-('905ai_data_sync.html', 2, '来場者予測／レポートデータメンテナンス');
+('905ai_data_sync.html', 2, '来場者予測／レポートデータメンテナンス'),
+('910weather_station_config.html', 2, '気象観測地点の設定');
 
 -- ※カスタム画面（8xx系）などは未定義とし、プログラム側でデフォルト「0」として扱います。

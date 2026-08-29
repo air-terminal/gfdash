@@ -1,0 +1,163 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-cloud-sun"></i> 気象観測地点の設定</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>
+                天候情報の取得元となる観測地点を設定します。<br>
+                練習場の所在地に近い都府県・地方を選び、気象官署とアメダスの観測地点をそれぞれ指定してください。
+              </p>
+
+              <div class="alert alert-info" role="alert">
+                <i class="fa fa-info-circle"></i>
+                気象庁は「気象官署」と「アメダス」で提供する項目が異なるため、両方の設定が必要です。<br>
+                気象官署からは天気概況（晴れ・雨などの区分）を、アメダスからは気温・降水量・風速を取得します。<br>
+                気象官署は気温・降水量・風速も観測しているため、市街地などで気象官署が最寄りの場合は
+                <b>下段のアメダス欄にも気象官署を指定できます</b>（同じ地点を両方に指定して構いません）。<br>
+                なお選択肢には、<b>気温・降水量・風速がすべて観測されている現役の地点のみ</b>を表示しています。
+                降水量しか観測していない地点や廃止された地点は、設定しても気温・風速が取得できないため除外しています。
+              </div>
+
+              <div class="ln_solid"></div>
+
+              <div class="form-horizontal form-label-left">
+
+                <div class="form-group">
+                  <label class="control-label col-md-3 col-sm-3 col-xs-12" for="sel_prec">
+                    都府県・地方 <span class="required">*</span>
+                  </label>
+                  <div class="col-md-4 col-sm-4 col-xs-12">
+                    <select id="sel_prec" class="form-control" onchange="sub910_onChangePrec()">
+                      <option value="">-- 選択してください --</option>
+                      {% for p in prefectures %}
+                        <option value="{{ p.prec_no }}">{{ p.prec_name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="control-label col-md-3 col-sm-3 col-xs-12" for="sel_kansyo">
+                    気象官署 観測地点 <span class="required">*</span>
+                  </label>
+                  <div class="col-md-4 col-sm-4 col-xs-12">
+                    <select id="sel_kansyo" class="form-control" onchange="sub910_onChangeStation()" disabled>
+                      <option value="">-- 都府県を選択してください --</option>
+                    </select>
+                  </div>
+                  <div class="col-md-5 col-sm-5 col-xs-12">
+                    <p class="form-control-static text-muted" id="txt_kansyo_code">&nbsp;</p>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="control-label col-md-3 col-sm-3 col-xs-12" for="sel_amedas">
+                    気温・風速の観測地点 <span class="required">*</span>
+                  </label>
+                  <div class="col-md-4 col-sm-4 col-xs-12">
+                    <select id="sel_amedas" class="form-control" onchange="sub910_onChangeStation()" disabled>
+                      <option value="">-- 都府県を選択してください --</option>
+                    </select>
+                  </div>
+                  <div class="col-md-5 col-sm-5 col-xs-12">
+                    <p class="form-control-static text-muted" id="txt_amedas_code">&nbsp;</p>
+                  </div>
+                </div>
+
+                <div class="ln_solid"></div>
+
+                <div class="form-group">
+                  <div class="col-md-6 col-md-offset-3">
+                    <button id="btn_save" class="btn btn-success" type="button" onclick="sub910_btnSave()">
+                      <i class="fa-solid fa-floppy-disk"></i> 保存
+                    </button>
+                    <button id="btn_reset" class="btn btn-default" type="button" onclick="sub910_btnReset()">
+                      元に戻す
+                    </button>
+                  </div>
+                </div>
+
+                <p class="text-muted" style="margin-left: 15px;">
+                  <i class="fa fa-info-circle"></i>
+                  保存時に、選択した地点から実際に気象データを取得できるかを自動で確認します。
+                  確認のため気象庁のサイトへ接続するので、完了まで数秒かかります。
+                </p>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-circle-check"></i> 現在の設定</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">種別</th>
+                    <th style="width: 40%;">観測地点</th>
+                    <th style="width: 20%;">prec_no</th>
+                    <th style="width: 20%;">block_no</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>気象官署</td>
+                    <td id="cur_kansyo_name">{{ station_config.kansyo_name }}</td>
+                    <td id="cur_kansyo_prec">{{ station_config.kansyo_prec_no }}</td>
+                    <td id="cur_kansyo_block">{{ station_config.kansyo_block_no }}</td>
+                  </tr>
+                  <tr>
+                    <td>アメダス</td>
+                    <td id="cur_amedas_name">{{ station_config.amedas_name }}</td>
+                    <td id="cur_amedas_prec">{{ station_config.amedas_prec_no }}</td>
+                    <td id="cur_amedas_block">{{ station_config.amedas_block_no }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="text-muted">
+                設定を変更しても、過去に取得済みの天候情報は以前の地点のまま残ります。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 現在の設定値（JSの初期表示に使用） -->
+  <input type="hidden" id="init_prec_no" value="{{ station_config.kansyo_prec_no }}">
+  <input type="hidden" id="init_kansyo_block_no" value="{{ station_config.kansyo_block_no }}">
+  <input type="hidden" id="init_amedas_block_no" value="{{ station_config.amedas_block_no }}">
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 910weather_station_config専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_910.js"></script>
+{% endblock javascripts %}

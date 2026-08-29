@@ -32,6 +32,7 @@ class BaseSystemConfig:
         '901weather_upload.html': '天候情報アップロード',
         '903normal_temprature_upload.html': '平年気温情報アップロード',
         '905ai_data_sync.html': '来場者予測／レポートデータメンテナンス',
+        '910weather_station_config.html': '気象観測地点の設定',
     }
 
     RESTRICTED_PAGES = {
@@ -48,6 +49,7 @@ class BaseSystemConfig:
             '001dashbord.html': getattr(views_module, 'get001_main', None),
             '490ai_batch_run.html': getattr(views_module, 'get490_main', None),            
             '905ai_data_sync.html': getattr(views_module, 'get905_main', None),
+            '910weather_station_config.html': getattr(views_module, 'get910_main', None),
         }
 
     @classmethod
@@ -74,4 +76,5 @@ class BaseSystemConfig:
             '901weather_upload.html': getattr(views_module, 'post901_main', None),
             '903normal_temprature_upload.html': getattr(views_module, 'post903_main', None),
             '905ai_data_sync.html': getattr(views_module, 'post905_main', None),
+            '910weather_station_config.html': getattr(views_module, 'post910_main', None),
         }

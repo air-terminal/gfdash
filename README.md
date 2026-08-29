@@ -296,6 +296,34 @@ python manage.py get_daily_weather --date yyyy-mm-dd
 Note: 天候情報取得コマンドでは、気象庁のページより天候情報をスクレイピングして情報を取得しています。
 初期データをセットアップする等大量のデータを取得する場合、気象庁のサーバーに負荷がかかる為 **5. 平年値、過去の天候データの設定** の方法を使用して下さい。
 
+### 気象観測地点マスタの再生成（通常は不要）
+```bash
+python manage.py gen_weather_station_master
+```
+気象庁サイトから全国の観測地点一覧（気象官署／アメダス）を取得し、
+`containers/postgres/sql/02_tz103_setup.sql` を生成します。
+
+このSQLは生成済みのものをリポジトリに同梱しているため、**通常の導入・運用では実行する必要はありません。**
+気象庁の観測地点が新設・廃止された場合や、地点一覧ページの構造が変わった場合にのみ実行してください。
+
+| オプション | 既定値 | 内容 |
+| :--- | :--- | :--- |
+| `--out` | `containers/postgres/sql/02_tz103_setup.sql` | 出力先のSQLファイル |
+| `--sleep` | `1.0` | 気象庁サイトへのアクセス間隔（秒） |
+| `--timeout` | `15` | HTTPタイムアウト（秒） |
+
+Note: 都府県・地方ごとに1ページずつ取得するため、完了までに1分程度かかります。
+気象庁のサーバーに負荷をかけないよう、`--sleep` は既定値のまま実行してください。
+
+生成後は、既存のデータベースへ反映させる必要があります（DB初期化SQLはコンテナの初回起動時にしか実行されません）。
+`containers/postgres/sql` は db コンテナの `/docker-entrypoint-initdb.d` にマウントされているため、
+そのパスを `-f` で指定します。
+```bash
+docker compose exec db sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -f /docker-entrypoint-initdb.d/02_tz103_setup.sql'
+```
+Note: `Get-Content ... | docker compose exec -T db psql` のようにシェルのパイプで流し込むと、
+Windows PowerShell では地点名の日本語が壊れます。必ず上記の `-f` 形式を使用してください。
+
 ## Other libraries
 **Gentelella (Modern Bootstrap Admin Dashboard Template)**
 - [https://github.com/colorlibhq/gentelella](https://github.com/colorlibhq/gentelella)

@@ -11,6 +11,7 @@ import requests
 
 from bs4 import BeautifulSoup
 from app.models import Tz101WeatherReport, Tz105DetailedWeatherReport, Tz901ComName
+from app.utils.com_utils import com_get_station_type
 
 class Command(BaseCommand):
     help = '気象庁サイトから昨日の気象データを取得し、TZ101/TZ105テーブルに保存します'
@@ -54,8 +55,17 @@ class Command(BaseCommand):
         y_str = str(y)
         m_str = str(m)
 
+        # 気温・風速の取得元(アメダス欄)には気象官署も指定できる。官署は
+        # daily_a1.php では引けないため、地点種別に応じてURLを切り替える。
+        a_type = com_get_station_type(
+            Tz901ComName.objects.filter(code=3, num=22).values_list('code_name2', flat=True).first(),
+            a_block,
+        )
+        a_daily = 'daily_s1' if a_type == 's' else 'daily_a1'
+        self.stdout.write(f"気温・風速の取得元: {'気象官署' if a_type == 's' else 'アメダス'} (block_no={a_block})")
+
         # ブラウザで成功したURLと全く同じ文字列を生成
-        url_a = f"https://www.data.jma.go.jp/stats/etrn/view/daily_a1.php?prec_no={a_prec}&block_no={a_block}&year={y_str}&month={m_str}&view=p1"
+        url_a = f"https://www.data.jma.go.jp/stats/etrn/view/{a_daily}.php?prec_no={a_prec}&block_no={a_block}&year={y_str}&month={m_str}&view=p1"
         url_k = f"https://www.data.jma.go.jp/stats/etrn/view/daily_s1.php?prec_no={k_prec}&block_no={k_block}&year={y_str}&month={m_str}&view=p1"
 
         headers = {
@@ -149,7 +159,9 @@ class Command(BaseCommand):
 
                 # ★不足していた時間別URLの生成処理
                 d_str = str(d)
-                url_amedas_hourly = f"https://www.data.jma.go.jp/stats/etrn/view/hourly_a1.php?prec_no={a_prec}&block_no={a_block}&year={y_str}&month={m_str}&day={d_str}&view=p1"
+                # 日別と同じく、地点種別に応じて参照先を切り替える
+                a_hourly = 'hourly_s1' if a_type == 's' else 'hourly_a1'
+                url_amedas_hourly = f"https://www.data.jma.go.jp/stats/etrn/view/{a_hourly}.php?prec_no={a_prec}&block_no={a_block}&year={y_str}&month={m_str}&day={d_str}&view=p1"
                 url_kansyo_hourly = f"https://www.data.jma.go.jp/stats/etrn/view/hourly_s1.php?prec_no={k_prec}&block_no={k_block}&year={y_str}&month={m_str}&day={d_str}&view=p1"
 
                 df_a_hourly = pd.read_html(url_amedas_hourly, flavor='bs4')[0]

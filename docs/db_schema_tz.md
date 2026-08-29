@@ -8,6 +8,7 @@
 | :--- | :--- | :--- |
 | `tz101_weather_report` | 天候情報テーブル | 日別の気象情報（気温、降水量、風速、概況など） |
 | `tz102_weather_avarage` | 天候情報(平年値)テーブル | 指定月日（mmdd）ごとの平年値データ |
+| `tz103_weather_station` | 気象観測地点マスタ | 気象庁の観測地点（気象官署／アメダス）一覧。設定画面の選択肢に使用 |
 | `tz105_detailed_weather_info` | 天候情報(時別詳細)テーブル | 1時間ごとの詳細な気象観測データ |
 | `tz201_dept_report` | DEPTテーブル | 部門別売上などの外部システム連携用データ |
 | `tz202_clerk_report` | CLERKテーブル | 区分（担当者別等）売上などの外部システム連携用データ |
@@ -21,6 +22,7 @@
 ```mermaid
 erDiagram
     tz101_weather_report ||--o{ tz105_detailed_weather_info : "同じ日付の詳細を保持"
+    tz103_weather_station |o..o{ tz901_com_name : "選択結果を code:002/003 に保持"
     
     tb120_report ||--|{ tz201_dept_report : "日付で紐付け"
     tb120_report ||--|{ tz202_clerk_report : "日付で紐付け"
@@ -62,6 +64,38 @@ erDiagram
 | `temp_max` | 最高気温 | NUMERIC(5,2) | | |
 | `temp_min` | 最低気温 | NUMERIC(5,2) | | |
 | `temp_ave` | 平均気温 | NUMERIC(5,2) | | |
+
+#### tz103_weather_station (気象観測地点マスタ)
+気象庁の観測地点（気象官署／アメダス）の一覧を保持する参照専用マスタです。
+気象観測地点設定画面（910）で天候情報の取得元を選択する際に参照します。
+
+選択した結果は `tz901_com_name` の code:002（地点名）／code:003（地点コード）へ
+書き込まれ、実際の気象データ取得（`get_daily_weather`）はそちらを参照します。
+本テーブルは選択肢を提示するためだけに存在し、運用中に更新する必要はありません。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | SERIAL | **PK** | Django用の代理キー |
+| `prec_no` | 都府県・地方コード | VARCHAR(4) | NOT NULL, **UQ** | 気象庁URLの `prec_no` |
+| `block_no` | 観測地点コード | VARCHAR(8) | NOT NULL, **UQ** | 気象庁URLの `block_no` |
+| `station_type` | 地点種別 | CHAR(1) | NOT NULL | `s`:気象官署 / `a`:アメダス |
+| `prec_name` | 都府県・地方名 | VARCHAR(50) | NOT NULL | 例: '東京' |
+| `station_name` | 観測地点名 | VARCHAR(50) | NOT NULL | 例: '羽田' |
+| `has_rainfall` | 降水量観測 | BOOLEAN | NOT NULL | 気象庁の `f_pre` |
+| `has_wind` | 風速観測 | BOOLEAN | NOT NULL | 気象庁の `f_wsp` |
+| `has_temp` | 気温観測 | BOOLEAN | NOT NULL | 気象庁の `f_tem` |
+| `end_date` | 観測終了日 | DATE | | NULLなら現役 |
+
+`station_type` は取得先URLの分岐に使用します。気象官署は `daily_s1.php`、
+アメダスは `daily_a1.php` を参照するため、種別を誤ると気象データを取得できません。
+なお `block_no` は気象官署が5桁（WMO観測所番号）、アメダスが4桁で、両者は桁数でも区別できます。
+
+`has_*` と `end_date` は設定画面(910)で選択肢を絞り込むために保持しています。
+アメダスには降水量しか観測しない地点が全体の約1/4あり、それを選ぶと気温・風速が
+永久にNULLになります。また廃止済みの地点が同名の現役地点と並ぶため
+（例: 新島・神津島）、`end_date` が入っている地点は選択肢から除外します。
+
+初期データの生成手順は [README.md](../README.md) を参照してください。
 
 #### tz105_detailed_weather_info (天候情報 時別詳細テーブル)
 | カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
