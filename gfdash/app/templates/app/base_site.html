@@ -99,6 +99,11 @@
         <script src="/static/build/js/custom.js"></script>
         <script src="/static/build/js/custom_chart.js"></script>
 
+        <!-- 上期・下期の期間設定。グラフのX軸ラベルや凡例で使う -->
+        <script>
+          var gf_half_year_info = {{ half_year_info_json|default:"null"|safe }};
+        </script>
+
         <!-- 共通系javascriptの宣言 -->
         <script src="/static/build/js/custom_com.js"></script>
 

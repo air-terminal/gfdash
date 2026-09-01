@@ -8,6 +8,10 @@ from django.db import connection
 from .. import views
 
 from ..models import Tb120Report
+from ..utils.com_utils import HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI
+from ..utils.com_utils import com_get_fiscal_year_sql
+from ..utils.com_utils import com_get_half_year_months
+from ..utils.com_utils import com_get_prev_year_offset
 
 import json
 import calendar
@@ -154,10 +158,7 @@ def get_uriage(dictParam):
             cFiscal_end_month = tmpTb120[9]
 
             #昨年のデータ読み込みntz210
-            moveYear = 0
-            if tmpParam == 'kamiki':
-                if cFiscal_end_month == 12:
-                    moveYear = 1
+            moveYear = com_get_prev_year_offset(tmpParam, cFiscal_end_month)
 
             tmpTz210data = getTZ210data(tmpParam, tmpOption, (cFiscal_end_year - moveYear), cFiscal_end_month)
             tmpKaihi = tmpTz210data['kaihi']
@@ -168,10 +169,7 @@ def get_uriage(dictParam):
             tmpAllBukatu += tmpBukatu
 
             #昨年のデータ読み込み
-            moveYear = 1
-            if tmpParam == 'kamiki':
-                if cFiscal_end_month == 12:
-                    moveYear = 2
+            moveYear = 1 + com_get_prev_year_offset(tmpParam, cFiscal_end_month)
 
             tmpYM = str((cFiscal_end_year - moveYear)) + format(cFiscal_end_month, '02')
             with connection.cursor() as cursorOld:
@@ -248,10 +246,7 @@ def get_uriage(dictParam):
             cFiscal_end_month = tmpTb120[9]
 
             #昨年のデータ読み込み
-            moveYear = 1
-            if tmpParam == 'kamiki':
-                if cFiscal_end_month == 12:
-                    moveYear = 2
+            moveYear = 1 + com_get_prev_year_offset(tmpParam, cFiscal_end_month)
             tmpTz210data = getTZ210data(tmpParam, tmpOption, (cFiscal_end_year - moveYear), cFiscal_end_month)
             tmpOldKaihi = tmpTz210data['kaihi']
             tmpOldLine = tmpTz210data['line']
@@ -261,14 +256,9 @@ def get_uriage(dictParam):
             tmpOldAll = cAridaka + cShukkin
             tmpOldSum += tmpOldAll
 
-            
-            if tmpParam == 'kamiki':
-                if cFiscal_end_month == 12:
-                    tmpYYYY = str(dictParam['yyyy'] - 1) + format(cFiscal_end_month, '02')
-                else:
-                    tmpYYYY = str(dictParam['yyyy']) + format(cFiscal_end_month, '02')
-            else: 
-                tmpYYYY = str(dictParam['yyyy']) + format(cFiscal_end_month, '02')
+            # 期首側の月は前の暦年に置かれているため、年月キーも1年古い側になる
+            tmpYYYY = str(dictParam['yyyy'] - com_get_prev_year_offset(tmpParam, cFiscal_end_month)) \
+                      + format(cFiscal_end_month, '02')
 
             tmpOldAllAridaka += cAridaka
             tmpOldAllNyukin += cNyukin - tmpOldKaihi - tmpOldBukatu
@@ -436,42 +426,22 @@ def setSqlNenkan():
 
 def setSqlKamiki():
 
-    tmpQuery = " SELECT * " \
-                " FROM  " \
-                " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
-                "    SUM(aridaka) AS total_aridaka, " \
-                "    SUM(nyukin) AS total_nyukin, " \
-                "    SUM(shukkin) AS total_shukkin, " \
-                "    SUM(sagaku) AS total_sagaku, " \
-                "    SUM(ken) AS total_ken, " \
-                "    SUM(school) AS total_school, " \
-                "    SUM(shop) AS total_shop, " \
-                "    cast(EXTRACT(YEAR FROM business_day) as text) || to_char(EXTRACT(MONTH FROM business_day), 'FM00') AS fiscal_end_ym,  " \
-                "    EXTRACT(MONTH FROM business_day) AS fiscal_end_month " \
-                " FROM " \
-                "    gf.tb120_report " \
-                "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (12, 1, 2, 3, 4, 5) " \
-                "GROUP BY " \
-                "    fiscal_end_year, fiscal_end_ym, fiscal_end_month " \
-                "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
-
-    return tmpQuery
+    return setSqlHalfYear(HALF_YEAR_KAMIKI)
 
 def setSqlSimoki():
 
+    return setSqlHalfYear(HALF_YEAR_SIMOKI)
+
+
+def setSqlHalfYear(pHalf):
+    """上期・下期の売上集計SQLを組み立てる（対象月と年度境界は設定から導出）"""
+    fiscalYear = com_get_fiscal_year_sql('business_day')
+    months = ', '.join(str(m) for m in com_get_half_year_months(pHalf))
+
     tmpQuery = " SELECT * " \
                 " FROM  " \
                 " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
+                f"    {fiscalYear} AS fiscal_end_year, " \
                 "    SUM(aridaka) AS total_aridaka, " \
                 "    SUM(nyukin) AS total_nyukin, " \
                 "    SUM(shukkin) AS total_shukkin, " \
@@ -484,11 +454,11 @@ def setSqlSimoki():
                 " FROM " \
                 "    gf.tb120_report " \
                 "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (6, 7, 8, 9, 10, 11) " \
+                f"    EXTRACT(MONTH FROM business_day) IN ({months}) " \
                 "GROUP BY " \
                 "    fiscal_end_year, fiscal_end_ym, fiscal_end_month " \
                 "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
+                "    fiscal_end_ym) as temp "
 
     return tmpQuery
 
@@ -513,37 +483,22 @@ def setSqlNenkanTz201():
 
 def setSqlKamikiTz201():
 
-    tmpQuery = " SELECT * " \
-                " FROM  " \
-                " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
-                "    SUM(sales) AS total_sales, " \
-                "    code," \
-                "    cast(EXTRACT(YEAR FROM business_day) as text) || to_char(EXTRACT(MONTH FROM business_day), 'FM00') AS fiscal_end_ym,  " \
-                "    EXTRACT(MONTH FROM business_day) AS fiscal_end_month " \
-                " FROM " \
-                "    gf.tz201_dept_report " \
-                "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (12, 1, 2, 3, 4, 5) " \
-                "GROUP BY " \
-                "    fiscal_end_year, fiscal_end_ym, fiscal_end_month, code " \
-                "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
-
-    return tmpQuery
+    return setSqlHalfYearTz201(HALF_YEAR_KAMIKI)
 
 def setSqlSimokiTz201():
 
+    return setSqlHalfYearTz201(HALF_YEAR_SIMOKI)
+
+
+def setSqlHalfYearTz201(pHalf):
+    """上期・下期の部門別集計SQLを組み立てる（対象月と年度境界は設定から導出）"""
+    fiscalYear = com_get_fiscal_year_sql('business_day')
+    months = ', '.join(str(m) for m in com_get_half_year_months(pHalf))
+
     tmpQuery = " SELECT * " \
                 " FROM  " \
                 " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
+                f"    {fiscalYear} AS fiscal_end_year, " \
                 "    SUM(sales) AS total_sales, " \
                 "    code," \
                 "    cast(EXTRACT(YEAR FROM business_day) as text) || to_char(EXTRACT(MONTH FROM business_day), 'FM00') AS fiscal_end_ym,  " \
@@ -551,10 +506,10 @@ def setSqlSimokiTz201():
                 " FROM " \
                 "    gf.tz201_dept_report " \
                 "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (6, 7, 8, 9, 10, 11) " \
+                f"    EXTRACT(MONTH FROM business_day) IN ({months}) " \
                 "GROUP BY " \
                 "    fiscal_end_year, fiscal_end_ym, fiscal_end_month, code " \
                 "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
+                "    fiscal_end_ym) as temp "
 
     return tmpQuery

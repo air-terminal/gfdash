@@ -633,3 +633,34 @@ function com_comvWeatherTxt(pWeatherTxt, rainfall = 0) {
     // デフォルト
     return 1001;
 }
+
+// 上期・下期の期間設定。base_site.html が gf_half_year_info に埋め込む。
+// 設定が取得できない場合は従来どおり12月始まりとして扱う。
+const COM_HALF_YEAR_FALLBACK = {
+    start_month: 12,
+    nenkan: { months: [1,2,3,4,5,6,7,8,9,10,11,12], label: '年間' },
+    kamiki: { months: [12,1,2,3,4,5],  label: '上期(12-5月)' },
+    simoki: { months: [6,7,8,9,10,11], label: '下期(6-11月)' }
+};
+
+function com_getHalfYearInfo(pMode) {
+    var info = (typeof gf_half_year_info !== 'undefined' && gf_half_year_info)
+             ? gf_half_year_info : COM_HALF_YEAR_FALLBACK;
+
+    return info[pMode] || COM_HALF_YEAR_FALLBACK[pMode];
+}
+
+// 対象期間の月をグラフのX軸ラベル（'12月' 形式）で返す
+function com_getHalfYearXLabels(pMode) {
+    return com_getHalfYearInfo(pMode).months.map(function(m) { return m + '月'; });
+}
+
+// 「上期(12-5月)」のような期間名を返す
+function com_getHalfYearLabel(pMode) {
+    return com_getHalfYearInfo(pMode).label;
+}
+
+// 対象期間の月を数値の配列で返す
+function com_getHalfYearMonths(pMode) {
+    return com_getHalfYearInfo(pMode).months.slice();
+}

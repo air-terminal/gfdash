@@ -8,6 +8,7 @@ from django.db import connection
 from .. import views
 
 from ..models import Tb120Report
+from ..utils.com_utils import com_get_prev_year_offset
 
 import json
 import calendar
@@ -135,10 +136,7 @@ def get_uriage(dictParam):
             cFiscal_end_month = tmpTb120[9]
 
             #tz210の読み込み
-            moveYear = 0
-            if tmpParam == 'kamiki':
-                if cFiscal_end_month == 12:
-                    moveYear = 1
+            moveYear = com_get_prev_year_offset(tmpParam, cFiscal_end_month)
 
             tmpTz210data = getTZ210data(tmpParam, tmpOption, (cFiscal_end_year - moveYear), cFiscal_end_month)
             tmpKaihi = tmpTz210data['kaihi']

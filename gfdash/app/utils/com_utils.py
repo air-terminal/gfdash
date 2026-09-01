@@ -205,3 +205,166 @@ def com_save_weather_station_config(pKansyo, pAmedas):
             Tz901ComName.objects.create(
                 code=code, num=num, code_name=code_name, code_name2=value
             )
+
+
+# 上期・下期の期間設定（tz901 code=7）
+#   num=1 … 年度開始月（＝上期開始月）
+#
+# 上期・下期はそれぞれ6か月固定のため、開始月が決まれば月集合・年度境界・
+# 年跨ぎの有無はすべて導出できる。設定は「年度期間の設定」画面(912)から変更する。
+TZ901_FISCAL_CODE = 7
+TZ901_FISCAL_START_MONTH_NUM = 1
+
+# 行が無い環境では従来どおり12月始まりとして扱う。
+FISCAL_START_MONTH_DEFAULT = 12
+
+HALF_YEAR_KAMIKI = 'kamiki'
+HALF_YEAR_SIMOKI = 'simoki'
+
+# 半期あたりの月数。上期・下期で年を二分するため6で固定。
+HALF_YEAR_MONTHS = 6
+
+
+def com_get_fiscal_start_month():
+    """年度開始月（1-12）を返す。未設定・不正値のときは既定の12を返す"""
+    row = (
+        Tz901ComName.objects
+        .filter(code=TZ901_FISCAL_CODE, num=TZ901_FISCAL_START_MONTH_NUM)
+        .values('code_name2')
+        .first()
+    )
+
+    if not row:
+        return FISCAL_START_MONTH_DEFAULT
+
+    try:
+        month = int(str(row['code_name2']).strip())
+    except (TypeError, ValueError):
+        return FISCAL_START_MONTH_DEFAULT
+
+    if month < 1 or month > 12:
+        return FISCAL_START_MONTH_DEFAULT
+
+    return month
+
+
+def com_save_fiscal_start_month(pMonth):
+    """
+    年度開始月を tz901 へ保存する。
+
+    ※ Tz901ComName はモデル上 code だけが primary_key のため、save() や
+      update_or_create() では同じ code の行をまとめて壊す。filter().update() を使う。
+    """
+    code_name = '年度開始月'
+    updated = Tz901ComName.objects.filter(
+        code=TZ901_FISCAL_CODE, num=TZ901_FISCAL_START_MONTH_NUM
+    ).update(code_name=code_name, code_name2=str(pMonth))
+
+    if updated == 0:
+        Tz901ComName.objects.create(
+            code=TZ901_FISCAL_CODE, num=TZ901_FISCAL_START_MONTH_NUM,
+            code_name=code_name, code_name2=str(pMonth)
+        )
+
+
+def com_get_half_year_info():
+    """
+    画面（JavaScript）へ渡す期間情報をまとめて返す。
+
+    X軸ラベルや凡例に埋め込まれていた「12-5月」のような文字列を、
+    サーバ側の設定から生成して配布するためのもの。
+    """
+    start = com_get_fiscal_start_month()
+
+    info = {'start_month': start, 'nenkan': {
+        'months': list(range(1, 13)),
+        'label': '年間',
+    }}
+
+    for half in (HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI):
+        months = com_get_half_year_months(half, start)
+        info[half] = {
+            'months': months,
+            'label': com_get_half_year_label(half, start),
+        }
+
+    return info
+
+
+def com_get_half_year_months(pHalf, pStartMonth=None):
+    """
+    指定した半期に含まれる月を、期首から順に並べたリストで返す。
+
+    例) 開始月12の場合
+        上期 -> [12, 1, 2, 3, 4, 5]
+        下期 -> [6, 7, 8, 9, 10, 11]
+    """
+    start = pStartMonth if pStartMonth else com_get_fiscal_start_month()
+
+    offset = 0 if pHalf == HALF_YEAR_KAMIKI else HALF_YEAR_MONTHS
+    months = []
+    for i in range(HALF_YEAR_MONTHS):
+        # 1-12 の循環にするため 0 始まりへ直してから戻す
+        months.append(((start - 1 + offset + i) % 12) + 1)
+
+    return months
+
+
+def com_get_fiscal_year_sql(pColumn, pStartMonth=None):
+    """
+    年度（その年度が終わる暦年）を求める SQL 式を返す。
+
+    開始月以降の月は翌暦年に終わる年度に属する。開始月が1月の場合は
+    年度と暦年が一致するため、繰り上げは行わない。
+    """
+    start = pStartMonth if pStartMonth else com_get_fiscal_start_month()
+
+    if start == 1:
+        return f"EXTRACT(YEAR FROM {pColumn})"
+
+    return (
+        f"EXTRACT(YEAR FROM {pColumn}) + CASE "
+        f"WHEN EXTRACT(MONTH FROM {pColumn}) >= {start} THEN 1 "
+        f"ELSE 0 "
+        f"END"
+    )
+
+
+def com_is_prev_calendar_year_month(pMonth, pStartMonth=None):
+    """
+    指定した月が、年度の中で「前の暦年」に属するかを返す。
+
+    前年同期のデータを読むときに何年戻るかの判定に使う。開始月が12なら
+    12月だけが該当し、開始月が4なら4月以降が該当する（年跨ぎが下期に
+    移るケース）。開始月が1月なら年跨ぎが無いため常に False。
+    """
+    start = pStartMonth if pStartMonth else com_get_fiscal_start_month()
+
+    if start == 1:
+        return False
+
+    return pMonth >= start
+
+
+def com_get_half_year_label(pHalf, pStartMonth=None):
+    """上期(12-5月) のような表示用の文字列を返す"""
+    months = com_get_half_year_months(pHalf, pStartMonth)
+    name = '上期' if pHalf == HALF_YEAR_KAMIKI else '下期'
+
+    return f'{name}({months[0]}-{months[-1]}月)'
+
+
+def com_get_prev_year_offset(pHalf, pMonth, pStartMonth=None):
+    """
+    前年同期のデータを読むときに、何年余分に遡る必要があるかを返す（0 または 1）。
+
+    年度が暦年を跨ぐ場合、期首側の月は前の暦年に置かれている。そのため
+    同じ年度内でも暦年としては1年古い側にあり、前年を読むにはもう1年戻る。
+
+    年間表示(nenkan)は暦年で集計しており年度の繰り上げを行わないため、
+    常に0を返す。
+    """
+    if pHalf not in (HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI):
+        return 0
+
+    return 1 if com_is_prev_calendar_year_month(pMonth, pStartMonth) else 0

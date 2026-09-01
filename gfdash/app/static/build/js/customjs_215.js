@@ -416,18 +416,9 @@ function sub215_setChartData(dataTbl){
     var tmpData2 = [];
     var tmpData3 = [];
 
-    switch(sub215_getToggleBtnOption()){
-        case 'nenkan':
-            tmpXLabels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-            break;
-        case 'kamiki':
-            tmpXLabels = ['12月','1月','2月','3月','4月','5月'];
-            break;
-        case 'simoki':
-            tmpXLabels = ['6月','7月','8月','9月','10月','11月'];
-            break;
-    }
- 
+    // X軸ラベルは年度開始月の設定から導出する
+    tmpXLabels = com_getHalfYearXLabels(sub215_getToggleBtnOption());
+
     // 売上
     var i = 0;
     for (var j in dataTbl) {

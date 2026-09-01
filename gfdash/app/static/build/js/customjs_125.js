@@ -153,11 +153,9 @@ function sub125_setChartData(dataTbl, allDataTbl){
         case 'nenkan':
             tmpHanrei1 = '年間来場者数';
             break;
-        case 'kamiki':
-            tmpHanrei1 = '上期(12-5月)来場者数';
-            break;
-        case 'simoki':
-            tmpHanrei1 = '下期(6-11月)来場者数';
+        default:
+            // 期間名は年度開始月の設定から導出する
+            tmpHanrei1 = com_getHalfYearLabel(sub125_getToggleBtnOption()) + '来場者数';
             break;
     }
 

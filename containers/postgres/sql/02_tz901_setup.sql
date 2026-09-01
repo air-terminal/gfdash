@@ -44,4 +44,5 @@ INSERT INTO gf.tz901_com_name (code, num, code_name, code_name2) VALUES
 ,(5, 21, '夜　天候情報時間開始', '17')
 ,(5, 22, '夜　天候情報時間終了', '23')
 ,(6, 1, '強雨閾値', '5')
+,(7, 1, '年度開始月', '12')
 ;

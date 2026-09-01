@@ -8,6 +8,9 @@ from django.db import connection
 from .. import views
 
 from ..models import Tb120Report
+from ..utils.com_utils import HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI
+from ..utils.com_utils import com_get_fiscal_year_sql
+from ..utils.com_utils import com_get_half_year_months
 
 import json
 import calendar
@@ -247,39 +250,22 @@ def setSqlNenkanTb120():
 
 def setSqlKamikiTb120():
 
-    tmpQuery = " SELECT * " \
-                " FROM  " \
-                " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
-                "    SUM(aridaka) AS total_aridaka, " \
-                "    SUM(nyukin) AS total_nyukin, " \
-                "    SUM(shukkin) AS total_shukkin, " \
-                "    SUM(sagaku) AS total_sagaku, " \
-                "    SUM(ken) AS total_ken, " \
-                "    SUM(school) AS total_school, " \
-                "    SUM(shop) AS total_shop " \
-                " FROM " \
-                "    gf.tb120_report " \
-                "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (12, 1, 2, 3, 4, 5) " \
-                "GROUP BY " \
-                "    fiscal_end_year " \
-                "    ) as temp " 
-
-    return tmpQuery
+    return setSqlHalfYearTb120(HALF_YEAR_KAMIKI)
 
 def setSqlSimokiTb120():
 
+    return setSqlHalfYearTb120(HALF_YEAR_SIMOKI)
+
+
+def setSqlHalfYearTb120(pHalf):
+    """上期・下期の年度別売上集計SQLを組み立てる（対象月と年度境界は設定から導出）"""
+    fiscalYear = com_get_fiscal_year_sql('business_day')
+    months = ', '.join(str(m) for m in com_get_half_year_months(pHalf))
+
     tmpQuery = " SELECT * " \
                 " FROM  " \
                 " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
+                f"    {fiscalYear} AS fiscal_end_year, " \
                 "    SUM(aridaka) AS total_aridaka, " \
                 "    SUM(nyukin) AS total_nyukin, " \
                 "    SUM(shukkin) AS total_shukkin, " \
@@ -290,10 +276,10 @@ def setSqlSimokiTb120():
                 " FROM " \
                 "    gf.tb120_report " \
                 "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (6, 7, 8, 9, 10, 11) " \
+                f"    EXTRACT(MONTH FROM business_day) IN ({months}) " \
                 "GROUP BY " \
                 "    fiscal_end_year " \
-                "    ) as temp " 
+                "    ) as temp "
 
     return tmpQuery
 
@@ -318,42 +304,30 @@ def setSqlNenkanTz201():
 
 def setSqlKamikiTz201():
 
-    tmpQuery = " SELECT * " \
-                " FROM  " \
-                " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
-                "    SUM(sales) AS total_sales, " \
-                "    code " \
-                " FROM " \
-                "    gf.tz201_dept_report " \
-                "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (12, 1, 2, 3, 4, 5) " \
-                "GROUP BY " \
-                "    fiscal_end_year, code " \
-                "    ) as temp " 
-
-    return tmpQuery
+    return setSqlHalfYearTz201(HALF_YEAR_KAMIKI)
 
 def setSqlSimokiTz201():
 
+    return setSqlHalfYearTz201(HALF_YEAR_SIMOKI)
+
+
+def setSqlHalfYearTz201(pHalf):
+    """上期・下期の年度別部門集計SQLを組み立てる（対象月と年度境界は設定から導出）"""
+    fiscalYear = com_get_fiscal_year_sql('business_day')
+    months = ', '.join(str(m) for m in com_get_half_year_months(pHalf))
+
     tmpQuery = " SELECT * " \
                 " FROM  " \
                 " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
+                f"    {fiscalYear} AS fiscal_end_year, " \
                 "    SUM(sales) AS total_sales, " \
                 "    code " \
                 " FROM " \
                 "    gf.tz201_dept_report " \
                 "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (6, 7, 8, 9, 10, 11) " \
+                f"    EXTRACT(MONTH FROM business_day) IN ({months}) " \
                 "GROUP BY " \
                 "    fiscal_end_year, code " \
-                "    ) as temp " 
+                "    ) as temp "
 
     return tmpQuery

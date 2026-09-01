@@ -15,6 +15,7 @@ import os
 from .config_custom import CustomSystemConfig as Config
 # ▼ モデルの読み込み
 from ..models import Tz910Permission
+from ..utils.com_utils import com_get_half_year_info
 
 from pathlib import Path  # ファイルの先頭でインポートしてください
 
@@ -44,9 +45,11 @@ def gentella_html(request):
             ctx = get_request(request, load_template)
             
             # テンプレート側（HTML）でも分岐できるように変数を渡す
-            ctx['is_sample_mode'] = is_sample 
+            ctx['is_sample_mode'] = is_sample
             # Configからタイトルを取得
-            ctx['page_title'] = Config.PAGE_META_DATA.get(load_template, '')            
+            ctx['page_title'] = Config.PAGE_META_DATA.get(load_template, '')
+            # 上期・下期の期間設定。グラフのX軸ラベルや凡例で使うため全画面へ渡す
+            ctx['half_year_info_json'] = json.dumps(com_get_half_year_info(), ensure_ascii=False)
             return render(request, 'app/' + ctx['load_template'], ctx)
             
         case 'POST':

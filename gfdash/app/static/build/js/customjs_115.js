@@ -154,22 +154,16 @@ function sub115_setChartData(dataTbl, oldDataTbl){
     var tmpHanrei1 = '';
     var tmpHanrei2 = '';
 
-    switch(sub115_getToggleBtnOption()){
-        case 'nenkan':
-            tmpXLabels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-            tmpHanrei1 = '年間来場者数';
-            tmpHanrei2 = '前年来場者数';
-            break;
-        case 'kamiki':
-            tmpXLabels = ['12月','1月','2月','3月','4月','5月'];
-            tmpHanrei1 = '上期(12-5月)来場者数';
-            tmpHanrei2 = '前年度上期(12-5月)来場者数';
-            break;
-        case 'simoki':
-            tmpXLabels = ['6月','7月','8月','9月','10月','11月'];
-            tmpHanrei1 = '下期(6-11月)来場者数';
-            tmpHanrei2 = '前年度下期(6-11月)来場者数';
-            break;
+    // 対象月と期間名は年度開始月の設定から導出する（custom_com.js 経由）
+    var tmpMode = sub115_getToggleBtnOption();
+    tmpXLabels = com_getHalfYearXLabels(tmpMode);
+
+    if (tmpMode === 'nenkan') {
+        tmpHanrei1 = '年間来場者数';
+        tmpHanrei2 = '前年来場者数';
+    } else {
+        tmpHanrei1 = com_getHalfYearLabel(tmpMode) + '来場者数';
+        tmpHanrei2 = '前年度' + com_getHalfYearLabel(tmpMode) + '来場者数';
     }
 
     // 月間来場者数
@@ -362,23 +356,9 @@ function sub115_drawTable(dataTbl, oldDataTbl){
     var tmpOldVisitor = 0;
     var i = 0;
 
-    var tmpMonth = [];
-    var tmpMaxJ = 0;
-
-    switch(sub115_getToggleBtnOption()){
-        case 'nenkan':
-            tmpMonth = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-            tmpMaxJ = 12;
-            break;
-        case 'kamiki':
-            tmpMonth = [12, 1, 2, 3, 4, 5, 6];
-            tmpMaxJ = 6;
-            break;
-        case 'simoki':
-            tmpMonth = [6, 7, 8, 9, 10, 11, 12];
-            tmpMaxJ = 6;
-            break;
-    }
+    // 対象月は年度開始月の設定から導出する（年間12か月／半期6か月）
+    var tmpMonth = com_getHalfYearMonths(sub115_getToggleBtnOption());
+    var tmpMaxJ = tmpMonth.length;
 
     // 今年分のデータ生成
     $.each(dataTbl, function(key, val) {

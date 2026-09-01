@@ -8,6 +8,9 @@ from .. import views
 from ..models import Ta215Attnd
 from ..models import Ta220Memo
 from ..models import Tz901ComName
+from ..utils.com_utils import HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI
+from ..utils.com_utils import com_get_fiscal_year_sql
+from ..utils.com_utils import com_get_half_year_months
 
 import json
 import calendar
@@ -186,42 +189,22 @@ def sub115_setSqlNenkan():
 
 def sub115_setSqlKamiki():
 
-    tmpQuery = " SELECT * " \
-                " FROM  " \
-                " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
-                "    SUM(morning) AS total_morning, " \
-                "    SUM(afternoon) AS total_afternoon, " \
-                "    SUM(night) AS total_night, " \
-                "    SUM(int_school) AS total_int_school, " \
-                "    SUM(school_total) AS total_school, " \
-                "    SUM(member) AS total_member, " \
-                "    SUM(visitor) AS total_visitor, " \
-                "    cast(EXTRACT(YEAR FROM business_day) as text) || to_char(EXTRACT(MONTH FROM business_day), 'FM00') AS fiscal_end_ym,  " \
-                "    EXTRACT(MONTH FROM business_day) AS fiscal_end_month " \
-                " FROM " \
-                "    gf.ta215_attnd " \
-                "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (12, 1, 2, 3, 4, 5) " \
-                "GROUP BY " \
-                "    fiscal_end_year, fiscal_end_ym, fiscal_end_month " \
-                "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
-    
-    return tmpQuery
+    return sub115_setSqlHalfYear(HALF_YEAR_KAMIKI)
 
 def sub115_setSqlSimoki():
 
+    return sub115_setSqlHalfYear(HALF_YEAR_SIMOKI)
+
+
+def sub115_setSqlHalfYear(pHalf):
+    """上期・下期の来場者集計SQLを組み立てる（対象月と年度境界は設定から導出）"""
+    fiscalYear = com_get_fiscal_year_sql('business_day')
+    months = ', '.join(str(m) for m in com_get_half_year_months(pHalf))
+
     tmpQuery = " SELECT * " \
                 " FROM  " \
                 " (SELECT " \
-                "    EXTRACT(YEAR FROM business_day) + CASE " \
-                "                                          WHEN EXTRACT(MONTH FROM business_day) >= 12 THEN 1 " \
-                "                                          ELSE 0 " \
-                "                                      END AS fiscal_end_year, " \
+                f"    {fiscalYear} AS fiscal_end_year, " \
                 "    SUM(morning) AS total_morning, " \
                 "    SUM(afternoon) AS total_afternoon, " \
                 "    SUM(night) AS total_night, " \
@@ -234,11 +217,11 @@ def sub115_setSqlSimoki():
                 " FROM " \
                 "    gf.ta215_attnd " \
                 "WHERE " \
-                "    EXTRACT(MONTH FROM business_day) IN (6, 7, 8, 9, 10, 11) " \
+                f"    EXTRACT(MONTH FROM business_day) IN ({months}) " \
                 "GROUP BY " \
                 "    fiscal_end_year, fiscal_end_ym, fiscal_end_month " \
                 "ORDER BY " \
-                "    fiscal_end_ym) as temp " 
+                "    fiscal_end_ym) as temp "
 
     return tmpQuery
 
