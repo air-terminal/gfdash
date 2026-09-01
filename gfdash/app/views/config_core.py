@@ -33,6 +33,7 @@ class BaseSystemConfig:
         '903normal_temprature_upload.html': '平年気温情報アップロード',
         '905ai_data_sync.html': '来場者予測／レポートデータメンテナンス',
         '910weather_station_config.html': '気象観測地点の設定',
+        '911attendance_target_config.html': '来場者達成目標の設定',
         '920permission_config.html': '画面の権限設定',
     }
 
@@ -95,6 +96,7 @@ class BaseSystemConfig:
             '490ai_batch_run.html': getattr(views_module, 'get490_main', None),            
             '905ai_data_sync.html': getattr(views_module, 'get905_main', None),
             '910weather_station_config.html': getattr(views_module, 'get910_main', None),
+            '911attendance_target_config.html': getattr(views_module, 'get911_main', None),
             '920permission_config.html': getattr(views_module, 'get920_main', None),
         }
 
@@ -123,5 +125,6 @@ class BaseSystemConfig:
             '903normal_temprature_upload.html': getattr(views_module, 'post903_main', None),
             '905ai_data_sync.html': getattr(views_module, 'post905_main', None),
             '910weather_station_config.html': getattr(views_module, 'post910_main', None),
+            '911attendance_target_config.html': getattr(views_module, 'post911_main', None),
             '920permission_config.html': getattr(views_module, 'post920_main', None),
         }

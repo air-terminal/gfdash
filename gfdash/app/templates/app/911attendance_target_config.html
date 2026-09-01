@@ -1,0 +1,152 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    .gf_target_table td, .gf_target_table th { vertical-align: middle; }
+    .gf_target_input { max-width: 120px; display: inline-block; }
+    .gf_target_changed { background-color: #fffbe6; }
+    .gf_target_note { color: #999; font-size: 0.9em; }
+    /* 実際に表示される色をそのまま見本にする */
+    .gf_swatch {
+      display: inline-block;
+      width: 34px;
+      height: 16px;
+      border: 1px solid #ccc;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    .gf_swatch_level1 { background-color: rgb(255, 220, 230); }
+    .gf_swatch_level2 { background-color: rgb(255, 245, 185); }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-palette"></i> 来場者達成目標の設定</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>
+                月間来場者数情報詳細画面(110)で、来場者数が目標に達した日に背景色を付けます。
+                区分ごとに2段階まで設定できます。
+              </p>
+
+              <table class="table table-bordered" style="max-width: 620px;">
+                <thead>
+                  <tr><th style="width: 130px;">段階</th><th>条件</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="gf_swatch gf_swatch_level1"></span>Level1</td>
+                    <td>Level1 以上 Level2 未満の日に付きます</td>
+                  </tr>
+                  <tr>
+                    <td><span class="gf_swatch gf_swatch_level2"></span>Level2</td>
+                    <td>Level2 以上の日に付きます</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="alert alert-info" role="alert">
+                <i class="fa fa-info-circle"></i>
+                色を付けたくない段階は<b>「使用しない」</b>にチェックを入れてください。
+                片方だけ使うこともできます。<br>
+                両方に値を入れる場合、<b>Level1 には Level2 以下の値</b>を設定してください。
+                判定は Level2 から行うため、逆にすると Level1 の色が表示されなくなります。
+              </div>
+
+              <div class="ln_solid"></div>
+
+              <div class="table-responsive">
+                <table class="table table-hover gf_target_table">
+                  <thead>
+                    <tr>
+                      <th style="width: 20%;">区分</th>
+                      <th style="width: 40%;"><span class="gf_swatch gf_swatch_level1"></span>Level1（人以上）</th>
+                      <th style="width: 40%;"><span class="gf_swatch gf_swatch_level2"></span>Level2（人以上）</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in target_rows %}
+                      <tr data-key="{{ row.key }}">
+                        <td>{{ row.name }}</td>
+                        <td>
+                          <input type="number" class="form-control gf_target_input gf_target_value"
+                                 data-key="{{ row.key }}" data-level="1"
+                                 data-initial="{% if row.level1 is not None %}{{ row.level1 }}{% endif %}"
+                                 value="{% if row.level1 is not None %}{{ row.level1 }}{% endif %}"
+                                 min="0" max="{{ target_max }}"
+                                 {% if row.level1_disabled %}disabled{% endif %}
+                                 onchange="sub911_onChange(this)">
+                          <label style="margin-left: 8px; font-weight: normal;">
+                            <input type="checkbox" class="gf_target_disable"
+                                   data-key="{{ row.key }}" data-level="1"
+                                   data-initial="{{ row.level1_disabled|yesno:'1,0' }}"
+                                   {% if row.level1_disabled %}checked{% endif %}
+                                   onchange="sub911_onToggleDisable(this)"> 使用しない
+                          </label>
+                        </td>
+                        <td>
+                          <input type="number" class="form-control gf_target_input gf_target_value"
+                                 data-key="{{ row.key }}" data-level="2"
+                                 data-initial="{% if row.level2 is not None %}{{ row.level2 }}{% endif %}"
+                                 value="{% if row.level2 is not None %}{{ row.level2 }}{% endif %}"
+                                 min="0" max="{{ target_max }}"
+                                 {% if row.level2_disabled %}disabled{% endif %}
+                                 onchange="sub911_onChange(this)">
+                          <label style="margin-left: 8px; font-weight: normal;">
+                            <input type="checkbox" class="gf_target_disable"
+                                   data-key="{{ row.key }}" data-level="2"
+                                   data-initial="{{ row.level2_disabled|yesno:'1,0' }}"
+                                   {% if row.level2_disabled %}checked{% endif %}
+                                   onchange="sub911_onToggleDisable(this)"> 使用しない
+                          </label>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="ln_solid"></div>
+
+              <div class="form-group">
+                <button id="btn_save" class="btn btn-success" type="button" onclick="sub911_btnSave()">
+                  <i class="fa-solid fa-floppy-disk"></i> 保存
+                </button>
+                <button id="btn_reset" class="btn btn-default" type="button" onclick="sub911_btnReset()">
+                  元に戻す
+                </button>
+                <span id="txt_changed" class="gf_target_note" style="margin-left: 12px;"></span>
+              </div>
+
+              <p class="gf_target_note">
+                設定は月間来場者数情報詳細画面(110)を開き直すと反映されます。
+              </p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 911attendance_target_config専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_911.js"></script>
+{% endblock javascripts %}

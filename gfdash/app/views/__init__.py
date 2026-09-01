@@ -21,4 +21,5 @@ from .view_901weather_upload import post901_main
 from .view_903normal_temprature_upload import post903_main
 from .view_905ai_data_sync import get905_main,post905_main
 from .view_910weather_station_config import get910_main,post910_main
+from .view_911attendance_target_config import get911_main,post911_main
 from .view_920permission_config import get920_main,post920_main

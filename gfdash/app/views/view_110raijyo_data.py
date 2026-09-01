@@ -194,9 +194,9 @@ def get_ta215(dictParam):
         else:
             editSchool = tmp215.school_total
 
-        if (tmp215.visitor >= tmpLabelThreshold['member'][1]):
-            editMember = '<p class="colorLevel2"> ' + str(tmp215.member) + ' </p>'        
-        elif (tmp215.visitor >= tmpLabelThreshold['member'][0]):
+        if (tmp215.member >= tmpLabelThreshold['member'][1]):
+            editMember = '<p class="colorLevel2"> ' + str(tmp215.member) + ' </p>'
+        elif (tmp215.member >= tmpLabelThreshold['member'][0]):
             editMember = '<p class="colorLevel1"> ' + str(tmp215.member) + ' </p>'
         else:
             editMember = tmp215.member

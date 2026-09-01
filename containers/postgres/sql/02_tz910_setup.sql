@@ -41,6 +41,7 @@ INSERT INTO gf.tz910_permission (template_name, required_level, memo) VALUES
 ('903normal_temprature_upload.html', 2, '平年気温情報アップロード'),
 ('905ai_data_sync.html', 2, '来場者予測／レポートデータメンテナンス'),
 ('910weather_station_config.html', 2, '気象観測地点の設定'),
+('911attendance_target_config.html', 2, '来場者達成目標の設定'),
 ('920permission_config.html', 2, '画面の権限設定');
 
 -- ※ここに無い画面（カスタム画面の8xx系など）は、config_core.py の

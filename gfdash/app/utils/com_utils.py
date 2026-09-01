@@ -25,66 +25,96 @@ def com_get_chart_xLabel(dictParam):
 
     return tmpXLabel
 
+# 来場者達成目標の設定（tz901 code=4）
+#   月間来場者数情報詳細(110)の色分けに使う。区分ごとに2段階の閾値を持つ。
+#   Level1(ピンク) < Level2(黄色) の順に厳しくなり、判定は上位から行う。
+#   99999 は「色を付けない」を意味する初期値。
+TZ901_ATTENDANCE_TARGET_CODE = 4
+
+# (キー, 表示名, Level1の枝番, Level2の枝番)
+# 読み込みと保存の双方がこの並びを唯一の正とする。
+ATTENDANCE_TARGET_ITEMS = [
+    ('morning',   '朝',         1,   2),
+    ('afternoon', '昼',         11,  12),
+    ('day',       '日中',       21,  22),
+    ('night',     '夜',         31,  32),
+    ('school',    'スクール',   101, 102),
+    ('member',    'メンバー',   111, 112),
+    ('visitor',   'ビジター',   121, 122),
+    ('all',       '日計',       201, 202),
+]
+
+# 「使用しない」を表す値。この値を超える来場者数は現実的に発生しないため、
+# どの日も条件を満たさず色が付かない。
+ATTENDANCE_TARGET_DEFAULT = 99999
+
+# 1日の来場者数が1万人を超えることは無いため、この値以上が入っていれば
+# 「使用しない」の意図とみなす。99999 以外の大きな値が過去に設定されて
+# いても、設定画面(911)では「使用しない」として扱える。
+ATTENDANCE_TARGET_DISABLED_MIN = 10000
+
+
+def com_is_attendance_target_disabled(pValue):
+    """来場者達成目標の値が「使用しない」を意味するか"""
+    return pValue is None or pValue >= ATTENDANCE_TARGET_DISABLED_MIN
+
+
 def com_get_LabelColor_threshold():
+    """来場者達成目標を {区分キー: [Level1, Level2]} で返す"""
+    stored = {
+        r['num']: r['code_name2']
+        for r in Tz901ComName.objects
+        .filter(code=TZ901_ATTENDANCE_TARGET_CODE)
+        .values('num', 'code_name2')
+    }
+
+    def to_int(pNum):
+        try:
+            return int(str(stored[pNum]).strip())
+        except (KeyError, TypeError, ValueError):
+            # 行が無い場合も、数値でない値が入っている場合も色を付けない
+            return ATTENDANCE_TARGET_DEFAULT
 
     tmpLabelThreshold = {}
-#    tmpLabelThreshold = ['morning','afternoon','day','night','school','member','visitor','all']
-    tmpMorning = [99999,99999]
-    tmpAfternoon = [99999,99999]
-    tmpDay = [99999,99999]
-    tmpNight = [99999,99999]
-    tmpSchool = [99999,99999]
-    tmpMember = [99999,99999]
-    tmpVisitor = [99999,99999]
-    tmpAll = [99999,99999]
-
-    tz901 = Tz901ComName.objects.filter(code=4).values("num","code_name2").order_by('num')
-    if tz901.count() > 0:
-        for tmpTz901 in tz901:
-            if tmpTz901['num'] == 1:
-                tmpMorning[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 2:
-                tmpMorning[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 11:
-                tmpAfternoon[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 12:
-                tmpAfternoon[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 21:
-                tmpDay[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 22:
-                tmpDay[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 31:
-                tmpNight[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 32:
-                tmpNight[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 101:
-                tmpSchool[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 102:
-                tmpSchool[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 111:
-                tmpMember[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 112:
-                tmpMember[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 121:
-                tmpVisitor[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 122:
-                tmpVisitor[1] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 201:
-                tmpAll[0] = int(tmpTz901['code_name2'])
-            elif tmpTz901['num'] == 202:
-                tmpAll[1] = int(tmpTz901['code_name2'])
-
-    tmpLabelThreshold.update({'morning':tmpMorning,
-                          'afternoon':tmpAfternoon,
-                          'day':tmpDay,
-                          'night':tmpNight,
-                          'school':tmpSchool,
-                          'member':tmpMember,
-                          'visitor':tmpVisitor,
-                          'all':tmpAll
-                          })
+    for key, _name, num1, num2 in ATTENDANCE_TARGET_ITEMS:
+        tmpLabelThreshold[key] = [to_int(num1), to_int(num2)]
 
     return tmpLabelThreshold
+
+
+def com_save_attendance_targets(pTargets):
+    """
+    来場者達成目標を tz901 へ保存する。
+
+    pTargets は {区分キー: [Level1, Level2]} で、値が None なら「使用しない」
+    として ATTENDANCE_TARGET_DEFAULT を書き込む。
+    呼び出し側でトランザクションを張ること。
+
+    ※ Tz901ComName はモデル上 code だけが primary_key のため、save() や
+      update_or_create() では UPDATE ... WHERE code = n となり同じ code の
+      行をまとめて壊す。必ず filter().update() を使うこと。
+    """
+    for key, name, num1, num2 in ATTENDANCE_TARGET_ITEMS:
+        if key not in pTargets:
+            continue
+
+        levels = pTargets[key]
+        for idx, num in ((0, num1), (1, num2)):
+            value = levels[idx]
+            if value is None:
+                value = ATTENDANCE_TARGET_DEFAULT
+
+            code_name = f'{name}_来場者達成人数{idx + 1}'
+            updated = Tz901ComName.objects.filter(
+                code=TZ901_ATTENDANCE_TARGET_CODE, num=num
+            ).update(code_name=code_name, code_name2=str(value))
+
+            if updated == 0:
+                Tz901ComName.objects.create(
+                    code=TZ901_ATTENDANCE_TARGET_CODE, num=num,
+                    code_name=code_name, code_name2=str(value)
+                )
+
 
 # 気象観測地点の設定（tz901）
 #   code=2 … 地点名   num=1:気象官署 / num=2:アメダス
