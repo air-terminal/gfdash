@@ -197,3 +197,13 @@ OLLAMA_ALLOW_MODEL_SELECT = os.environ.get('OLLAMA_ALLOW_MODEL_SELECT', 'True') 
 # ※OllamaやProphetの環境構築が完了し、実際に機能を使用する際は
 #   .env に DISABLE_BATCH_EXECUTION=False を設定してください（コードの書き換えは不要）。
 DISABLE_BATCH_EXECUTION = os.environ.get('DISABLE_BATCH_EXECUTION', 'True') == 'True'
+
+# 休業・祝日カレンダー(913)で過去日を編集できるようにするかどうか。
+#
+# 既定は True（編集可）です。本システムだけで運用する場合、過去日を
+# 編集できないと実績を補完できず不便なためです。
+#
+# 来場実績を外部システム（Access等）から取り込んでいる場合、過去日は
+# そちらが正となり、画面で編集しても取り込みのたびに上書きされます。
+# 誤入力を防ぎたい場合は .env に False を設定してください。
+ALLOW_PAST_CALENDAR_EDIT = os.environ.get('ALLOW_PAST_CALENDAR_EDIT', 'True') == 'True'

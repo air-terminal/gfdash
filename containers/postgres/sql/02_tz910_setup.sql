@@ -43,6 +43,7 @@ INSERT INTO gf.tz910_permission (template_name, required_level, memo) VALUES
 ('910weather_station_config.html', 2, '気象観測地点の設定'),
 ('911attendance_target_config.html', 2, '来場者達成目標の設定'),
 ('912fiscal_period_config.html', 2, '年度期間の設定'),
+('913holiday_calendar.html', 2, '休業・祝日カレンダー'),
 ('920permission_config.html', 2, '画面の権限設定');
 
 -- ※ここに無い画面（カスタム画面の8xx系など）は、config_core.py の

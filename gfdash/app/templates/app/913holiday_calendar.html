@@ -1,0 +1,167 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    .gf_cal { width: 100%; table-layout: fixed; }
+    .gf_cal th { text-align: center; padding: 6px; background-color: #f5f7fa; }
+    .gf_cal td { height: 84px; vertical-align: top; padding: 4px; border: 1px solid #e6e9ed; }
+    .gf_cal td.gf_cal_blank { background-color: #fafafa; border-color: #f0f0f0; }
+    .gf_cal td.gf_cal_editable { cursor: pointer; }
+    .gf_cal td.gf_cal_editable:hover { background-color: #eaf3fb; }
+    .gf_cal td.gf_cal_past { background-color: #f7f7f7; color: #aaa; }
+    .gf_cal td.gf_cal_today { border: 2px solid #1ABB9C; }
+    /* 日付部分だけを色づける。セル全体を塗ると過去日のグレーと競合するため */
+    .gf_cal_daynum {
+      display: inline-block;
+      min-width: 26px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: bold;
+      font-size: 1.05em;
+      text-align: center;
+    }
+    .gf_cal_sat     { color: #2E86C1; background-color: #e8f2fb; }
+    .gf_cal_sun     { color: #C0392B; background-color: #fdeaea; }
+    .gf_cal_holiday { color: #C0392B; background-color: #fdeaea; }
+    .gf_cal_marks { margin-top: 4px; font-size: 0.8em; line-height: 1.5; }
+    .gf_cal_tag {
+      display: inline-block; padding: 0 5px; margin: 1px 1px 0 0;
+      border-radius: 2px; color: #fff; white-space: nowrap;
+    }
+    .gf_tag_holiday  { background-color: #E74C3C; }
+    .gf_tag_tokubetu { background-color: #9B59B6; }
+    .gf_tag_closed   { background-color: #34495E; }
+    .gf_tag_temp     { background-color: #E67E22; }
+    .gf_tag_unplanned{ background-color: #7F8C8D; }
+    .gf_cal_memo { color: #888; font-size: 0.78em; margin-top: 2px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gf_cal_note { color: #999; font-size: 0.9em; }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-calendar-check"></i> 休業・祝日カレンダー</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>
+                休業日・祝日・特別営業日を登録します。日付をクリックすると設定できます。
+              </p>
+
+              <div class="form-group" style="text-align: center;">
+                <button class="btn btn-default" type="button" onclick="sub913_move(-1)">
+                  <i class="fa fa-chevron-left"></i>
+                </button>
+                <span id="txt_month" style="display: inline-block; min-width: 180px; font-size: 1.2em;"></span>
+                <button class="btn btn-default" type="button" onclick="sub913_move(1)">
+                  <i class="fa fa-chevron-right"></i>
+                </button>
+                <button class="btn btn-primary" type="button" onclick="sub913_moveToday()">今月</button>
+              </div>
+
+              <table class="gf_cal">
+                <thead>
+                  <tr>
+                    <th>月</th><th>火</th><th>水</th><th>木</th><th>金</th>
+                    <th class="gf_cal_sat">土</th><th class="gf_cal_sun">日</th>
+                  </tr>
+                </thead>
+                <tbody id="cal_body"></tbody>
+              </table>
+
+              <p class="gf_cal_note" style="margin-top: 10px;">
+                <span class="gf_cal_tag gf_tag_holiday">祝</span> 祝日
+                <span class="gf_cal_tag gf_tag_tokubetu">特</span> 特別営業
+                <span class="gf_cal_tag gf_tag_closed">休</span> 終日休業
+                <span class="gf_cal_tag gf_tag_temp">朝昼夜</span> 時間帯休業（計画）
+                <span class="gf_cal_tag gf_tag_unplanned">朝昼夜</span> 時間帯休業（天候・その他）
+              </p>
+
+              <div class="ln_solid"></div>
+
+              <p class="gf_cal_note">
+                <b>祝日について:</b> 来場者予測(AI)は日本の祝日を自動で認識しているため、
+                ここでの祝日設定は予測には影響しません。画面上の日付表示（赤字）と
+                AI分析レポートの参考情報として使用されます。
+              </p>
+              <p class="gf_cal_note">
+                <b>休業理由について:</b> 「計画」を選んだ休業だけが来場者予測に反映されます。
+                台風などの天候起因は事前に予測できないため、予測には使用しません。
+              </p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 1日分の編集ダイアログの中身（SweetAlert2 に流し込む） -->
+  <div id="edit_form_template" style="display: none;">
+    <div style="text-align: left; padding: 0 10px;">
+      <div class="checkbox">
+        <label><input type="checkbox" id="ed_holiday"> 祝日</label>
+      </div>
+      <div class="checkbox">
+        <label><input type="checkbox" id="ed_tokubetu"> 特別営業</label>
+      </div>
+      <div class="checkbox">
+        <label><input type="checkbox" id="ed_closed" onchange="sub913_onToggleClosed()"> 終日休業</label>
+      </div>
+
+      <div class="ln_solid" style="margin: 10px 0;"></div>
+
+      <div id="ed_slot_area">
+        <label style="display: block;">時間帯休業</label>
+        {% for s in closed_slots %}
+          <label style="font-weight: normal; margin-right: 12px;">
+            <input type="checkbox" class="ed_slot" value="{{ s.key }}" onchange="sub913_onToggleSlot()"> {{ s.name }}
+          </label>
+        {% endfor %}
+      </div>
+
+      <div id="ed_reason_area" style="margin-top: 8px;">
+        <label style="display: block;">休業理由</label>
+        <label style="font-weight: normal; margin-right: 12px;">
+          <input type="radio" name="ed_reason" value="planned" checked> 計画（メンテナンス等）
+        </label>
+        <label style="font-weight: normal;">
+          <input type="radio" name="ed_reason" value="unplanned"> 天候・その他
+        </label>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <label style="display: block;">備考</label>
+        <input type="text" id="ed_memo" class="form-control" maxlength="255">
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <script>
+    var gf_913_init = {
+      year: {{ init_year }},
+      month: {{ init_month }},
+      allowPastEdit: {{ allow_past_edit|yesno:"true,false" }}
+    };
+  </script>
+
+  <!-- 913holiday_calendar専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_913.js"></script>
+{% endblock javascripts %}

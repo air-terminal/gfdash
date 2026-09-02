@@ -368,3 +368,63 @@ def com_get_prev_year_offset(pHalf, pMonth, pStartMonth=None):
         return 0
 
     return 1 if com_is_prev_calendar_year_month(pMonth, pStartMonth) else 0
+
+
+# 時間休業フラグ（ta220_memo.temp_closed）のビット定義
+#
+#   bit 0-2 … 休業した時間帯      1:朝 / 2:昼 / 4:夜
+#   bit 3-5 … その休業が「計画」   8:朝 / 16:昼 / 32:夜
+#
+# 計画ビットが立っていない休業は、天候起因など事前に予見できないものとして扱う。
+# 未来予測では計画休業だけを補正の対象にするため、この区別が必要になる。
+# 既存データ（値1〜6）は計画ビットが無く「理由未記録」として解釈される。
+#
+# ※本定義は Access 連携VBAと共有する取り決めです。変更時は双方を揃えること。
+#   仕様の正は docs/codes.md「時間休業フラグ」。
+CLOSED_SLOTS = [
+    ('morning',   '朝', 1, 8),
+    ('afternoon', '昼', 2, 16),
+    ('night',     '夜', 4, 32),
+]
+
+
+def com_parse_temp_closed(pTempClosed):
+    """
+    temp_closed を {時間帯キー: {'closed':bool, 'planned':bool}} に展開する。
+    """
+    value = int(pTempClosed or 0)
+
+    result = {}
+    for key, _name, closed_bit, planned_bit in CLOSED_SLOTS:
+        closed = (value & closed_bit) > 0
+        result[key] = {
+            'closed': closed,
+            # 休業していない時間帯の計画ビットは意味を持たないため無視する
+            'planned': closed and (value & planned_bit) > 0,
+        }
+
+    return result
+
+
+def com_build_temp_closed(pSlots, pIsPlanned):
+    """
+    休業する時間帯のキー一覧と「計画かどうか」から temp_closed を組み立てる。
+
+    休業理由は日単位で選ぶ運用のため、計画の場合は休業する全時間帯に
+    計画ビットを立てる。
+    """
+    value = 0
+    for key, _name, closed_bit, planned_bit in CLOSED_SLOTS:
+        if key not in pSlots:
+            continue
+        value |= closed_bit
+        if pIsPlanned:
+            value |= planned_bit
+
+    return value
+
+
+def com_get_planned_closed_slots(pTempClosed):
+    """計画休業として登録されている時間帯のキー一覧を返す"""
+    parsed = com_parse_temp_closed(pTempClosed)
+    return [key for key, v in parsed.items() if v['closed'] and v['planned']]

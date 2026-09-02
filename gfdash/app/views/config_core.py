@@ -35,6 +35,7 @@ class BaseSystemConfig:
         '910weather_station_config.html': '気象観測地点の設定',
         '911attendance_target_config.html': '来場者達成目標の設定',
         '912fiscal_period_config.html': '年度期間の設定',
+        '913holiday_calendar.html': '休業・祝日カレンダー',
         '920permission_config.html': '画面の権限設定',
     }
 
@@ -99,6 +100,7 @@ class BaseSystemConfig:
             '910weather_station_config.html': getattr(views_module, 'get910_main', None),
             '911attendance_target_config.html': getattr(views_module, 'get911_main', None),
             '912fiscal_period_config.html': getattr(views_module, 'get912_main', None),
+            '913holiday_calendar.html': getattr(views_module, 'get913_main', None),
             '920permission_config.html': getattr(views_module, 'get920_main', None),
         }
 
@@ -129,5 +131,6 @@ class BaseSystemConfig:
             '910weather_station_config.html': getattr(views_module, 'post910_main', None),
             '911attendance_target_config.html': getattr(views_module, 'post911_main', None),
             '912fiscal_period_config.html': getattr(views_module, 'post912_main', None),
+            '913holiday_calendar.html': getattr(views_module, 'post913_main', None),
             '920permission_config.html': getattr(views_module, 'post920_main', None),
         }
