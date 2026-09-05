@@ -7,6 +7,27 @@ from datetime import datetime
 import os
 
 from app.models import Ta215Attnd, Ta220Memo, Tz101WeatherReport, Tz102WeatherAvarage, Tz301AttendanceForecast
+from app.utils.com_forecast import com_get_closure_adjustment
+from app.utils.com_forecast import com_get_closure_factor
+from app.utils.com_forecast import com_get_planned_closures
+
+
+def sub_apply_closure_factor(pForecastDf, pPlanned, pAdjustment):
+    """
+    計画休業が登録されている日の予測値へ、営業時間による補正係数を掛ける。
+
+    予測の上限・下限にも同じ係数を掛ける。休業により来場が減るのは
+    幅の中心だけでなく範囲全体であるため。
+    """
+    for idx, row in pForecastDf.iterrows():
+        day = row['ds'].date()
+        if day not in pPlanned:
+            continue
+
+        factor = com_get_closure_factor(pPlanned[day], pAdjustment, row['ds'].weekday())
+        for col in ('yhat', 'yhat_lower', 'yhat_upper'):
+            pForecastDf.at[idx, col] = row[col] * factor
+
 
 class Command(BaseCommand):
     help = 'Prophetを利用して来場者数を予測し、DB保存および同期用JSONエクスポートを行います(天候・特記学習版)'
@@ -81,6 +102,13 @@ class Command(BaseCommand):
         df.loc[summer_mask, 'summer_temp_diff'] = df['temp_max'] - df['norm_max']
         df.loc[winter_mask, 'winter_temp_diff'] = df['temp_min'] - df['norm_min']
 
+        # ⑥ 時間帯休業フラグを時間帯ごとの 0/1 に分解する
+        # temp_closed はビット演算の論理和（1:朝 2:昼 4:夜）であり、
+        # そのまま回帰変数にすると「夜休業(4)は朝休業(1)の4倍の影響」という
+        # 誤った制約が入る。ビット値は識別子であって大きさではない。
+        for col, bit in (('closed_morning', 1), ('closed_afternoon', 2), ('closed_night', 4)):
+            df[col] = ((df['temp_closed'] & bit) > 0).astype(int)
+
         # =========================================================
         # 2. Prophetモデルの初期化と学習
         # =========================================================
@@ -90,10 +118,12 @@ class Command(BaseCommand):
         # 追加の回帰変数（Regressor）を登録
         m.add_regressor('tokubetu_flg')
         m.add_regressor('closed_flg')
-        m.add_regressor('temp_closed')
+        m.add_regressor('closed_morning')
+        m.add_regressor('closed_afternoon')
+        m.add_regressor('closed_night')
         m.add_regressor('summer_temp_diff')
         m.add_regressor('winter_temp_diff')
-        
+
         m.fit(df)
 
         # =========================================================
@@ -107,7 +137,15 @@ class Command(BaseCommand):
         future_base['tokubetu_flg'] = future_base['tokubetu_flg'].fillna(False).astype(int)
         future_base['closed_flg'] = future_base['closed_flg'].fillna(False).astype(int)
         future_base['temp_closed'] = future_base['temp_closed'].fillna(0).astype(int)
-        
+
+        # 時間帯休業は「通常営業の予測を出してから補正係数を掛ける」方式で扱うため、
+        # 回帰変数としては 0（通常営業）を渡す。
+        # 休業日は全期間でごく少数しかなく、係数を学習させるには足りない。
+        # 学習時に含めているのは平常日の基準線を歪めないためであって、
+        # 未来の予測をその係数に委ねるのは精度が伴わない。
+        for col in ('closed_morning', 'closed_afternoon', 'closed_night'):
+            future_base[col] = 0
+
         f_summer_mask = future_base['ds'].dt.month.isin([6, 7, 8, 9, 10])
         f_winter_mask = future_base['ds'].dt.month.isin([12, 1, 2])
 
@@ -134,6 +172,24 @@ class Command(BaseCommand):
         future_low.loc[f_summer_mask, 'summer_temp_diff'] = -2.0
         future_low.loc[f_winter_mask, 'winter_temp_diff'] = -2.0
         forecast_low = m.predict(future_low)
+
+        # --- 計画休業日の補正 ---
+        # 事前に分かっている計画休業について、通常営業を前提に出した予測値へ
+        # 営業時間による補正係数を掛ける。天候起因の休業は未来について
+        # 予見できないため対象にしない。
+        adjustment = com_get_closure_adjustment()
+        target_dates = [d.date() for d in future_base['ds']]
+        planned = com_get_planned_closures(target_dates)
+
+        if planned:
+            self.stdout.write(
+                f"計画休業 {len(planned)}日 に営業時間の補正を適用します"
+                f"（実績 {adjustment['sample_count']}日 から算出）"
+            )
+            for forecast_df in (forecast_normal, forecast_high, forecast_low):
+                sub_apply_closure_factor(forecast_df, planned, adjustment)
+        else:
+            self.stdout.write("補正対象となる計画休業は登録されていません")
 
         # =========================================================
         # 4. データベースへ保存 (3パターン)
