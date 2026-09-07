@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 ###################################################################
 #dockerを使わずローカル環境で実行する場合は、
@@ -186,8 +187,46 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma4:e4b')
 # 独自の追加プロンプトを格納するディレクトリ (このディレクトリは .gitignore で非公開にする)
 LLM_CUSTOM_PROMPT_DIR = os.path.join(BASE_DIR, 'custom_prompts')
 
-OLLAMA_NUM_CTX = 4096                   # LLMが確保する記憶領域(トークン数)のデフォルト
-OLLAMA_TIMEOUT = 300                    # APIのタイムアウト秒数（CPU処理などで遅い場合は 600 等に延長）
+# プリセットの定義は Django に依存しないモジュールへ置いている。
+# settings の評価時点ではアプリがロードされておらず、models を import する
+# モジュール(com_utils 等)からは読めないため。
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+from app.utils.com_llm_preset import com_get_llm_preset, DEFAULT_PRESET_KEY  # noqa: E402
+
+# LLM の実行パラメータ。
+#
+# 通常はモデルを変えたとき以外に触らないため、プリセット名だけを指定できる
+# ようにしている。OLLAMA_PRESET に以下のいずれかを指定する。
+#   standard / long_running / low_memory / high_context / thinking
+#
+# 個別の環境変数を設定した場合はプリセットより優先される。
+# どちらも未設定なら standard となり、従来の既定値と同じになる。
+OLLAMA_PRESET = os.environ.get('OLLAMA_PRESET', DEFAULT_PRESET_KEY)
+_llm_preset = com_get_llm_preset(OLLAMA_PRESET)
+
+# LLMが確保する記憶領域(トークン数)。値を上げるとより多くの実績データを
+# プロンプトに含められるが、VRAM の使用量も増える。
+OLLAMA_NUM_CTX = int(os.environ.get('OLLAMA_NUM_CTX') or _llm_preset['num_ctx'])
+
+# APIのタイムアウト秒数。CPUオフロードが発生する構成や大きなモデルでは
+# レポート生成に時間がかかるため、必要に応じて延長する。
+OLLAMA_TIMEOUT = int(os.environ.get('OLLAMA_TIMEOUT') or _llm_preset['timeout'])
+
+# 思考(thinking)を有効にするかどうか。
+#
+# 思考は与えられた文脈を埋めるように消費される。現在のレポートは集計済みの
+# 数値を定型の見出しに沿って記述するもので推論の深さを要さないため、
+# 有効にすると処理時間だけが延び、コンテキストが不足すると本文が
+# 生成されないまま終わる。
+#
+# 多段推論を伴うプロンプトを使う場合は有効にする価値があるが、その際は
+# 「プロンプト + 思考 + 本文」が収まるよう OLLAMA_NUM_CTX も併せて広げること。
+# 思考に対応しないモデルへはこの設定を送信しない。
+if 'OLLAMA_THINK' in os.environ:
+    OLLAMA_THINK = os.environ['OLLAMA_THINK'] == 'True'
+else:
+    OLLAMA_THINK = _llm_preset['think']
 # Ollama に送るプロンプトをログ出力するか（開発時の調査用）
 # .env / docker-compose の環境変数で上書きできます
 OLLAMA_LOG_PROMPT = os.environ.get('OLLAMA_LOG_PROMPT', 'False') == 'True'

@@ -22,7 +22,83 @@ class Command(BaseCommand):
                             help='対象年月 (フォーマット: YYYY-MM)')
         parser.add_argument('--model', type=str, default=None, help='使用するLLMモデル名')
         parser.add_argument('--list-models', action='store_true', help='使用可能なLLM一覧をJSONで返す')
-        parser.add_argument('--stream', action='store_true', help='ストリーミング出力を有効にする')        
+        parser.add_argument('--stream', action='store_true', help='ストリーミング出力を有効にする')
+        parser.add_argument('--num-ctx', type=int, default=None,
+                            help='LLMが確保する記憶領域(トークン数)。未指定なら OLLAMA_NUM_CTX')
+        parser.add_argument('--timeout', type=int, default=None,
+                            help='APIのタイムアウト秒数。未指定なら OLLAMA_TIMEOUT')
+        parser.add_argument('--think', dest='think', action='store_true', default=None,
+                            help='思考(thinking)を有効にする。未指定なら OLLAMA_THINK')
+        parser.add_argument('--no-think', dest='think', action='store_false',
+                            help='思考(thinking)を無効にする')
+
+    def supports_thinking(self, pApiUrl, pModel):
+        """
+        モデルが思考(thinking)に対応しているかを /api/show の capabilities で判定する。
+
+        Ollama のバージョン番号では判定しない。新しいバージョンでも
+        非対応モデルに think を送れば弾かれるため、モデル単位で見る必要がある。
+        capabilities を返さない古いバージョンでは空になり、think を送らない
+        （従来と同じ動作になる）。
+        """
+        show_url = pApiUrl.replace('/api/generate', '/api/show')
+        try:
+            res = requests.post(show_url, json={'model': pModel}, timeout=10)
+            res.raise_for_status()
+            return 'thinking' in (res.json().get('capabilities') or [])
+        except Exception:
+            # 判定できない場合は送らない。余計な指定で実行そのものを
+            # 失敗させるより、従来どおりの動作に倒すほうが安全
+            return False
+
+    def sub_write_stats(self, pStats, pThinkText):
+        """
+        Ollama が返す診断情報を出力する。
+
+        done_reason が length ならコンテキスト超過、生成速度が極端に遅ければ
+        CPUオフロードというように、原因の切り分けに直接使える。
+        これが無いと、空のレポートが出来た理由を追えない。
+        """
+        if not pStats:
+            return
+
+        eval_count = pStats.get('eval_count') or 0
+        eval_duration = pStats.get('eval_duration') or 0
+        prompt_count = pStats.get('prompt_eval_count') or 0
+
+        parts = [
+            f"終了理由={pStats.get('done_reason')}",
+            f"プロンプト={prompt_count}トークン",
+            f"生成={eval_count}トークン",
+        ]
+        if eval_duration > 0:
+            secs = eval_duration / 1_000_000_000
+            parts.append(f"生成時間={secs:.1f}秒 ({eval_count / secs:.1f}トークン/秒)")
+        if pThinkText:
+            parts.append(f"思考={len(pThinkText)}文字")
+
+        self.stdout.write("\n[実行情報] " + " / ".join(parts) + "\n", ending='')
+        self.stdout.flush()
+
+    def sub_empty_report_hint(self, pStats, pThinkText):
+        """本文が空だったときに、状況に応じた対処を案内する"""
+        if pStats.get('done_reason') == 'length':
+            return (
+                "コンテキストを使い切っています（終了理由: length）。\n"
+                "  ・思考を無効にする（--no-think / .env の OLLAMA_THINK=False）\n"
+                "  ・OLLAMA_NUM_CTX を増やす、または画面のプリセットで大きい値を選ぶ\n"
+                "  思考は与えられた文脈を埋めるように消費されるため、有効にする場合は\n"
+                "  「プロンプト + 思考 + 本文」が収まる大きさが必要です。"
+            )
+        if pThinkText:
+            return (
+                "思考のみが出力され、本文が生成されませんでした。\n"
+                "  --no-think で思考を無効にするか、OLLAMA_NUM_CTX を増やしてください。"
+            )
+        return (
+            "モデルが応答を返しませんでした。モデル名の指定と、\n"
+            "  Ollama 側でモデルが正常に読み込めているかを確認してください。"
+        )
 
     def get_custom_prompt(self, mode):
         """外部ファイルから独自の追加プロンプトを読み込む（存在しない場合は空文字を返す）"""
@@ -309,8 +385,14 @@ class Command(BaseCommand):
         # Ollama APIの呼び出し
         # ---------------------------------------------------------
         api_url = getattr(settings, 'OLLAMA_API_URL', 'http://localhost:11434/api/generate')
-        num_ctx = getattr(settings, 'OLLAMA_NUM_CTX', 4096)
-        timeout_val = getattr(settings, 'OLLAMA_TIMEOUT', 300)
+
+        # 引数での指定を優先し、無ければ .env(settings)の既定値を使う
+        num_ctx = options.get('num_ctx') or getattr(settings, 'OLLAMA_NUM_CTX', 4096)
+        timeout_val = options.get('timeout') or getattr(settings, 'OLLAMA_TIMEOUT', 300)
+
+        think_val = options.get('think')
+        if think_val is None:
+            think_val = getattr(settings, 'OLLAMA_THINK', False)
 
         payload = {
             "model": target_model,
@@ -322,6 +404,19 @@ class Command(BaseCommand):
             }
         }
 
+        # 思考は対応モデルにのみ指定する。非対応モデルに送るとエラーになる。
+        # 思考を明示的に切らないと、モデルによっては思考だけで num_ctx を
+        # 使い切り、本文が生成されないまま length で終了する。
+        think_state = '対象外(非対応モデル)'
+        if self.supports_thinking(api_url, target_model):
+            payload['think'] = bool(think_val)
+            think_state = '有効' if think_val else '無効'
+
+        self.stdout.write(
+            f"実行パラメータ: num_ctx={num_ctx} / timeout={timeout_val}秒 / 思考={think_state}\n",
+            ending=''
+        )
+
         if not is_stream:
             self.stdout.write(f"Ollama API ({api_url} / モデル: {target_model}) にリクエストを送信中...\n", ending='')
             self.stdout.flush()
@@ -330,18 +425,41 @@ class Command(BaseCommand):
             response = requests.post(api_url, json=payload, timeout=timeout_val, stream=is_stream)
             response.raise_for_status()
             report_text = ""
-            
+            think_text = ""
+            stats = {}
+
             if is_stream:
                 for line in response.iter_lines():
                     if line:
                         chunk = json.loads(line.decode('utf-8'))
+                        # 思考は response とは別に届く。取り込まないと
+                        # 「何も起きていない」ように見えたまま処理が進む
+                        think_part = chunk.get("thinking") or ""
+                        if think_part and not think_text:
+                            self.stdout.write("\n[思考中...]\n", ending='')
+                        think_text += think_part
                         response_part = chunk.get("response", "")
                         report_text += response_part
                         self.stdout.write(response_part, ending='')
                         self.stdout.flush()
+                        if chunk.get("done"):
+                            stats = chunk
             else:
-                report_text = response.json().get("response", "")
+                stats = response.json()
+                think_text = stats.get("thinking") or ""
+                report_text = stats.get("response", "")
                 self.stdout.write(report_text)
+
+            self.sub_write_stats(stats, think_text)
+
+            # 本文が空のまま保存すると、画面には成功と表示されるのに
+            # 中身の無いレポートが残る。原因が何であれ保存しない。
+            if not report_text.strip():
+                self.stderr.write(self.style.ERROR(
+                    f"❌ レポート本文が生成されませんでした。DBには保存していません。\n"
+                    f"{self.sub_empty_report_hint(stats, think_text)}"
+                ))
+                return
 
             # DB保存用のレポート本文末尾に、使用モデルとバージョン情報を追記
             footer_text = f"\n\n---\n* **Model**: {target_model}\n* **System Version**: run_llm_analysis {SCRIPT_VERSION}"
@@ -373,7 +491,11 @@ class Command(BaseCommand):
         except requests.exceptions.Timeout:
             self.stderr.write(self.style.ERROR(
                 f"❌ Ollamaの処理がタイムアウトしました（現在の上限: {timeout_val}秒）。\n"
-                f"CPUオフロード等の影響で処理が終わらない場合、settings.py の OLLAMA_TIMEOUT の値を増やすか、より軽量なモデルに変更してください。"
+                f"次のいずれかを試してください。\n"
+                f"  ・AIバッチ実行画面(490)の「実行パラメータ」から、時間の長いプリセットを選ぶ\n"
+                f"  ・.env の OLLAMA_TIMEOUT を増やす（既定 300 秒）\n"
+                f"  ・.env の OLLAMA_NUM_CTX を減らす（VRAM不足で極端に遅い場合）\n"
+                f"  ・より軽量なモデルに変更する"
             ))
             return
         except Exception as e:

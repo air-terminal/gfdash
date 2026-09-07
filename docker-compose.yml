@@ -23,7 +23,14 @@ services:
     entrypoint: /code/entrypoint.sh
     # 本番サーバ。Django 開発サーバ(runserver)は本番利用が非推奨のため gunicorn を使う。
     # 開発中に自動リロードが欲しい場合は docker-compose.override.yml で差し替える(README 参照)。
-    command: gunicorn --chdir gfdash gfdash.wsgi:application --bind 0.0.0.0:8080 --workers ${GUNICORN_WORKERS:-2} --timeout 120 --access-logfile - --error-logfile -
+    #
+    # ワーカークラスに gthread を指定している。既定の sync はリクエストの処理中に
+    # アービタへハートビートを返さないため、--timeout を超える処理が強制終了される。
+    # AIレポート生成のように時間のかかる処理が対象になる。ストリーミング応答でも
+    # 回避できない(レスポンスのジェネレータ消費も同じ非通知区間の内側にあるため)。
+    # gthread は別スレッドでハートビートを送るので、長い処理を通しつつ
+    # 本当にハングしたワーカーの検出は維持される。
+    command: gunicorn --chdir gfdash gfdash.wsgi:application --bind 0.0.0.0:8080 --workers ${GUNICORN_WORKERS:-2} --worker-class gthread --threads ${GUNICORN_THREADS:-4} --timeout 120 --access-logfile - --error-logfile -
     volumes:
       - .:/code
     ports:

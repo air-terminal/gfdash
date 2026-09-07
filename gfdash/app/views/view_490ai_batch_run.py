@@ -10,11 +10,19 @@ import traceback
 import queue      
 import threading  
 from app.models import Ta215Attnd
+from app.utils.com_llm_preset import com_get_llm_presets
 
 def get490_main(ctx):
     # settings.py の制御フラグを取得
     ctx['disable_batch_execution'] = getattr(settings, 'DISABLE_BATCH_EXECUTION', False)
     ctx['allow_model_select'] = getattr(settings, 'OLLAMA_ALLOW_MODEL_SELECT', False)
+
+    # LLM の実行パラメータ。既定値は .env(settings) から取得する。
+    # 画面ではこれを起点に、プリセットまたは個別指定で上書きできる。
+    ctx['llm_num_ctx'] = getattr(settings, 'OLLAMA_NUM_CTX', 4096)
+    ctx['llm_timeout'] = getattr(settings, 'OLLAMA_TIMEOUT', 300)
+    ctx['llm_think'] = getattr(settings, 'OLLAMA_THINK', False)
+    ctx['llm_presets_json'] = json.dumps(com_get_llm_presets(), ensure_ascii=False)
     
     # 🌟 修正: 来場者数データが入っている最終日付の年月（YYYY-MM）を自動計算してセット
     try:
@@ -98,6 +106,24 @@ def post490_main(request):
         target_model = dic.get('model')
         if target_model:
             call_kwargs['model'] = target_model
+
+        # 思考の有無。画面から明示されたときだけコマンドへ渡す。
+        raw_think = dic.get('think')
+        if raw_think in ('true', 'false'):
+            call_kwargs['think'] = (raw_think == 'true')
+
+        # 実行パラメータ。未指定なら settings の既定値が使われる。
+        # 画面からの入力なので、数値にならない値は無視して既定値に委ねる。
+        for key in ('num_ctx', 'timeout'):
+            raw = dic.get(key)
+            if not raw:
+                continue
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                call_kwargs[key] = value
     else:
         def unknown_generator():
             yield "不明なバッチタイプです。"

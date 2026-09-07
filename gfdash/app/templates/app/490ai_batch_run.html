@@ -6,6 +6,14 @@
   <link href="/static/build/css/custom_gf.css" rel="stylesheet" type="text/css">
   <style>
     /* ログ出力用のコンソール風スタイル */
+    /* SweetAlert2 は .swal2-popup に font-size:1rem を指定しているが、
+       Bootstrap3 が html{font-size:10px} を敷いているため 10px 基準になり、
+       画面本体(13px)より小さく表示される。この画面のダイアログだけ
+       本体と同じ大きさに揃える。 */
+    .gf-llm-param-dialog,
+    .gf-llm-param-dialog .swal2-html-container {
+        font-size: 13px;
+    }
     .terminal-log {
         background-color: #1E1E1E;
         color: #00FF00;
@@ -113,6 +121,23 @@
                       {% endif %}
 
                       <div class="form-group">
+                        <label class="control-label col-md-3 col-sm-3 col-xs-12">実行パラメータ</label>
+                        <div class="col-md-9 col-sm-9 col-xs-12">
+                          <p class="form-control-static" style="padding-top: 7px;">
+                            <span id="llm_param_label">標準</span>
+                            <small class="text-muted">
+                              (num_ctx <span id="llm_param_ctx">{{ llm_num_ctx }}</span>
+                               / timeout <span id="llm_param_timeout">{{ llm_timeout }}</span>秒
+                               / 思考 <span id="llm_param_think"></span>)
+                            </small>
+                            <button type="button" class="btn btn-default btn-sm" onclick="openLlmParamDialog()" style="margin-left: 8px;">
+                              <i class="fa-solid fa-sliders"></i> 実行パラメータを変更
+                            </button>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div class="form-group">
                         <div class="col-md-9 col-sm-9 col-xs-12 col-md-offset-3">
                           <button type="button" class="btn btn-primary" onclick="runBatch('llm')" {% if disable_batch_execution %}disabled{% endif %}>
                             <i class="fa-solid fa-play"></i> LLMバッチを実行
@@ -145,5 +170,10 @@
   {{ block.super }}
   <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
   <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+  <script>
+    // LLM実行パラメータのプリセットと既定値。定義は app/utils/com_utils.py にある。
+    var gLlmPresets = {{ llm_presets_json|safe }};
+    var gLlmParams  = { num_ctx: {{ llm_num_ctx }}, timeout: {{ llm_timeout }}, think: {{ llm_think|yesno:"true,false" }} };
+  </script>
   <script src="/static/build/js/customjs_490.js"></script>
 {% endblock javascripts %}
