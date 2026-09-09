@@ -36,6 +36,9 @@
     .gf_tag_closed   { background-color: #34495E; }
     .gf_tag_temp     { background-color: #E67E22; }
     .gf_tag_unplanned{ background-color: #7F8C8D; }
+    /* 第2休日。自社の休業とは別の情報なので寒色系にして区別する */
+    .gf_tag_h2_off   { background-color: #2980B9; }
+    .gf_tag_h2_work  { background-color: #16A085; }
     .gf_cal_memo { color: #888; font-size: 0.78em; margin-top: 2px;
                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .gf_cal_note { color: #999; font-size: 0.9em; }
@@ -85,6 +88,10 @@
                 <span class="gf_cal_tag gf_tag_closed">休</span> 終日休業
                 <span class="gf_cal_tag gf_tag_temp">朝昼夜</span> 時間帯休業（計画）
                 <span class="gf_cal_tag gf_tag_unplanned">朝昼夜</span> 時間帯休業（天候・その他）
+                {% if holiday2_calendars %}
+                <span class="gf_cal_tag gf_tag_h2_off">休2</span> 第2休日
+                <span class="gf_cal_tag gf_tag_h2_work">働</span> 第2休日（稼働）
+                {% endif %}
               </p>
 
               <div class="ln_solid"></div>
@@ -141,6 +148,33 @@
         </label>
       </div>
 
+      {% if holiday2_calendars %}
+      <div class="ln_solid" style="margin: 10px 0;"></div>
+
+      <div id="ed_holiday2_area">
+        <label style="display: block;">第2休日</label>
+        {% for c in holiday2_calendars %}
+          <div style="margin-bottom: 6px;">
+            <span style="display: inline-block; min-width: 9em;">{{ c.name }}</span>
+            <label style="font-weight: normal; margin-right: 10px;">
+              <input type="radio" name="ed_h2_{{ c.cls }}" value="0" checked> なし
+            </label>
+            <label style="font-weight: normal; margin-right: 10px;">
+              <input type="radio" name="ed_h2_{{ c.cls }}" value="1"> 休日
+            </label>
+            <label style="font-weight: normal;">
+              <input type="radio" name="ed_h2_{{ c.cls }}" value="2"> 稼働日
+            </label>
+          </div>
+        {% endfor %}
+        <p class="text-muted" style="margin: 4px 0 0;">
+          通常の曜日パターンと違う日だけ指定してください。
+          土日が休みなのは指定不要です（予測が曜日として学習済みのため）。
+          「稼働日」は土日や祝日に操業する場合に使います。
+        </p>
+      </div>
+      {% endif %}
+
       <div style="margin-top: 10px;">
         <label style="display: block;">備考</label>
         <input type="text" id="ed_memo" class="form-control" maxlength="255">
@@ -158,7 +192,9 @@
     var gf_913_init = {
       year: {{ init_year }},
       month: {{ init_month }},
-      allowPastEdit: {{ allow_past_edit|yesno:"true,false" }}
+      allowPastEdit: {{ allow_past_edit|yesno:"true,false" }},
+      // 第2休日カレンダー。無効な環境では空配列になり、UIは出ない
+      holiday2: {{ holiday2_json|safe }}
     };
   </script>
 

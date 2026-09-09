@@ -6,9 +6,10 @@ from datetime import date, datetime
 import calendar
 import json
 
-from ..models import Ta220Memo
+from ..models import Ta220Memo, Tz810Holiday2
 from ..utils.com_utils import CLOSED_SLOTS
 from ..utils.com_utils import com_build_temp_closed
+from ..utils.com_utils import com_get_holiday2_calendars
 from ..utils.com_utils import com_parse_temp_closed
 
 # 休業理由。時間帯ごとではなく日単位で選ぶ運用のため2択にしている。
@@ -23,6 +24,10 @@ def get913_main(ctx):
     ctx['allow_past_edit'] = sub913_allow_past_edit()
     ctx['init_year'] = today.year
     ctx['init_month'] = today.month
+
+    # 第2休日カレンダー。無効な環境や名称未設定なら空になり、画面には現れない
+    ctx['holiday2_calendars'] = com_get_holiday2_calendars()
+    ctx['holiday2_json'] = json.dumps(ctx['holiday2_calendars'], ensure_ascii=False)
 
     return ctx
 
@@ -63,6 +68,15 @@ def sub913_get_month(pYear, pMonth):
         for r in Ta220Memo.objects.filter(business_day__gte=first, business_day__lte=last)
     }
 
+    # 第2休日は日付ごとに複数のカレンダーが登録されうるため
+    # {日付: {カレンダー種別: 日区分}} の形で持つ
+    holiday2 = {}
+    if com_get_holiday2_calendars():
+        for r in Tz810Holiday2.objects.filter(
+            business_day__gte=first, business_day__lte=last
+        ).values('business_day', 'calendar_cls', 'day_cls'):
+            holiday2.setdefault(r['business_day'], {})[r['calendar_cls']] = r['day_cls']
+
     today = date.today()
     days = []
     for d in range(1, last_day + 1):
@@ -88,6 +102,8 @@ def sub913_get_month(pYear, pMonth):
             # 休業時間帯が無い日は理由の選択も無い
             'reason': (REASON_PLANNED if planned else REASON_UNPLANNED) if closed_keys else '',
             'memo': (rec.memo or '') if rec else '',
+            # {カレンダー種別: 日区分} をそのまま渡す。JSONのキーは文字列になる
+            'holiday2': holiday2.get(bday, {}),
         })
 
     return {
@@ -98,6 +114,44 @@ def sub913_get_month(pYear, pMonth):
         'lead_blanks': first.weekday(),
         'days': days,
     }
+
+
+def sub913_save_holiday2(pBusinessDay, pEntry):
+    """
+    1日分の第2休日を保存する。
+
+    画面から送られるのは {カレンダー種別: 日区分} で、区分が 0（なし）の
+    ものは行を削除する。行の有無が「その日が通常と違うか」を表すため、
+    「なし」を0として保持せず、行そのものを消す。
+
+    無効な環境や未設定のカレンダーは対象外。画面に出ていないものが
+    送られてきても書き込まない。
+    """
+    calendars = {c['cls'] for c in com_get_holiday2_calendars()}
+    if not calendars:
+        return
+
+    entry = pEntry if isinstance(pEntry, dict) else {}
+
+    for cls in calendars:
+        # JSONのキーは文字列で届くため、両方の形を見る
+        raw = entry.get(str(cls), entry.get(cls))
+        try:
+            day_cls = int(raw)
+        except (TypeError, ValueError):
+            day_cls = 0
+
+        if day_cls not in (Tz810Holiday2.HOLIDAY, Tz810Holiday2.WORKDAY):
+            Tz810Holiday2.objects.filter(
+                calendar_cls=cls, business_day=pBusinessDay
+            ).delete()
+            continue
+
+        Tz810Holiday2.objects.update_or_create(
+            calendar_cls=cls,
+            business_day=pBusinessDay,
+            defaults={'day_cls': day_cls},
+        )
 
 
 def sub913_save(pBusinessDay, pEntryJson):
@@ -153,6 +207,8 @@ def sub913_save(pBusinessDay, pEntryJson):
                 temp_closed=temp_closed,
                 memo=memo,
             )
+
+        sub913_save_holiday2(bday, entry.get('holiday2'))
 
     return {
         'save_success': True,

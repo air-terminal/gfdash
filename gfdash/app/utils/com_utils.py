@@ -428,3 +428,59 @@ def com_get_planned_closed_slots(pTempClosed):
     """計画休業として登録されている時間帯のキー一覧を返す"""
     parsed = com_parse_temp_closed(pTempClosed)
     return [key for key, v in parsed.items() if v['closed'] and v['planned']]
+
+
+# 第2休日カレンダーの種別（tz901 code=8）
+#   num … カレンダー種別。tz810_holiday2.calendar_cls に対応する
+#   code_name2 … 表示名。空欄なら未使用として扱う
+#
+# 名称は導入先ごとに異なるため、初期値は空にしている。名称が入っている枠だけを
+# 「使用中のカレンダー」とみなすことで、使う本数の設定を別に持たずに済む。
+TZ901_HOLIDAY2_CODE = 8
+
+
+def com_get_holiday2_calendars():
+    """
+    使用中の第2休日カレンダーを [{'cls': num, 'name': 表示名}] で返す。
+
+    名称が空の枠は未使用として除外する。ENABLE_HOLIDAY2 が無効な環境では
+    常に空を返し、呼び出し側で分岐を書かずに済むようにしている。
+    """
+    from django.conf import settings
+
+    if not getattr(settings, 'ENABLE_HOLIDAY2', False):
+        return []
+
+    calendars = []
+    for row in (
+        Tz901ComName.objects
+        .filter(code=TZ901_HOLIDAY2_CODE)
+        .values('num', 'code_name2')
+        .order_by('num')
+    ):
+        name = (row['code_name2'] or '').strip()
+        if name:
+            calendars.append({'cls': row['num'], 'name': name})
+
+    return calendars
+
+
+def com_save_holiday2_calendar_name(pCls, pName):
+    """
+    第2休日カレンダーの表示名を保存する。
+
+    ※ Tz901ComName は実テーブルが (code, num) の複合主キーだが、モデル上は
+      code だけを primary_key として宣言している。そのため save() や
+      update_or_create() を使うと UPDATE ... WHERE code = n となり、
+      同じ code の行をまとめて壊す。必ず filter().update() を使うこと。
+    """
+    name = (pName or '').strip()
+    updated = Tz901ComName.objects.filter(
+        code=TZ901_HOLIDAY2_CODE, num=pCls
+    ).update(code_name2=name)
+
+    if updated == 0:
+        Tz901ComName.objects.create(
+            code=TZ901_HOLIDAY2_CODE, num=pCls,
+            code_name=f'第2休日カレンダー{pCls}', code_name2=name
+        )

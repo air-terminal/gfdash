@@ -316,6 +316,36 @@ class Tz302LlmAnalysis(models.Model):
         verbose_name = "AI月次分析レポート"
         verbose_name_plural = "AI月次分析レポート"
 
+class Tz810Holiday2(models.Model):
+    """
+    第2休日カレンダー。
+
+    国民の祝日とは異なる休日体系を持つ顧客層の操業カレンダーを保持する。
+    行があるのは「通常の週パターンと食い違う日」だけでよく、土日を休日として
+    登録する必要はない。曜日の効果は週次季節性が既に学習しているため。
+    """
+    HOLIDAY = 1
+    WORKDAY = 2
+    DAY_CLS_CHOICES = (
+        (HOLIDAY, '休日'),
+        (WORKDAY, '稼働日'),
+    )
+
+    calendar_cls = models.IntegerField(verbose_name="カレンダー種別")
+    business_day = models.DateField(verbose_name="対象日")
+    day_cls = models.SmallIntegerField(
+        default=HOLIDAY, choices=DAY_CLS_CHOICES, verbose_name="日区分"
+    )
+    memo = models.CharField(max_length=255, blank=True, null=True, verbose_name="備考")
+    input_date = models.DateField(auto_now_add=True, verbose_name="入力日")
+
+    class Meta:
+        managed = False
+        db_table = 'tz810_holiday2'
+        unique_together = (('calendar_cls', 'business_day'),)
+        verbose_name = "第2休日カレンダー"
+        verbose_name_plural = "第2休日カレンダー"
+
 class Tz901ComName(models.Model):
     code = models.IntegerField(primary_key=True)
     num = models.IntegerField(blank=False, null=False)

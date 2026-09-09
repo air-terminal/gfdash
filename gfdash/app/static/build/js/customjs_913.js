@@ -69,6 +69,16 @@ function sub913_buildTags(d) {
         var names = d.closed_slots.map(function(s) { return SUB913_SLOT_NAMES[s] || s; }).join('');
         html += '<span class="gf_cal_tag ' + cls + '">' + names + '</span>';
     }
+
+    // 第2休日。休業タグと区別できるよう別の色にし、休/働の文字で区分を示す
+    (gf_913_init.holiday2 || []).forEach(function(c) {
+        var v = (d.holiday2 || {})[c.cls] || (d.holiday2 || {})[String(c.cls)];
+        if (!v) { return; }
+        var cls2 = (Number(v) === 2) ? 'gf_tag_h2_work' : 'gf_tag_h2_off';
+        html += '<span class="gf_cal_tag ' + cls2 + '" title="' + sub913_escape(c.name) + '">'
+              + (Number(v) === 2 ? '働' : '休2') + '</span>';
+    });
+
     return html;
 }
 
@@ -171,18 +181,31 @@ function sub913_openEdit(pDay) {
             sub913_$('input[name="ed_reason"][value="' + (d.reason || 'planned') + '"]')
                 .prop('checked', true);
             sub913_$('#ed_memo').val(d.memo);
+            // 第2休日は {カレンダー種別: 日区分}。未登録の日は「なし」が選ばれる
+            (gf_913_init.holiday2 || []).forEach(function(c) {
+                var v = (d.holiday2 || {})[c.cls] || (d.holiday2 || {})[String(c.cls)] || 0;
+                sub913_$('input[name="ed_h2_' + c.cls + '"][value="' + v + '"]')
+                    .prop('checked', true);
+            });
             sub913_onToggleClosed();
         },
         preConfirm: () => {
             var slots = [];
             sub913_$('.ed_slot:checked').each(function() { slots.push($(this).val()); });
+
+            var holiday2 = {};
+            (gf_913_init.holiday2 || []).forEach(function(c) {
+                holiday2[c.cls] = sub913_$('input[name="ed_h2_' + c.cls + '"]:checked').val() || '0';
+            });
+
             return {
                 holiday_flg:  sub913_$('#ed_holiday').is(':checked'),
                 tokubetu_flg: sub913_$('#ed_tokubetu').is(':checked'),
                 closed_flg:   sub913_$('#ed_closed').is(':checked'),
                 closed_slots: slots,
                 reason:       sub913_$('input[name="ed_reason"]:checked').val(),
-                memo:         sub913_$('#ed_memo').val()
+                memo:         sub913_$('#ed_memo').val(),
+                holiday2:     holiday2
             };
         }
     }).then((result) => {

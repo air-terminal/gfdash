@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 
 from app.models import Ta215Attnd, Ta220Memo, Tz101WeatherReport, Tz102WeatherAvarage, Tz301AttendanceForecast
+from app.utils.com_holiday2 import com_build_holiday2_regressors
 from app.utils.com_forecast import com_get_closure_adjustment
 from app.utils.com_forecast import com_get_closure_factor
 from app.utils.com_forecast import com_get_planned_closures
@@ -109,6 +110,12 @@ class Command(BaseCommand):
         for col, bit in (('closed_morning', 1), ('closed_afternoon', 2), ('closed_night', 4)):
             df[col] = ((df['temp_closed'] & bit) > 0).astype(int)
 
+        # ⑦ 第2休日。通常の週パターンと食い違う日だけを変数にする。
+        # 登録が無い環境・無効な環境では空になり、モデルの構成は変わらない。
+        holiday2_cols = com_build_holiday2_regressors(df)
+        if holiday2_cols:
+            self.stdout.write(f"第2休日を考慮します: {holiday2_cols}")
+
         # =========================================================
         # 2. Prophetモデルの初期化と学習
         # =========================================================
@@ -123,6 +130,8 @@ class Command(BaseCommand):
         m.add_regressor('closed_night')
         m.add_regressor('summer_temp_diff')
         m.add_regressor('winter_temp_diff')
+        for col in holiday2_cols:
+            m.add_regressor(col)
 
         m.fit(df)
 
@@ -145,6 +154,13 @@ class Command(BaseCommand):
         # 未来の予測をその係数に委ねるのは精度が伴わない。
         for col in ('closed_morning', 'closed_afternoon', 'closed_night'):
             future_base[col] = 0
+
+        # 第2休日は未来のぶんも登録済みなので、学習時と同じ規則で値を入れる。
+        # 学習時に採用した列だけを揃える必要があるため、不足分は0で補う。
+        com_build_holiday2_regressors(future_base)
+        for col in holiday2_cols:
+            if col not in future_base.columns:
+                future_base[col] = 0
 
         f_summer_mask = future_base['ds'].dt.month.isin([6, 7, 8, 9, 10])
         f_winter_mask = future_base['ds'].dt.month.isin([12, 1, 2])
