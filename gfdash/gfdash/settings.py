@@ -178,6 +178,20 @@ IS_SAMPLE_MODE = os.environ.get('IS_SAMPLE_MODE', 'False') == 'True'
 # ==========================================
 # LLM (Ollama) / Batch Execution Settings
 # ==========================================
+# 使用する推論エンジンのAPI方言。
+#   ollama … Ollama のネイティブAPI（既定。従来どおりの動作）
+#   openai … OpenAI互換API。FreeToken / llama.cpp server / vLLM / LM Studio など
+#
+# 互換APIではコンテキスト長と思考の切り替えをリクエストで指定できないため、
+# OLLAMA_NUM_CTX / OLLAMA_THINK は送信されない（サーバ側の設定に従う）。
+LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'ollama')
+
+# OpenAI互換API（LLM_PROVIDER=openai のとき）の接続先。
+# /v1 まで含めて指定する。ローカルのエンジンは認証を求めないことが多く、
+# APIキーは空のままで構わない（空なら Authorization ヘッダを送らない）。
+OPENAI_API_BASE = os.environ.get('OPENAI_API_BASE', 'http://host.docker.internal:8080/v1')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+
 # OllamaのAPIエンドポイント (Dockerのネットワーク構成に合わせて .env で上書き可能)
 OLLAMA_API_URL = os.environ.get('OLLAMA_API_URL', 'http://host.docker.internal:11434/api/generate')
 

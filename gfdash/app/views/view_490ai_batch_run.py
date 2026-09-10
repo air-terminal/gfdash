@@ -3,13 +3,13 @@ from django.shortcuts import render
 from django.http import HttpResponse, StreamingHttpResponse  # 👈 StreamingHttpResponse を追加
 from django.core.management import call_command
 from django.conf import settings
-from io import StringIO
 from django.db import close_old_connections
 import json
 import traceback
 import queue      
 import threading  
 from app.models import Ta215Attnd
+from app.utils.com_llm import com_get_llm_client
 from app.utils.com_llm_preset import com_get_llm_presets
 
 def get490_main(ctx):
@@ -23,6 +23,15 @@ def get490_main(ctx):
     ctx['llm_timeout'] = getattr(settings, 'OLLAMA_TIMEOUT', 300)
     ctx['llm_think'] = getattr(settings, 'OLLAMA_THINK', False)
     ctx['llm_presets_json'] = json.dumps(com_get_llm_presets(), ensure_ascii=False)
+
+    # 推論エンジンによって指定できる項目が違う。OpenAI互換ではコンテキスト長も
+    # 思考の切り替えもリクエストで指定できず、サーバ側の設定に従う。
+    # 送っても効かない欄は無効化する。値が反映されない理由は画面からは
+    # 分からないため、入力できてしまうほうが混乱を招く。
+    client = com_get_llm_client()
+    ctx['llm_engine_name'] = client.name
+    ctx['llm_supports_num_ctx'] = client.supports_num_ctx
+    ctx['llm_supports_think'] = client.supports_think
     
     # 🌟 修正: 来場者数データが入っている最終日付の年月（YYYY-MM）を自動計算してセット
     try:
@@ -33,16 +42,11 @@ def get490_main(ctx):
         from datetime import datetime
         ctx['latest_ym'] = datetime.now().strftime('%Y-%m')
 
-    # モデル選択が有効な場合、Ollamaに問い合わせてリストを取得
+    # モデル選択が有効な場合、推論エンジンに問い合わせてリストを取得する。
+    # 以前はコマンドを呼び出して標準出力のJSONを読み戻していたが、
+    # クライアントが同じ一覧を返すため直接使う。
     if ctx['allow_model_select']:
-        out = StringIO()
-        try:
-            call_command('run_llm_analysis', list_models=True, stdout=out)
-            models_json = out.getvalue().strip()
-            ctx['ollama_models'] = json.loads(models_json)
-        except Exception:
-            ctx['ollama_models'] = []
-        
+        ctx['ollama_models'] = client.list_models()
         ctx['default_model'] = getattr(settings, 'OLLAMA_MODEL', '')
         
     return ctx

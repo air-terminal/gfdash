@@ -9,11 +9,12 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from app.models import Ta215Attnd, Tz301AttendanceForecast, Tz302LlmAnalysis, Tz101WeatherReport
+from app.utils.com_llm import com_get_llm_client
 
 SCRIPT_VERSION = "v0.1.0"
 
 class Command(BaseCommand):
-    help = 'ローカルLLM(Ollama)を呼び出して、月次の振り返りおよび未来予測レポートを生成します'
+    help = 'ローカルLLMを呼び出して、月次の振り返りおよび未来予測レポートを生成します'
 
     def add_arguments(self, parser):
         parser.add_argument('--mode', type=str, choices=['review', 'forecast_1m', 'forecast_3m'],
@@ -32,48 +33,29 @@ class Command(BaseCommand):
         parser.add_argument('--no-think', dest='think', action='store_false',
                             help='思考(thinking)を無効にする')
 
-    def supports_thinking(self, pApiUrl, pModel):
-        """
-        モデルが思考(thinking)に対応しているかを /api/show の capabilities で判定する。
-
-        Ollama のバージョン番号では判定しない。新しいバージョンでも
-        非対応モデルに think を送れば弾かれるため、モデル単位で見る必要がある。
-        capabilities を返さない古いバージョンでは空になり、think を送らない
-        （従来と同じ動作になる）。
-        """
-        show_url = pApiUrl.replace('/api/generate', '/api/show')
-        try:
-            res = requests.post(show_url, json={'model': pModel}, timeout=10)
-            res.raise_for_status()
-            return 'thinking' in (res.json().get('capabilities') or [])
-        except Exception:
-            # 判定できない場合は送らない。余計な指定で実行そのものを
-            # 失敗させるより、従来どおりの動作に倒すほうが安全
-            return False
-
     def sub_write_stats(self, pStats, pThinkText):
         """
-        Ollama が返す診断情報を出力する。
+        推論エンジンが返す診断情報を出力する。
 
-        done_reason が length ならコンテキスト超過、生成速度が極端に遅ければ
+        終了理由が length ならコンテキスト超過、生成速度が極端に遅ければ
         CPUオフロードというように、原因の切り分けに直接使える。
         これが無いと、空のレポートが出来た理由を追えない。
+
+        項目名は方言によらずクライアントが正規化して返す。
         """
         if not pStats:
             return
 
-        eval_count = pStats.get('eval_count') or 0
-        eval_duration = pStats.get('eval_duration') or 0
-        prompt_count = pStats.get('prompt_eval_count') or 0
+        completion = pStats.get('completion_tokens') or 0
+        seconds = pStats.get('output_seconds') or 0
 
         parts = [
-            f"終了理由={pStats.get('done_reason')}",
-            f"プロンプト={prompt_count}トークン",
-            f"生成={eval_count}トークン",
+            f"終了理由={pStats.get('finish_reason')}",
+            f"プロンプト={pStats.get('prompt_tokens') or 0}トークン",
+            f"生成={completion}トークン",
         ]
-        if eval_duration > 0:
-            secs = eval_duration / 1_000_000_000
-            parts.append(f"生成時間={secs:.1f}秒 ({eval_count / secs:.1f}トークン/秒)")
+        if seconds > 0:
+            parts.append(f"生成時間={seconds:.1f}秒 ({completion / seconds:.1f}トークン/秒)")
         if pThinkText:
             parts.append(f"思考={len(pThinkText)}文字")
 
@@ -82,7 +64,7 @@ class Command(BaseCommand):
 
     def sub_empty_report_hint(self, pStats, pThinkText):
         """本文が空だったときに、状況に応じた対処を案内する"""
-        if pStats.get('done_reason') == 'length':
+        if pStats.get('finish_reason') == 'length':
             return (
                 "コンテキストを使い切っています（終了理由: length）。\n"
                 "  ・思考を無効にする（--no-think / .env の OLLAMA_THINK=False）\n"
@@ -97,7 +79,7 @@ class Command(BaseCommand):
             )
         return (
             "モデルが応答を返しませんでした。モデル名の指定と、\n"
-            "  Ollama 側でモデルが正常に読み込めているかを確認してください。"
+            "  推論エンジン側でモデルが正常に読み込めているかを確認してください。"
         )
 
     def get_custom_prompt(self, mode):
@@ -119,17 +101,7 @@ class Command(BaseCommand):
         # モデル一覧の取得モード（--list-models が呼ばれた場合）
         # =========================================================
         if options.get('list_models'):
-            api_url = getattr(settings, 'OLLAMA_API_URL', 'http://localhost:11434/api/generate')
-            tags_url = api_url.replace('/api/generate', '/api/tags')
-            try:
-                res = requests.get(tags_url, timeout=5)
-                if res.status_code == 200:
-                    models = [m['name'] for m in res.json().get('models', [])]
-                    self.stdout.write(json.dumps(models))
-                else:
-                    self.stdout.write("[]")
-            except Exception:
-                self.stdout.write("[]")
+            self.stdout.write(json.dumps(com_get_llm_client().list_models()))
             return
 
         # =========================================================
@@ -152,35 +124,17 @@ class Command(BaseCommand):
             self.stdout.flush()
 
         # ---------------------------------------------------------
-        # --streamのみ、VRAM内のアクティブモデルを自動チェックして強制解放
+        # --streamのみ、メモリ内のアクティブモデルを自動チェックして強制解放
+        # 対応しないエンジンでは何も起きない（クライアント側で no-op）
         # ---------------------------------------------------------
+        client = com_get_llm_client()
+
         if is_stream:
-            api_url = getattr(settings, 'OLLAMA_API_URL', 'http://localhost:11434/api/generate')
-            ps_url = api_url.replace('/api/generate', '/api/ps')
-            try:
-                res = requests.get(ps_url, timeout=5)
-                if res.status_code == 200:
-                    active_models = res.json().get('models', [])
-                    for am in active_models:
-                        am_name = am.get('name')
-                        # 実行対象と異なるモデルがすでにVRAMに常駐している場合のみ、ピンポイントでアンロードを命令
-                        if am_name and am_name != target_model:
-                            self.stdout.write(f"🔄 VRAM上に別モデル [{am_name}] の常駐を検知しました。新モデル [{target_model}] の実行前にメモリを最適化（解放）します...\n", ending='')
-                            self.stdout.flush()
-                            
-                            unload_payload = {
-                                "model": am_name,
-                                "keep_alive": 0
-                            }
-                            try:
-                                requests.post(api_url, json=unload_payload, timeout=10)
-                                self.stdout.write(f"✅ 旧モデル [{am_name}] のアンロードが完了しました。\n\n", ending='')
-                                self.stdout.flush()
-                            except Exception as ex:
-                                self.stdout.write(f"⚠️ 旧モデル [{am_name}] のアンロード中にスキップが発生しました: {ex}\n\n", ending='')
-                                self.stdout.flush()
-            except Exception:
-                pass  # OllamaのAPIエラー時や、環境によって/api/psが未実装の場合のセーフティ
+            def sub_notify(pMessage):
+                self.stdout.write(pMessage, ending='')
+                self.stdout.flush()
+
+            client.release_others(target_model, sub_notify)
 
         base_prompt = ""
         
@@ -382,10 +336,8 @@ class Command(BaseCommand):
             sys.stdout.flush() 
 
         # ---------------------------------------------------------
-        # Ollama APIの呼び出し
+        # 推論エンジンの呼び出し（方言の差はクライアントが吸収する）
         # ---------------------------------------------------------
-        api_url = getattr(settings, 'OLLAMA_API_URL', 'http://localhost:11434/api/generate')
-
         # 引数での指定を優先し、無ければ .env(settings)の既定値を使う
         num_ctx = options.get('num_ctx') or getattr(settings, 'OLLAMA_NUM_CTX', 4096)
         timeout_val = options.get('timeout') or getattr(settings, 'OLLAMA_TIMEOUT', 300)
@@ -394,61 +346,40 @@ class Command(BaseCommand):
         if think_val is None:
             think_val = getattr(settings, 'OLLAMA_THINK', False)
 
-        payload = {
-            "model": target_model,
-            "prompt": final_prompt,
-            "stream": is_stream,
-            "options": {
-                "num_ctx": num_ctx,
-                "num_predict": -1
-            }
-        }
-
-        # 思考は対応モデルにのみ指定する。非対応モデルに送るとエラーになる。
-        # 思考を明示的に切らないと、モデルによっては思考だけで num_ctx を
-        # 使い切り、本文が生成されないまま length で終了する。
-        think_state = '対象外(非対応モデル)'
-        if self.supports_thinking(api_url, target_model):
-            payload['think'] = bool(think_val)
-            think_state = '有効' if think_val else '無効'
+        # 指定できない項目は実行パラメータの表示から落とす。
+        # 送っていない値を表示すると「指定したのに効かない」と読めてしまう
+        parts = []
+        if client.supports_num_ctx:
+            parts.append(f"num_ctx={num_ctx}")
+        parts.append(f"timeout={timeout_val}秒")
+        if client.supports_think:
+            parts.append(f"思考={'有効' if think_val else '無効'}")
 
         self.stdout.write(
-            f"実行パラメータ: num_ctx={num_ctx} / timeout={timeout_val}秒 / 思考={think_state}\n",
-            ending=''
+            f"実行パラメータ[{client.name}]: " + " / ".join(parts) + "\n", ending=''
         )
 
         if not is_stream:
-            self.stdout.write(f"Ollama API ({api_url} / モデル: {target_model}) にリクエストを送信中...\n", ending='')
+            self.stdout.write(f"{client.name} (モデル: {target_model}) にリクエストを送信中...\n", ending='')
             self.stdout.flush()
 
         try:
-            response = requests.post(api_url, json=payload, timeout=timeout_val, stream=is_stream)
-            response.raise_for_status()
-            report_text = ""
-            think_text = ""
-            stats = {}
+            def sub_on_text(pText):
+                self.stdout.write(pText, ending='')
+                self.stdout.flush()
 
-            if is_stream:
-                for line in response.iter_lines():
-                    if line:
-                        chunk = json.loads(line.decode('utf-8'))
-                        # 思考は response とは別に届く。取り込まないと
-                        # 「何も起きていない」ように見えたまま処理が進む
-                        think_part = chunk.get("thinking") or ""
-                        if think_part and not think_text:
-                            self.stdout.write("\n[思考中...]\n", ending='')
-                        think_text += think_part
-                        response_part = chunk.get("response", "")
-                        report_text += response_part
-                        self.stdout.write(response_part, ending='')
-                        self.stdout.flush()
-                        if chunk.get("done"):
-                            stats = chunk
-            else:
-                stats = response.json()
-                think_text = stats.get("thinking") or ""
-                report_text = stats.get("response", "")
-                self.stdout.write(report_text)
+            def sub_on_think():
+                self.stdout.write("\n[思考中...]\n", ending='')
+                self.stdout.flush()
+
+            result = client.generate(
+                final_prompt, target_model, num_ctx, timeout_val,
+                think_val if client.supports_think else None,
+                is_stream, sub_on_text, sub_on_think,
+            )
+            report_text = result.text
+            think_text = result.think_text
+            stats = result.stats
 
             self.sub_write_stats(stats, think_text)
 
@@ -489,14 +420,20 @@ class Command(BaseCommand):
             self.stdout.flush()
 
         except requests.exceptions.Timeout:
+            hints = [
+                "AIバッチ実行画面(490)の「実行パラメータ」から、時間の長いプリセットを選ぶ",
+                ".env の OLLAMA_TIMEOUT を増やす（既定 300 秒）",
+            ]
+            # コンテキスト長を指定できないエンジンでは、その案内をしない
+            if client.supports_num_ctx:
+                hints.append(".env の OLLAMA_NUM_CTX を減らす（VRAM不足で極端に遅い場合）")
+            hints.append("より軽量なモデルに変更する")
+
             self.stderr.write(self.style.ERROR(
-                f"❌ Ollamaの処理がタイムアウトしました（現在の上限: {timeout_val}秒）。\n"
+                f"❌ {client.name} の処理がタイムアウトしました（現在の上限: {timeout_val}秒）。\n"
                 f"次のいずれかを試してください。\n"
-                f"  ・AIバッチ実行画面(490)の「実行パラメータ」から、時間の長いプリセットを選ぶ\n"
-                f"  ・.env の OLLAMA_TIMEOUT を増やす（既定 300 秒）\n"
-                f"  ・.env の OLLAMA_NUM_CTX を減らす（VRAM不足で極端に遅い場合）\n"
-                f"  ・より軽量なモデルに変更する"
+                + "".join(f"  ・{h}\n" for h in hints)
             ))
             return
         except Exception as e:
-            self.stderr.write(self.style.ERROR(f"❌ Ollamaとの通信または保存に失敗しました: {e}"))
+            self.stderr.write(self.style.ERROR(f"❌ {client.name} との通信または保存に失敗しました: {e}"))

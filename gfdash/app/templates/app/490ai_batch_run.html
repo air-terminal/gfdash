@@ -126,9 +126,9 @@
                           <p class="form-control-static" style="padding-top: 7px;">
                             <span id="llm_param_label">標準</span>
                             <small class="text-muted">
-                              (num_ctx <span id="llm_param_ctx">{{ llm_num_ctx }}</span>
-                               / timeout <span id="llm_param_timeout">{{ llm_timeout }}</span>秒
-                               / 思考 <span id="llm_param_think"></span>)
+                              (<span id="llm_param_ctx_wrap">num_ctx <span id="llm_param_ctx">{{ llm_num_ctx }}</span> / </span>timeout
+                               <span id="llm_param_timeout">{{ llm_timeout }}</span>秒<span id="llm_param_think_wrap">
+                               / 思考 <span id="llm_param_think"></span></span>)
                             </small>
                             <button type="button" class="btn btn-default btn-sm" onclick="openLlmParamDialog()" style="margin-left: 8px;">
                               <i class="fa-solid fa-sliders"></i> 実行パラメータを変更
@@ -174,6 +174,13 @@
     // LLM実行パラメータのプリセットと既定値。定義は app/utils/com_utils.py にある。
     var gLlmPresets = {{ llm_presets_json|safe }};
     var gLlmParams  = { num_ctx: {{ llm_num_ctx }}, timeout: {{ llm_timeout }}, think: {{ llm_think|yesno:"true,false" }} };
+    // 推論エンジンが受け付けない項目は入力させない。
+    // 送っても効かない値を入力できると、反映されない理由が画面から分からない。
+    var gLlmEngine  = {
+      name: "{{ llm_engine_name|escapejs }}",
+      supportsNumCtx: {{ llm_supports_num_ctx|yesno:"true,false" }},
+      supportsThink: {{ llm_supports_think|yesno:"true,false" }}
+    };
   </script>
   <script src="/static/build/js/customjs_490.js"></script>
 {% endblock javascripts %}

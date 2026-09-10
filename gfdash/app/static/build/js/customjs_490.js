@@ -49,6 +49,10 @@ function updateLlmParamDisplay() {
     $('#llm_param_ctx').text(gLlmParams.num_ctx);
     $('#llm_param_timeout').text(gLlmParams.timeout);
     $('#llm_param_think').text(gLlmParams.think ? '有効' : '無効');
+
+    // 送っていない項目は表示しない。効いていない値を出すと誤解を生む
+    $('#llm_param_ctx_wrap').toggle(!!gLlmEngine.supportsNumCtx);
+    $('#llm_param_think_wrap').toggle(!!gLlmEngine.supportsThink);
 }
 
 // プリセット1件分の行を組み立てる。
@@ -109,20 +113,32 @@ function openLlmParamDialog() {
     html += '<hr style="margin: 12px 0;">';
     html += '<label style="display:block;">詳細</label>';
 
+    var ctxOff = !gLlmEngine.supportsNumCtx;
     html += '<label style="display:block; font-weight:normal;">コンテキスト長 (num_ctx)</label>';
-    html += '<input type="number" id="dlg_llm_ctx" class="form-control" min="256" step="256" value="' + gLlmParams.num_ctx + '">';
-    html += '<p class="text-muted" style="margin: 4px 0 12px;">大きいほど多くの実績を渡せますが、VRAMの使用量が増えます。</p>';
+    html += '<input type="number" id="dlg_llm_ctx" class="form-control" min="256" step="256" value="'
+          + gLlmParams.num_ctx + '"' + (ctxOff ? ' disabled' : '') + '>';
+    html += '<p class="text-muted" style="margin: 4px 0 12px;">'
+          + (ctxOff
+             ? gLlmEngine.name + ' では推論エンジン側の設定に従います。'
+             : '大きいほど多くの実績を渡せますが、VRAMの使用量が増えます。')
+          + '</p>';
 
     html += '<label style="display:block; font-weight:normal;">タイムアウト (秒)</label>';
     html += '<input type="number" id="dlg_llm_timeout" class="form-control" min="30" step="30" value="' + gLlmParams.timeout + '">';
 
+    var thinkOff = !gLlmEngine.supportsThink;
     html += '<div class="checkbox" style="margin-top: 12px;">';
     html += '<label style="font-weight:normal;"><input type="checkbox" id="dlg_llm_think"'
-          + (gLlmParams.think ? ' checked' : '') + '> 思考(thinking)を使う</label>';
+          + (gLlmParams.think ? ' checked' : '') + (thinkOff ? ' disabled' : '')
+          + '> 思考(thinking)を使う</label>';
     html += '</div>';
-    html += '<p class="text-muted" style="margin: 0;">思考はコンテキストを大きく消費します。'
-          + '有効にする場合はコンテキスト長に余裕を持たせてください。'
-          + '足りないと本文が生成されません。</p>';
+    html += '<p class="text-muted" style="margin: 0;">'
+          + (thinkOff
+             ? gLlmEngine.name + ' では推論エンジン側の設定に従います。'
+             : '思考はコンテキストを大きく消費します。'
+               + '有効にする場合はコンテキスト長に余裕を持たせてください。'
+               + '足りないと本文が生成されません。')
+          + '</p>';
     html += '</div>';
 
     Swal.fire({
@@ -214,14 +230,24 @@ function runBatch(batchType) {
         if ($('#llm_model').length > 0) {
             postData.model = $('#llm_model').val();
         }
-        postData.num_ctx = gLlmParams.num_ctx;
+        // 受け付けない項目は送らない。送っても無視されるだけだが、
+        // 画面とサーバで「指定した」認識がずれると調査が難しくなる
         postData.timeout = gLlmParams.timeout;
-        postData.think   = gLlmParams.think ? 'true' : 'false';
+        if (gLlmEngine.supportsNumCtx) {
+            postData.num_ctx = gLlmParams.num_ctx;
+        }
+        if (gLlmEngine.supportsThink) {
+            postData.think = gLlmParams.think ? 'true' : 'false';
+        }
+
+        var paramText = [];
+        if (gLlmEngine.supportsNumCtx) { paramText.push("num_ctx " + gLlmParams.num_ctx); }
+        paramText.push("タイムアウト " + gLlmParams.timeout + "秒");
+        if (gLlmEngine.supportsThink) { paramText.push("思考 " + (gLlmParams.think ? "有効" : "無効")); }
 
         var selectedModeText = $('#llm_mode option:selected').text();
         confirmMsg = postData.ym + " を基準とした [" + selectedModeText + "] レポート生成を実行しますか？\n"
-                   + "(num_ctx " + gLlmParams.num_ctx + " / タイムアウト " + gLlmParams.timeout + "秒"
-                   + " / 思考 " + (gLlmParams.think ? "有効" : "無効") + ")";
+                   + "(" + gLlmEngine.name + " / " + paramText.join(" / ") + ")";
     }
 
     if (!confirm(confirmMsg)) {

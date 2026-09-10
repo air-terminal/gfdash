@@ -19,7 +19,7 @@
 - **データ視覚化:** 来場者数や売上をグラフ表示し、月の着地見込みを直感的に把握できます。前年比のパーセンテージや過去の同月比較も容易です。
 - **天候データとの相関分析:** 来場者数と天候情報（温度・風速）を同一グラフ上に表示し、客足が天候にどう影響されたかを分析できます。
 - **気象庁APIの自動連携:** アメダスデータを利用。手動インポートのほか、cron設定により最寄りの観測所データを自動取得・同期します。
-- **AI機能（ベータ）:** 過去の来場者数・気温の傾向より来場者数を予測する機能、及びローカルLLM(AI)より当月の振り返り、翌月の予測レポートを作成します。
+- **AI機能（ベータ）:** 過去の来場者数・気温の傾向より来場者数を予測する機能、及びローカルLLM(AI)より当月の振り返り、翌月の予測レポートを作成します。推論エンジンは Ollama と OpenAI互換APIの2方式に対応しています。
 
 ## Requirements (必須環境)
 - Python 3.13
@@ -27,7 +27,7 @@
 - Django 6.0
 - Docker / Docker Compose (推奨)
 - prophet(AI予測機能実行時)
-- Ollama(AIレポート作成機能実行時、VRAM8GB以上搭載のGPUでの動作推奨)
+- Ollama、またはOpenAI互換APIを提供する推論エンジン(AIレポート作成機能実行時、VRAM8GB以上搭載のGPUでの動作推奨)
 *(※その他のPython依存ライブラリについては `requirements.txt` を参照)*
 
 ## Database Specifications
@@ -244,23 +244,56 @@ docker compose exec -w /code/gfdash web python3 manage.py import_sim_data ta220 
     *   `横浜日別.csv`, `横浜日別２.csv`
     *   `横浜時間別１.csv` 〜 `横浜時間別８.csv`
 
-**6. AIレポート（Ollama）のセットアップ**  
+**6. AIレポートのセットアップ**  
 ローカルLLMを用いたAIレポート機能を使用するには、以下の設定が必要です。
 
-1. **Ollamaの起動とモデルの準備**  
+推論エンジンは2つの方式に対応しています。どちらか一方を用意してください。
+
+| 方式 | `LLM_PROVIDER` | 対象 |
+| :--- | :--- | :--- |
+| Ollama ネイティブAPI | `ollama`（初期値） | Ollama |
+| OpenAI互換API | `openai` | llama.cpp server / vLLM / LM Studio / [FreeToken](https://github.com/FlashML-org/FreeToken) など |
+
+1. **推論エンジンの起動とモデルの準備**
+
+   **A. Ollama を使う場合**
+
    ローカルにOllamaをインストール・起動し、あらかじめ対象のLLMモデルをPull（ダウンロード）しておきます。
    ```bash
    ollama pull gemma4:e4b
    ```
    *(※別のモデル、例えば `qwen2.5:7b` などを使用する場合は、そちらをPullしてください)*
 
+   **B. OpenAI互換APIの推論エンジンを使う場合**
+
+   お使いのエンジンの手順に従って起動し、モデルを読み込んでおきます。導入方法は
+   製品ごとに異なるため、本システムでは扱いません。本システムが必要とするのは
+   **OpenAI互換のエンドポイントのURLだけ**です。
+
+   起動できたら、接続できるか事前確認しておくとトラブル時の切り分けが楽になります。
+   ```bash
+   curl http://localhost:8080/v1/models
+   ```
+   モデルの一覧がJSONで返れば準備完了です。この `/v1` までのURLを
+   `OPENAI_API_BASE` に設定します。
+
+   なお、コンテキスト長と思考の切り替えは**OpenAI互換API推論エンジン側の設定に従います**
+   （画面やパラメータからは指定できません）。必要な場合はエンジンの起動オプションで
+   調整してください。
+
 2. **設定ファイル（gfdash/settings.py または .env）の変更**  
    環境に合わせて、以下の項目を調整します。
    * **`DISABLE_BATCH_EXECUTION`**: AIバッチ処理（予測やLLMレポート生成など）の無効化フラグです。初期値は安全のため `True`（無効）になっています。実際にAI機能を利用する際は、必ず **`False`** に書き換えてください。
-   * **`OLLAMA_API_URL`**: Ollamaが動作しているエンドポイントのURLを指定します。
+   * **`LLM_PROVIDER`**: 使用する推論エンジンのAPI方式（初期値: `ollama`）。
+     * `ollama` … Ollama のネイティブAPIを使います。従来どおりの動作です。
+     * `openai` … OpenAI互換APIを使います。[FreeToken](https://github.com/FlashML-org/FreeToken) / llama.cpp server / vLLM / LM Studio など、OpenAI互換のエンドポイントを提供する推論エンジンで動作します。
+     * 互換API側では**コンテキスト長と思考の切り替えをリクエストで指定できません**（推論エンジン側の設定に従います）。該当する入力欄は画面上で無効化されます。
+   * **`OPENAI_API_BASE`**: OpenAI互換APIの接続先（`LLM_PROVIDER=openai` のとき）。`/v1` まで含めて指定します。
+   * **`OPENAI_API_KEY`**: 同上の認証キー。ローカルの推論エンジンでは不要なことが多く、空のままで構いません（空の場合は認証ヘッダを送りません）。
+   * **`OLLAMA_API_URL`**: Ollamaが動作しているエンドポイントのURLを指定します（`LLM_PROVIDER=ollama` のとき）。
      * **DockerコンテナからホストのOllamaを叩く場合**: `'http://host.docker.internal:11434/api/generate'` (初期値)
      * **Dockerを使わず、ローカルPC上で直接システムを実行する場合**: `'http://localhost:11434/api/generate'` に書き換えてください。
-   * **`OLLAMA_MODEL`**: 使用するLLMのモデル名を設定します（初期値: `'gemma4:e4b'`）。
+   * **`OLLAMA_MODEL`**: 使用するLLMのモデル名を設定します（初期値: `'gemma4:e4b'`）。方式に関わらず、この項目でモデルを指定します。
    * **`OLLAMA_PRESET`**: LLM実行パラメータのプリセット（初期値: `standard`）。通常はこれだけを指定すれば十分です。
      * 指定できる値と内容は次のとおりです。
 
@@ -276,8 +309,10 @@ docker compose exec -w /code/gfdash web python3 manage.py import_sim_data ta220 
      * AIバッチ実行画面(490)からは、実行のたびに一時的に変更することもできます。
    * **`OLLAMA_TIMEOUT`**: タイムアウト秒数（初期値: プリセットの値）。CPU実行時などレポート生成に時間がかかる場合は、`600` など長めの値を設定してください。
    * **`OLLAMA_NUM_CTX`**: LLMが確保する記憶領域のトークン数（初期値: `4096`）。値を上げるとより多くの実績データをプロンプトに含められますが、VRAMの使用量も増えます。モデルが読み込めない場合は `2048` などに下げてください。
+     * **`LLM_PROVIDER=openai` では使用されません。** 推論エンジン側の設定に従います。
      * 適切な値はVRAM容量だけでは決まりません。同じ容量でも、小さなモデルなら余裕があり、大規模なモデルでは本体だけでほぼ埋まります。AIバッチ実行画面(490)に症状から選べるプリセットを用意しているので、そちらもご利用ください。
    * **`OLLAMA_THINK`**: 思考（thinking）を有効にするかどうか（初期値: `False`）。
+     * **`LLM_PROVIDER=openai` では使用されません。** 推論エンジン側の設定に従います。
      * 思考に対応したモデルを使う場合のみ意味を持ちます。非対応のモデルには送信されません。
      * **有効にする場合は `OLLAMA_NUM_CTX` も併せて広げてください。** 思考は与えられたコンテキストを埋めるように消費するため、余裕が無いと本文が生成されないまま終わります（レポートが空になります）。
      * 現在のレポートは集計済みの数値を定型の見出しに沿って記述するもので、多段の推論を必要としません。そのため初期値では無効にしています。
@@ -319,7 +354,7 @@ python manage.py run_forecast --periods 30
     補正の対象外です。この区別は `temp_closed` のビットで行っています
     （[docs/codes.md](docs/codes.md) を参照）。
 
-**② ローカルLLM（Ollama）によるレポート生成の実行**
+**② ローカルLLMによるレポート生成の実行**
 ```bash
 python manage.py run_llm_analysis --mode review
 ```
