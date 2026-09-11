@@ -1,0 +1,19 @@
+# 来場者数の取り込みサンプル
+#
+# 1行目に列名を書きます。列の順序は問いません。
+# 必要な列だけを書けばよく、書かなかった列の値は変更しません。
+#
+#   business_day … 営業日（必須）。YYYY-MM-DD または YYYY/MM/DD
+#   morning      … 午前の来場者数
+#   afternoon    … 日中の来場者数
+#   night        … 夜の来場者数
+#   member       … メンバー人数
+#   visitor      … ビジター人数
+#   int_school   … 内部スクール
+#   ext_school   … 外部スクール
+#   school_total … スクール合計
+#   early_morn / late_night … 早朝・深夜（予約枠。通常は不要）
+business_day,morning,afternoon,night,member,visitor,int_school,ext_school,school_total
+2026-01-15,45,38,62,52,93,8,4,12
+2026-01-16,50,41,70,61,100,9,5,14
+2026-01-17,62,55,80,80,117,11,6,17

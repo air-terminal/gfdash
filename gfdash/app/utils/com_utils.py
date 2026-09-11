@@ -1,6 +1,7 @@
 from ..models import Ta220Memo
 from ..models import Tz901ComName
 from datetime import datetime, timedelta, timezone, date
+import calendar
 
 def com_get_chart_xLabel(dictParam):
     #*** グラフX軸ラベル編集処理 ***
@@ -484,3 +485,70 @@ def com_save_holiday2_calendar_name(pCls, pName):
             code=TZ901_HOLIDAY2_CODE, num=pCls,
             code_name=f'第2休日カレンダー{pCls}', code_name2=name
         )
+
+
+# データが1件も無い環境での既定期間
+#
+# 導入直後はどのテーブルも空で、最新レコードから対象月を決める処理が
+# そのままでは動かない。画面が開けるのに取得だけ失敗する状態を避けるため、
+# データが無い場合は当月を返す。
+#
+# 「データがある前提」で書かれた箇所が各画面に散在しているため、
+# 判定をここに集約する。
+
+
+def com_get_month_range(pDay):
+    """指定日を含む月の初日と末日を返す"""
+    first = date(pDay.year, pDay.month, 1)
+    last = date(pDay.year, pDay.month, calendar.monthrange(pDay.year, pDay.month)[1])
+    return first, last
+
+
+def com_get_data_period(pModel, pDateField='business_day'):
+    """
+    テーブルの最初と最後の日付、および最新月の範囲を返す。
+
+    1件も無い場合は当月を対象とし、最初・最後の日付は None を返す。
+    呼び出し側は None を「データ未登録」として扱えばよく、
+    件数を数える処理を各画面に書かなくて済む。
+
+    戻り値:
+        first_day … 最古の日付。データが無ければ None
+        last_day  … 最新の日付。データが無ければ None
+        from_day  … 表示対象月の初日
+        to_day    … 表示対象月の末日
+    """
+    latest = pModel.objects.order_by('-' + pDateField).values_list(pDateField, flat=True).first()
+
+    if latest is None:
+        from_day, to_day = com_get_month_range(date.today())
+        return None, None, from_day, to_day
+
+    oldest = pModel.objects.order_by(pDateField).values_list(pDateField, flat=True).first()
+    from_day, to_day = com_get_month_range(latest)
+    return oldest, latest, from_day, to_day
+
+
+def com_format_day(pDay, pFormat="%Y/%m/%d 00:00:00"):
+    """
+    日付を画面へ返す形に整える。None なら空文字を返す。
+
+    format(None, "%Y/%m/%d") は TypeError になるため、データが無い環境で
+    そのまま渡すと画面が落ちる。JSON へ載せる際も date 型のままでは
+    シリアライズできないので、ここで文字列にする。
+    """
+    if pDay is None:
+        return ''
+    return format(pDay, pFormat)
+
+
+def com_safe_average(pTotal, pCount, pDigits=2):
+    """
+    平均を求める。件数が0なら0を返す。
+
+    対象期間にデータが無い月を開いたときに ZeroDivisionError で
+    落ちるのを防ぐ。0件の平均は0として扱う。
+    """
+    if not pCount:
+        return 0
+    return round(pTotal / pCount, pDigits)

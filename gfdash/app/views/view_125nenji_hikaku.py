@@ -8,6 +8,8 @@ from .. import views
 from ..models import Ta215Attnd
 from ..models import Tz901ComName
 from ..utils.com_utils import HALF_YEAR_KAMIKI, HALF_YEAR_SIMOKI
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
 from ..utils.com_utils import com_get_fiscal_year_sql
 from ..utils.com_utils import com_get_half_year_months
 
@@ -24,32 +26,32 @@ def post125_main(request):
     if tmpParam == 'get':
         dictParam =  sub125_conv_param(dic)
         ret = sub125_get_raijyo_data(dictParam)
-    elif tmpParam == 'init':
-        dictParam =  sub125_get_init(dic)
-        ret = sub125_get_raijyo_data(dictParam)
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
     else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側で date 型をそのまま返しており、JSON化に失敗していた
         dictParam =  sub125_get_init(dic)
         ret = sub125_get_raijyo_data(dictParam)
-        ret['firstDay'] = dictParam['firstDay']
-        ret['lastDay'] = dictParam['lastDay']
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
 
 def sub125_get_init(dic):
     #初期処理時、DB上の最新年月のデータを取得する
+    #来場者数が1件も無い環境では当年を対象とする（導入直後は必ずこの状態を通る）
+
+    ta215_first, ta215_last, tmpFrom, tmpTo = com_get_data_period(Ta215Attnd)
+    baseFirst = ta215_first or tmpFrom
+    baseLast = ta215_last or tmpTo
+
     tmpParam = {}
 
-    ta215 = Ta215Attnd.objects.all().order_by('business_day').reverse().first()
-    firstRecTa215 = Ta215Attnd.objects.all().order_by('business_day').first()
-
-    tmpParam['yyyy'] = format(ta215.business_day,"%Y")
-    tmpParam['from'] = datetime.date(datetime.strptime(format(ta215.business_day,"%Y/01/01 00:00:00"), "%Y/%m/%d %H:%M:%S"))
+    tmpParam['yyyy'] = format(baseLast,"%Y")
+    tmpParam['from'] = date(baseLast.year, 1, 1)
     tmpParam['to'] = tmpParam['from'] + relativedelta(years=1)
-    tmpParam['firstDay'] = datetime.date(datetime.strptime(format(firstRecTa215.business_day,"%Y/01/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpParam['lastDay'] = datetime.date(datetime.strptime(format(ta215.business_day,"%Y/01/01 00:00:00"), "%Y/%m/%d %H:%M:%S"))
+    tmpParam['firstDay'] = date(baseFirst.year, 1, 1)
+    tmpParam['lastDay'] = date(baseLast.year, 1, 1)
     tmpParam['chart_mode'] = dic['getChartMode']
 
     return tmpParam

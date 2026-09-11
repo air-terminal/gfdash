@@ -8,6 +8,8 @@ from django.db import connection
 from .. import views
 
 from ..models import Tb120Report
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
 from ..utils.com_utils import com_get_prev_year_offset
 
 import json
@@ -26,34 +28,34 @@ def post220_main(request):
     if tmpParam == 'get':
         dictParam =  sub220_conv_param(dic)
         ret = get_uriage(dictParam)
-    elif tmpParam == 'init':
-        dictParam =  sub220_get_init(dic)
-        ret = get_uriage(dictParam)
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
     else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側で date 型をそのまま返しており、JSON化に失敗していた
         dictParam =  sub220_get_init(dic)
         ret = get_uriage(dictParam)
-        ret['firstDay'] = dictParam['firstDay']
-        ret['lastDay'] = dictParam['lastDay']
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
 
 def sub220_get_init(dic):
     #初期処理時、DB上の最新月のデータを取得する
-    tb120 = Tb120Report.objects.all().order_by('business_day').reverse().first()
-    firstRecTb120 = Tb120Report.objects.all().order_by('business_day').first()
-    
+    #売上が1件も無い環境では当月を対象とする（来場者数だけを登録した環境で通る）
+
+    tb120_first, tb120_last, tmpFrom, tmpTo = com_get_data_period(Tb120Report)
+    baseFirst = tb120_first or tmpFrom
+    baseLast = tb120_last or tmpTo
+
     tmpParam = {}
 
-    tmpParam['yyyy'] = int(format(tb120.business_day,"%Y"))
-    tmpParam['mm'] = int(format(tb120.business_day,"%m"))
-    tmpParam['yyyymm'] = format(tb120.business_day,"%Y%m")
-    tmpParam['from'] = datetime.date(datetime.strptime(format(tb120.business_day,"%Y/%m/01 00:00:00"), "%Y/%m/%d %H:%M:%S"))
+    tmpParam['yyyy'] = baseLast.year
+    tmpParam['mm'] = baseLast.month
+    tmpParam['yyyymm'] = format(baseLast,"%Y%m")
+    tmpParam['from'] = date(baseLast.year, baseLast.month, 1)
     tmpParam['to'] = tmpParam['from'] + relativedelta(years=1)
-    tmpParam['firstDay'] = datetime.date(datetime.strptime(format(firstRecTb120.business_day,"%Y/%m/01 00:00:00"), "%Y/%m/%d %H:%M:%S"))
-    tmpParam['lastDay'] = datetime.date(datetime.strptime(format(tb120.business_day,"%Y/%m/01 00:00:00"), "%Y/%m/%d %H:%M:%S"))
+    tmpParam['firstDay'] = date(baseFirst.year, baseFirst.month, 1)
+    tmpParam['lastDay'] = date(baseLast.year, baseLast.month, 1)
 #    tmpParam['chart_mode'] = dic['getChartMode']
     tmpParam['table_option'] = dic['getTableOption']
 

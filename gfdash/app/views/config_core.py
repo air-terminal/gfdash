@@ -29,6 +29,14 @@ class BaseSystemConfig:
         '410raijyo_forecast.html': '来場者予測(AI)',        
         '490ai_batch_run.html': 'AIバッチ手動実行',        
     #メンテナンス系
+    #  9xx は用途ごとに帯を分けています。同じ用途の画面が増えたときに番号が
+    #  飛ばないよう、帯の中は詰めずに空けてあります。新しい画面を足すときは
+    #  用途に合う帯の空き番号を使ってください。
+    #    90x 気象データの取り込み（902 / 904 は天候系の追加用に予約）
+    #    91x 業務設定
+    #    92x システム管理
+    #    99x データメンテナンス（実績データの取り込み・保守）
+    #  ※905 は 99x が無かった頃に置いたもので、本来は 99x に属します。
         '901weather_upload.html': '天候情報アップロード',
         '903normal_temprature_upload.html': '平年気温情報アップロード',
         '905ai_data_sync.html': '来場者予測／レポートデータメンテナンス',
@@ -37,6 +45,8 @@ class BaseSystemConfig:
         '912fiscal_period_config.html': '年度期間の設定',
         '913holiday_calendar.html': '休業・祝日カレンダー',
         '920permission_config.html': '画面の権限設定',
+    #データメンテナンス系
+        '990attendance_upload.html': '来場者数アップロード',
     }
 
     # 画面グループの区切り。権限設定画面(920)の一覧を見出しで分けるために使う。
@@ -102,6 +112,8 @@ class BaseSystemConfig:
             '912fiscal_period_config.html': getattr(views_module, 'get912_main', None),
             '913holiday_calendar.html': getattr(views_module, 'get913_main', None),
             '920permission_config.html': getattr(views_module, 'get920_main', None),
+            # 取り込める列の一覧を画面に出すため、GET でコンテキストを渡す
+            '990attendance_upload.html': getattr(views_module, 'get990_main', None),
         }
 
     @classmethod
@@ -133,4 +145,5 @@ class BaseSystemConfig:
             '912fiscal_period_config.html': getattr(views_module, 'post912_main', None),
             '913holiday_calendar.html': getattr(views_module, 'post913_main', None),
             '920permission_config.html': getattr(views_module, 'post920_main', None),
+            '990attendance_upload.html': getattr(views_module, 'post990_main', None),
         }

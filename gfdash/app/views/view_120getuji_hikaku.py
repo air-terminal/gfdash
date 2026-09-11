@@ -8,6 +8,8 @@ from .. import views
 from ..models import Ta215Attnd
 from ..models import Ta220Memo
 from ..models import Tz901ComName
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
 
 import json
 import calendar
@@ -29,35 +31,34 @@ def post120_main(request):
         dictParam =  sub120_conv_param(dic)
         ret = sub120_get_ta215(dictParam)
 
-    elif tmpParam == 'init':
+    else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前の else は空のJSONを返しており、画面側で原因が分からなかった
         dictParam =  sub120_get_init()
         ret = sub120_get_ta215(dictParam)
 
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
-    else:
-        print('unkown param')
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
 
 def sub120_get_init():
     #初期処理時、DB上の最新年月のデータを取得する
+    #来場者数が1件も無い環境では当月を対象とする（導入直後は必ずこの状態を通る）
+
+    ta215_first, ta215_last, tmpFrom, tmpTo = com_get_data_period(Ta215Attnd)
+    baseFirst = ta215_first or tmpFrom
+    baseLast = ta215_last or tmpTo
+
     tmpParam = {}
 
-    ta215 = Ta215Attnd.objects.all().order_by('business_day').reverse().first()
-    firstRecTa215 = Ta215Attnd.objects.all().order_by('business_day').first()
+    tmpParam['mm'] = format(baseLast,"%m")
+    tmpParam['option'] = ' AND business_yyyy = \'' + format(baseLast,"%Y") + '\''
 
-    tmpParam['mm'] = format(ta215.business_day,"%m")
-    tmpParam['option'] = ' AND business_yyyy = \'' + format(ta215.business_day,"%Y") + '\''
-
-    firstRecTa215 = Ta215Attnd.objects.all().order_by('business_day').first()
-    tmpFrom = datetime.date(datetime.strptime(format(ta215.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
-
-    tmpParam['from'] = tmpFrom
-    tmpParam['firstDay'] = datetime.date(datetime.strptime(format(firstRecTa215.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpParam['lastDay'] = tmpFrom
+    tmpParam['from'] = date(baseLast.year, baseLast.month, 1)
+    tmpParam['firstDay'] = date(baseFirst.year, baseFirst.month, 1)
+    tmpParam['lastDay'] = tmpParam['from']
 
     return tmpParam
 

@@ -25,3 +25,5 @@ from .view_911attendance_target_config import get911_main,post911_main
 from .view_912fiscal_period_config import get912_main,post912_main
 from .view_913holiday_calendar import get913_main,post913_main
 from .view_920permission_config import get920_main,post920_main
+from .view_990attendance_upload import get990_main
+from .view_990attendance_upload import post990_main

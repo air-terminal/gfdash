@@ -6,6 +6,10 @@ from ..models import Tb120Report
 from ..models import Ta220Memo
 from ..models import Tz201DeptReport
 
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
+from ..utils.com_utils import com_safe_average
+
 import json
 from datetime import datetime, timedelta, timezone, date
 from dateutil.relativedelta import relativedelta
@@ -21,19 +25,15 @@ def post201_main(request):
         dictParam =  conv_param(dic.get('getYM'))
         ret = sub201_index(dictParam, dic.get('getChartMode'))
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-    elif tmpParam == 'init':
-        dictParam =  sub201_index_init()
-        ret = sub201_index(dictParam, dic.get('getChartMode'))
-        ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
-        ret['tb120_lastday'] = format(dictParam['tb120_lastday'],"%Y/%m/%d")
     else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側が同じ処理を書き写しており、片方だけ直る余地があった
         dictParam =  sub201_index_init()
         ret = sub201_index(dictParam, dic.get('getChartMode'))
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
+        ret['tb120_lastday'] = com_format_day(dictParam['tb120_lastday'], "%Y/%m/%d")
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
@@ -129,7 +129,8 @@ def sub201_index(dictParam, getChartMode):
 
         tmpOldDay = tmp120.business_day
 
-    tmpDetailSum['ave'] = round((tmpDetailSum['all'] / tmpCnt),2)
+    # 対象月にデータが無ければ0件となるため、除算を保護する
+    tmpDetailSum['ave'] = com_safe_average(tmpDetailSum['all'], tmpCnt)
 
     #折れ線グラフ（売上累計）データの取得
     #昨年度データ
@@ -179,7 +180,8 @@ def sub201_index(dictParam, getChartMode):
         i += 1
         tmpOldDay = tmp120.business_day
 
-    tmpDetailSumOld['ave'] = round((tmpOldSumAll / tmpOldCnt),2)
+    # 前年分も同様に、対象期間にデータが無ければ0件になる
+    tmpDetailSumOld['ave'] = com_safe_average(tmpOldSumAll, tmpOldCnt)
 
     dictCtx['oldYear'] = tmpOldDictCtx
 
@@ -216,20 +218,16 @@ def sub201_index(dictParam, getChartMode):
 def sub201_index_init():
     #初期処理時、DB上の最新月のデータを取得する
 
-    tb120 = Tb120Report.objects.all().order_by('business_day').reverse().first()
-    tmpFrom = datetime.date(datetime.strptime(format(tb120.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
-    tmpTo = date(tmpFrom.year, tmpFrom.month, tmpLastDay)
-
-    firstRecTb120 = Tb120Report.objects.all().order_by('business_day').first()
+    # データが1件も無い環境では当月を対象とする（導入直後は必ずこの状態を通る）
+    tb120_first, tb120_last, tmpFrom, tmpTo = com_get_data_period(Tb120Report)
 
     tmpParam = {}
     tmpParam['from'] = tmpFrom
     tmpParam['to'] = tmpTo
-    tmpParam['firstDay'] = firstRecTb120.business_day
-    tmpParam['lastDay'] = tb120.business_day
+    tmpParam['firstDay'] = tb120_first
+    tmpParam['lastDay'] = tb120_last
 
-    tmpParam['tb120_lastday'] = tb120.business_day
+    tmpParam['tb120_lastday'] = tb120_last
 
     return tmpParam
 

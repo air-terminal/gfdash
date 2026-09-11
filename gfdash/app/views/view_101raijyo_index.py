@@ -11,6 +11,9 @@ from ..models import Tz105DetailedWeatherReport
 from ..models import Tz901ComName
 
 from ..utils.com_weather import *
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
+from ..utils.com_utils import com_safe_average
 
 from django.utils import timezone
 import json
@@ -28,13 +31,15 @@ def post101_main(request):
         dictParam =  sub101_conv_param(dic.get('getYM'))
         ret = sub101_index(dictParam, dic.get('getChartMode'), dic.get('getTimeMode'), dic.get('getTimeDetailMode'))
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-    elif tmpParam == 'init':
+    else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側が同じ処理を書き写しており、片方だけ直る余地があった
         dictParam =  sub101_index_init()
         ret = sub101_index(dictParam, dic.get('getChartMode'), dic.get('getTimeMode'), dic.get('getTimeDetailMode'))
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
-        ret['ta215_lastday'] = format(dictParam['ta215_lastday'],"%Y/%m/%d")
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
+        ret['ta215_lastday'] = com_format_day(dictParam['ta215_lastday'], "%Y/%m/%d")
         if dictParam['tb120_lastday'] != '':
             ret['tb120_lastday'] = format(dictParam['tb120_lastday'],"%Y/%m/%d")
         if dictParam['tz101_lastday'] != '':
@@ -45,12 +50,6 @@ def post101_main(request):
             ret['weather_station'] = dictParam['weather_station']
         if dictParam['amedas'] != '':
             ret['amedas'] = dictParam['amedas']
-    else:
-        dictParam =  sub101_index_init()
-        ret = sub101_index(dictParam, dic.get('getChartMode'), dic.get('getTimeMode'), dic.get('getTimeDetailMode'))
-        ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
@@ -117,7 +116,8 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
         tmpDetailSum['night'] += v_night
         i += 1
 
-    tmpDetailSum['ave'] = round((tmpDetailSum['all'] / tmpCnt),2)
+    # 対象月にデータが無ければ0件となるため、除算を保護する
+    tmpDetailSum['ave'] = com_safe_average(tmpDetailSum['all'], tmpCnt)
 
     #昨年度データの取得
     tmpDate = dictParam['from'] + relativedelta(years=-1)
@@ -142,7 +142,8 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
             tmpDetailSumOld['visitor'] += ov_visitor            
         i += 1
 
-    tmpDetailSumOld['ave'] = round((tmpOldSumAll / tmpOldCnt),2)
+    # 前年分も同様に、対象期間にデータが無ければ0件になる
+    tmpDetailSumOld['ave'] = com_safe_average(tmpOldSumAll, tmpOldCnt)
 
     dictCtx['oldYear'] = tmpOldDictCtx
 
@@ -212,12 +213,8 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
 def sub101_index_init():
     #初期処理時、DB上の最新月のデータを取得する
 
-    ta215 = Ta215Attnd.objects.all().order_by('business_day').reverse().first()
-    tmpFrom = datetime.date(datetime.strptime(format(ta215.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
-    tmpTo = date(tmpFrom.year, tmpFrom.month, tmpLastDay)
-
-    firstRecTa215 = Ta215Attnd.objects.all().order_by('business_day').first()
+    # データが1件も無い環境では当月を対象とする（導入直後は必ずこの状態を通る）
+    ta215_first, ta215_last, tmpFrom, tmpTo = com_get_data_period(Ta215Attnd)
 
     tmpUriage_day = ''
     if Tb120Report.objects.all().exists():
@@ -244,10 +241,10 @@ def sub101_index_init():
     tmpParam = {}
     tmpParam['from'] = tmpFrom
     tmpParam['to'] = tmpTo
-    tmpParam['firstDay'] = firstRecTa215.business_day
-    tmpParam['lastDay'] = ta215.business_day
+    tmpParam['firstDay'] = ta215_first
+    tmpParam['lastDay'] = ta215_last
 
-    tmpParam['ta215_lastday'] = ta215.business_day
+    tmpParam['ta215_lastday'] = ta215_last
     tmpParam['tb120_lastday'] = tmpUriage_day
     tmpParam['tz101_lastday'] = tmpWeater_day
     tmpParam['tz105_lastday'] = tmpWeaterTime_day

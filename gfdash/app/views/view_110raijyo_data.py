@@ -10,6 +10,8 @@ from ..models import Ta220Memo
 from ..models import Tz901ComName
 
 from ..utils.com_utils import com_get_LabelColor_threshold
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
 
 import json
 import calendar
@@ -23,35 +25,28 @@ def post110_main(request):
     if tmpParam == 'get':
         dictParam =  conv_param(dic.get('getYM'))
         ret = get_ta215(dictParam)
-    elif tmpParam == 'init':
-        dictParam =  get_init()
-        ret = get_ta215(dictParam)
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
     else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側で date 型をそのまま返しており、JSON化に失敗していた
         dictParam =  get_init()
         ret = get_ta215(dictParam)
-        ret['firstDay'] = dictParam['firstDay']
-        ret['lastDay'] = dictParam['lastDay']
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
 
 def get_init():
     #初期処理時、DB上の最新月のデータを取得する
+    #データが1件も無い環境では当月を対象とする（導入直後は必ずこの状態を通る）
 
-    ta215 = Ta215Attnd.objects.all().order_by('business_day').reverse().first()
-    tmpFrom = datetime.date(datetime.strptime(format(ta215.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
-    tmpTo = date(tmpFrom.year, tmpFrom.month, tmpLastDay)
-
-    firstRecTa215 = Ta215Attnd.objects.all().order_by('business_day').first()
+    firstDay, lastDay, tmpFrom, tmpTo = com_get_data_period(Ta215Attnd)
 
     tmpParam = {}
     tmpParam['from'] = tmpFrom
     tmpParam['to'] = tmpTo
-    tmpParam['firstDay'] = firstRecTa215.business_day
-    tmpParam['lastDay'] = ta215.business_day
+    tmpParam['firstDay'] = firstDay
+    tmpParam['lastDay'] = lastDay
 
     return tmpParam
 
@@ -242,7 +237,10 @@ def get_ta215(dictParam):
 
     oldTa215 = Ta215Attnd.objects.all().filter(business_day__range=[oldYearParam['from'], oldYearParam['to']]).order_by('business_day')
 
-    if i <= oldTa215.count():
+    # tmpBusinessDay は当年のループ内でしか設定されない。対象月にデータが
+    # 1件も無ければ初期値の空文字のままで、日付演算が型エラーになる。
+    # そもそも当年が0件なら前年との突き合わせは成立しないため処理しない。
+    if tmpBusinessDay and i <= oldTa215.count():
         tmpOldDay = tmpBusinessDay + relativedelta(years=-1) + relativedelta(days=1)
         oldTa215 = Ta215Attnd.objects.all().filter(business_day__range=[tmpOldDay, oldYearParam['to']]).order_by('business_day')
         for tmpOldTa215 in oldTa215:

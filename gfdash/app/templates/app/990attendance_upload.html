@@ -1,0 +1,98 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <link href="/static/vendors/dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    /* Bootstrap3 既定の code は赤字にピンク背景で、列名を並べると目に痛い。
+       仕様の説明では色で強調する必要が無いため、地の文に近い配色へ落とす */
+    #csv_spec_wrap code {
+      color: #4B5F71;
+      background-color: #EFF2F5;
+      border-radius: 2px;
+    }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2>来場者数アップロード</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>来場者数のCSVを下の枠内にドラッグアンドドロップするか、クリックしてファイルを選択してください。</p>
+
+              <form method="post" enctype="multipart/form-data" class="dropzone clsbox" id="myDropzone">
+                <div class="fallback">
+                  <input id="file" name="file" type="file" />
+                  <input type="submit" value="Upload"/>
+                </div>
+              </form>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_check" class="btn btn-info" type="button" onclick="btnCheck()">内容を確認</button>
+                <button id="btn_submit" class="btn btn-success" type="submit" onclick="btnSubmit()">Upload</button>
+                <button id="btn_cancel" class="btn btn-primary" type="button" onclick="btnCancel()">Cancel</button>
+              </div>
+              <p class="text-muted">
+                「内容を確認」は登録を行わず、読み取れた件数と期間、注意点だけを表示します。
+              </p>
+
+              <!-- 仕様は毎回読むものではないため、操作部より下に置き、既定では畳んでおく。
+                   必要になったときだけ開く。410 と同じ slideToggle の型 -->
+              <div style="margin-top: 15px;">
+                <a onclick="$('#csv_spec_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');"
+                   style="cursor: pointer; user-select: none; color: #5A738E; font-size: 13px;">
+                  <i class="fa fa-file-text-o"></i> CSVの仕様はこちら
+                  <i class="fa fa-chevron-down gf-toggle-icon" style="font-size: 11px; margin-left: 4px; color: #95A5A6;"></i>
+                </a>
+
+                <div id="csv_spec_wrap" style="display: none; margin-top: 10px; padding: 12px 14px;
+                     border: 1px solid #E6E9ED; border-radius: 3px; background-color: #FAFAFA;
+                     font-size: 13px; color: #4B5F71;">
+                  <p style="margin-bottom: 6px;">
+                    1行目に列名を書いてください。<b>列の順序は問いません。</b>
+                    必要な列だけを書けばよく、書かなかった列の値は変更しません。
+                  </p>
+<pre style="margin-bottom: 6px; background-color: #FFFFFF; border: 1px solid #E6E9ED; color: #4B5F71;">business_day,morning,afternoon,night,member,visitor,school_total
+2026-01-15,45,38,62,52,93,12</pre>
+                  <p style="margin-bottom: 6px;">
+                    <b>{{ date_column }}</b>（営業日）は必須です。書式は <code>YYYY-MM-DD</code>
+                    または <code>YYYY/MM/DD</code>。
+                  </p>
+                  <p style="margin-bottom: 0;">
+                    そのほかに使える列:
+                    {% for c in numeric_columns %}<code>{{ c }}</code>{% if not forloop.last %} / {% endif %}{% endfor %}
+                  </p>
+                </div>
+              </div>
+              <br />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <script src="/static/vendors/dropzone/dist/min/dropzone.min.js"></script>
+
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 990attendance_upload専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_990.js"></script>
+
+{% endblock javascripts %}

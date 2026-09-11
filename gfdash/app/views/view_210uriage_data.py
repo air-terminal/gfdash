@@ -10,6 +10,8 @@ from ..models import Tb120Report
 from ..models import Ta220Memo
 from ..models import Tz201DeptReport
 
+from ..utils.com_utils import com_format_day
+from ..utils.com_utils import com_get_data_period
 
 import json
 import calendar
@@ -27,34 +29,28 @@ def post210_main(request):
     if tmpParam == 'get':
         dictParam =  sub210_conv_param(dic.get('getYM'))
         ret = get_uriage(dictParam)
-    elif tmpParam == 'init':
-        dictParam =  sub210_get_init()
-        ret = get_uriage(dictParam)
-        ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
-        ret['lastDay'] = format(dictParam['lastDay'],"%Y/%m/%d 00:00:00")
     else:
+        # init と、想定外の getMode はどちらも初期表示として扱う。
+        # 以前は else 側で date 型をそのまま返しており、JSON化に失敗していた
         dictParam =  sub210_get_init()
         ret = get_uriage(dictParam)
-        ret['firstDay'] = dictParam['firstDay']
-        ret['lastDay'] = dictParam['lastDay']
+        ret['firstDay'] = com_format_day(dictParam['firstDay'])
+        ret['lastDay'] = com_format_day(dictParam['lastDay'])
 
     return json.dumps(ret, ensure_ascii=False, indent=2)
 
 
 def sub210_get_init():
     #初期処理時、DB上の最新月のデータを取得する
-    tb120 = Tb120Report.objects.all().order_by('business_day').reverse().first()
-    tmpFrom = datetime.date(datetime.strptime(format(tb120.business_day,"%Y/%m/01 %H:%M:%S"), "%Y/%m/%d %H:%M:%S"))
-    tmpLastDay = calendar.monthrange(tmpFrom.year, tmpFrom.month)[1]
-    tmpTo = date(tmpFrom.year, tmpFrom.month, tmpLastDay)
+    #売上が1件も無い環境では当月を対象とする（来場者数だけを登録した環境で通る）
 
-    firstRecTb120 = Tb120Report.objects.all().order_by('business_day').first()
-    
+    tb120_first, tb120_last, tmpFrom, tmpTo = com_get_data_period(Tb120Report)
+
     tmpParam = {}
     tmpParam['from'] = tmpFrom
     tmpParam['to'] = tmpTo
-    tmpParam['firstDay'] = firstRecTb120.business_day
-    tmpParam['lastDay'] = tb120.business_day
+    tmpParam['firstDay'] = tb120_first
+    tmpParam['lastDay'] = tb120_last
 
     return tmpParam
 
