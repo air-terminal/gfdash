@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from ..models import Ta215Attnd
 from ..models import Ta220Memo
 from ..models import Tb120Report
+from ..models import Tz301AttendanceForecast
 from ..models import Tz101WeatherReport
 from ..models import Tz102WeatherAvarage
 from ..models import Tz105DetailedWeatherReport
@@ -20,6 +21,10 @@ import json
 from datetime import datetime, timedelta, timezone, date
 from dateutil.relativedelta import relativedelta
 import calendar
+
+# 画面に出す予測の区分。平年通りの1本だけを使う。
+FORECAST_TARGET_CLS = 'total'
+
 
 def post101_main(request):
 
@@ -149,15 +154,39 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
 
     if getChartMode == 'total':
     #来場者予測値
+        # 実績の無い日は予測バッチの結果(tz301)を使う。日ごとの曜日や休業、
+        # 所見による補正まで織り込まれた値になり、当月の平均を並べるより
+        # 実態に近い。
+        #
+        # 予測が無い日は従来どおり当月の平均で補う。予測バッチを回していない
+        # 環境ではこちらしか無く、線が消えると退行に見える。
+        forecastMap = sub101_get_forecast_map(dictParam['from'], dictParam['to'])
+
         i = 0
         tmpNum = tmpDetailSum['all']
-        tmpSumAve = round(tmpDetailSum['ave'],0) 
+        tmpSumAve = round(tmpDetailSum['ave'],0)
+        usedForecast = False
+
         for tmp215 in oldTa215:
             if i >= tmpCnt:
-                tmpNum += tmpSumAve
+                # 前年の営業日を当年の同月同日に読み替える。この対応付けは
+                # 既存の実装の前提をそのまま引き継いでいる
+                targetDay = sub101_same_day_this_year(tmp215.business_day, tmpYear)
+                yhat = forecastMap.get(targetDay)
+
+                if yhat is None:
+                    tmpNum += tmpSumAve
+                else:
+                    tmpNum += round(yhat, 0)
+                    usedForecast = True
+
                 tmpLabelCtx[format(tmp215.business_day,tmpYear + "/%m/%d")] = tmpNum
             i += 1
         dictCtx['preYear'] = tmpLabelCtx
+
+        # どちらの方法で出した線なのかを画面へ伝える。同じ線で意味が変わるため、
+        # 凡例を見ただけで区別できるようにする
+        dictCtx['forecastSource'] = 'ai' if usedForecast else 'average'
     else:
         if getTimeMode == 'day':
             #日別気温データの取得
@@ -209,6 +238,33 @@ def sub101_index(dictParam, getChartMode, getTimeMode, getTimeDetailMode):
     dictCtx['detailSumOld'] = tmpDetailSumOld
 
     return dictCtx
+
+def sub101_get_forecast_map(pFrom, pTo):
+    """
+    対象期間の予測値を {営業日: yhat} で返す。
+
+    target_cls は平年通り(total)。気温高め・低めは画面に出していないため
+    使わない。予測が1件も無ければ空になり、呼び出し側は従来の方法へ倒れる。
+    """
+    rows = Tz301AttendanceForecast.objects.filter(
+        business_day__range=[pFrom, pTo], target_cls=FORECAST_TARGET_CLS
+    ).values_list('business_day', 'yhat')
+
+    return dict(rows)
+
+
+def sub101_same_day_this_year(pPrevYearDay, pYear):
+    """
+    前年の営業日に対応する当年の日付を返す。
+
+    2月29日のように当年に存在しない日は None を返す。呼び出し側は
+    見つからなかった日として扱い、平均で補う。
+    """
+    try:
+        return date(int(pYear), pPrevYearDay.month, pPrevYearDay.day)
+    except ValueError:
+        return None
+
 
 def sub101_index_init():
     #初期処理時、DB上の最新月のデータを取得する

@@ -18,7 +18,27 @@ $(document).ready(function() {
 
     // 既定値がどのプリセットに当たるかを表示に反映する
     updateLlmParamDisplay();
+
+    // 月次所見の状態。対象年月を変えたら読み直す。
+    //
+    // イベントは component 要素(.input-group.date)側で拾う。
+    // datepicker('update', date) は changeDate を出さず、component 要素に
+    // change() を発火する（bootstrap-datepicker の update() の fromArgs 分岐）。
+    // input に張ると前月・翌月ボタンで反応しない。input の change はここまで
+    // バブルするので、component 要素で見れば全ての経路を拾える。
+    $('.input-group.date').on('change changeDate', sub490_onYmChanged);
+    sub490_remarkStateLoad();
 });
+
+// 直近に読み込んだ対象月。changeDate と change が両方飛ぶ場合に二重で
+// 問い合わせないようにする
+var gLoadedYm = '';
+
+function sub490_onYmChanged() {
+    var ym = $('#llm_ym').val();
+    if (ym === gLoadedYm) { return; }
+    sub490_remarkStateLoad();
+}
 
 /*
     LLM実行パラメータ
@@ -223,7 +243,21 @@ function runBatch(batchType) {
         // ▼ 追加：プルダウンから日数を取得して postData に格納
         postData.periods = $('#forecast_periods').val();
         confirmMsg = "未来 " + postData.periods + " 日間の来場者予測バッチ(Prophet)を実行しますか？\n(日数が長いほど処理に数秒余分に時間がかかります)";
-        
+
+        // 学習を打ち切る指定。直近の実績を捨てる操作なので、何が起きるかを
+        // 明示してから確認する。押した本人が意図していない場合に気づける
+        if ($('#forecast_from_ym').is(':checked')) {
+            var fromYm = $('#llm_ym').val();
+            postData.from_ym = fromYm;
+
+            confirmMsg = "【確認】" + fromYm + " の1日から予測をやり直します。\n\n"
+                       + "・学習に使うのは " + fromYm + " の前月末までの実績です\n"
+                       + "・それ以降の実績は学習に使いません（予測の精度は通常より落ちます）\n"
+                       + "・予測期間 " + postData.periods + " 日は前月末からの日数です。"
+                       + "短いと現在までしか届きません\n\n"
+                       + "所見の効果を同じ条件で比べるための実行です。実行しますか？";
+        }
+
     } else if (batchType === 'llm') {
         postData.mode = $('#llm_mode').val();
         postData.ym = $('#llm_ym').val();
@@ -261,11 +295,14 @@ function runBatch(batchType) {
     $console.text("実行開始中...\n");
     if (batchType === 'forecast') {
         $console.append("Prophet 来場者予測バッチを起動しています...\n");
+        if (postData.from_ym) {
+            $console.append("学習を " + postData.from_ym + " の前月末までに限定します。\n");
+        }
     } else if (batchType === 'llm') {
         var modelName = postData.model ? postData.model : "デフォルトモデル";
         $console.append("【" + postData.ym + " / モード: " + postData.mode + "】AIレポートの生成を開始します...\n");
         $console.append("Ollama API (モデル: " + modelName + ") にリクエストを送信中...\n");
-        $console.append("※LLMの思考が完了するまでしばらくお待ちください。\n\n");
+        $console.append("※AIの思考が完了するまでしばらくお待ちください。\n\n");
     }
 
     $('button').prop('disabled', true);
@@ -326,6 +363,9 @@ function btnPrevMonth() {
         // 1ヶ月前にセットしてカレンダーを更新
         currentDate.setMonth(currentDate.getMonth() - 1);
         $dateGroup.datepicker('update', currentDate);
+        // イベント任せにせず、ここでも読み直す。ライブラリがどのイベントを
+        // 出すかに依存すると、版が変わったときに黙って動かなくなる
+        sub490_onYmChanged();
     }
 }
 
@@ -342,5 +382,62 @@ function btnNextMonth() {
         // 1ヶ月後にセットしてカレンダーを更新
         currentDate.setMonth(currentDate.getMonth() + 1);
         $dateGroup.datepicker('update', currentDate);
+        // イベント任せにせず、ここでも読み直す。ライブラリがどのイベントを
+        // 出すかに依存すると、版が変わったときに黙って動かなくなる
+        sub490_onYmChanged();
     }
+}
+
+
+/* ============================================================
+   月次所見の状態表示
+
+   入力は 480 で行う。ここでは「入れたつもりで入っていない」まま
+   バッチを実行してしまうのを防げれば足りるので、状態だけを出す。
+   ============================================================ */
+
+function sub490_remarkStateLoad() {
+    var ym = $('#llm_ym').val();
+    if (!ym) { return; }
+    gLoadedYm = ym;
+
+    $.ajax({
+        type: 'POST',
+        url: '/480monthly_remark.html',
+        dataType: 'json',
+        data: { getMode: 'status', ym: ym, cls: 'forecast' },
+        beforeSend: function(xhr) {
+            if (typeof com_csrftoken !== 'undefined') {
+                xhr.setRequestHeader('X-CSRFToken', com_csrftoken);
+            }
+        }
+    }).done(function(res) {
+        if (!res.remark_success) { return; }
+        $('#remark_state_ym').text('（' + res.ym + '）');
+        sub490_remarkStateRow('forecast', res.status.forecast);
+        sub490_remarkStateRow('review', res.status.review);
+    });
+}
+
+function sub490_remarkStateRow(pCls, pState) {
+    var label = '未入力';
+    var cls = 'gf_rmk_none';
+
+    if (pState.parse_status === 'confirmed') {
+        label = '確認済み';
+        cls = 'gf_rmk_confirmed';
+    } else if (pState.has_text || pState.parse_status === 'parsed') {
+        label = (pState.parse_status === 'parsed') ? '未確認' : '未解析';
+        cls = 'gf_rmk_parsed';
+    }
+
+    $('#remark_state_' + pCls)
+        .removeClass('gf_rmk_none gf_rmk_parsed gf_rmk_confirmed')
+        .addClass(cls)
+        .text(label);
+
+    var detail = [];
+    if (pState.event_count) { detail.push(pState.event_count + '件'); }
+    if (pState.updated_at)  { detail.push(pState.updated_at); }
+    $('#remark_state_' + pCls + '_detail').text(detail.length ? ' ' + detail.join(' / ') : '');
 }

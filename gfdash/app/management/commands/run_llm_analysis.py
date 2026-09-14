@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.db.models import Sum, Avg
 from django.conf import settings
 import requests
@@ -9,9 +10,23 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from app.models import Ta215Attnd, Tz301AttendanceForecast, Tz302LlmAnalysis, Tz101WeatherReport
+from app.models import Tz305MonthlyRemark, Tz310AiRun
+from app.utils.com_ai_run import com_fail_ai_run
+from app.utils.com_ai_run import com_save_report_history
+from app.utils.com_ai_run import com_track_ai_run
+from app.utils.com_ai_run import com_update_ai_run
 from app.utils.com_llm import com_get_llm_client
+from app.utils.com_llm_preset import com_find_llm_preset_key
+from app.utils.com_remark import com_build_remark_section
 
 SCRIPT_VERSION = "v0.1.0"
+
+# プロンプトの版。SCRIPT_VERSION とは別に持つ。
+#
+# 同じスクリプトでプロンプトの構成だけを変えた実行を区別するため。
+# レポートの良し悪しはプロンプトで大きく変わるので、文面の構成を変えたら
+# ここを上げること。custom_prompts/ による差し替えは含まない。
+PROMPT_VERSION = "v0.2.0"   # v0.2.0: 運営者の所見の節を追加
 
 class Command(BaseCommand):
     help = 'ローカルLLMを呼び出して、月次の振り返りおよび未来予測レポートを生成します'
@@ -21,11 +36,11 @@ class Command(BaseCommand):
                             help='生成モード (review:当月振り返り, forecast_1m:1ヶ月予測, forecast_3m:3ヶ月予測)')
         parser.add_argument('--ym', type=str, default=datetime.now().strftime('%Y-%m'),
                             help='対象年月 (フォーマット: YYYY-MM)')
-        parser.add_argument('--model', type=str, default=None, help='使用するLLMモデル名')
-        parser.add_argument('--list-models', action='store_true', help='使用可能なLLM一覧をJSONで返す')
+        parser.add_argument('--model', type=str, default=None, help='使用するAIモデル名')
+        parser.add_argument('--list-models', action='store_true', help='使用可能なAIモデル一覧をJSONで返す')
         parser.add_argument('--stream', action='store_true', help='ストリーミング出力を有効にする')
         parser.add_argument('--num-ctx', type=int, default=None,
-                            help='LLMが確保する記憶領域(トークン数)。未指定なら OLLAMA_NUM_CTX')
+                            help='AIが確保する記憶領域(トークン数)。未指定なら OLLAMA_NUM_CTX')
         parser.add_argument('--timeout', type=int, default=None,
                             help='APIのタイムアウト秒数。未指定なら OLLAMA_TIMEOUT')
         parser.add_argument('--think', dest='think', action='store_true', default=None,
@@ -107,12 +122,22 @@ class Command(BaseCommand):
         # =========================================================
         # 通常のレポート生成処理
         # =========================================================
-        mode = options['mode']        
-        ym_str = options['ym']
-        
-        if not mode:
+        if not options['mode']:
             self.stderr.write(self.style.ERROR("エラー: 通常実行には --mode 引数が必須です。"))
             return
+
+        # 実行条件を記録してから始める。所見やプロンプトを変えて作り直したとき、
+        # 何を変えた結果の文章なのかを後から突き合わせられるようにする。
+        with com_track_ai_run(
+            Tz310AiRun.RUN_KIND_REPORT,
+            script_version=SCRIPT_VERSION,
+            prompt_version=PROMPT_VERSION,
+        ) as run:
+            self.sub_analyze(options, run, start_time)
+
+    def sub_analyze(self, options, run, start_time):
+        mode = options['mode']
+        ym_str = options['ym']
 
         # モデル名の決定
         target_model = options.get('model') or getattr(settings, 'OLLAMA_MODEL', 'qwen2.5:7b')        
@@ -320,8 +345,29 @@ class Command(BaseCommand):
 {weather_instruction}
 """
 
+        # 運営者の所見。確定済みのものだけを、対象期間の月ぶん差し込む。
+        # 振り返りは対象月の振り返り所見、先行予測は対象期間の予測所見。
+        # 節の組み立ては com_remark に置き、本文へ文字列を直接混ぜない(#14 対応)
+        if mode == 'review':
+            remark_months = [base_month]
+            remark_cls = Tz305MonthlyRemark.REMARK_CLS_REVIEW
+        else:
+            remark_months = [base_month + relativedelta(months=i)
+                             for i in range(1 if mode == 'forecast_1m' else 3)]
+            remark_cls = Tz305MonthlyRemark.REMARK_CLS_FORECAST
+
+        remark_section, remark_snapshot = com_build_remark_section(remark_months, remark_cls)
+
+        # そのとき何を渡したかを実行ヘッダへ複製する
+        com_update_ai_run(run, applied_remark_json=json.dumps(
+            {'remarks': remark_snapshot}, ensure_ascii=False) if remark_snapshot else None)
+
+        if remark_snapshot:
+            self.stdout.write(
+                f"運営者の所見 {len(remark_snapshot)}か月分 をプロンプトに含めます\n", ending='')
+
         custom_prompt = self.get_custom_prompt(mode)
-        final_prompt = base_prompt + custom_prompt
+        final_prompt = base_prompt + remark_section + custom_prompt
 
         # =========================================================
         # プロンプトのデバッグログ出力処理
@@ -345,6 +391,14 @@ class Command(BaseCommand):
         think_val = options.get('think')
         if think_val is None:
             think_val = getattr(settings, 'OLLAMA_THINK', False)
+
+        # 実行パラメータが確定した時点で履歴に残す。プリセットは値から逆引きする。
+        # 個別指定された組み合わせは 'manual' になる。
+        com_update_ai_run(
+            run,
+            llm_model=target_model,
+            llm_preset=com_find_llm_preset_key(num_ctx, timeout_val, bool(think_val)),
+        )
 
         # 指定できない項目は実行パラメータの表示から落とす。
         # 送っていない値を表示すると「指定したのに効かない」と読めてしまう
@@ -386,6 +440,7 @@ class Command(BaseCommand):
             # 本文が空のまま保存すると、画面には成功と表示されるのに
             # 中身の無いレポートが残る。原因が何であれ保存しない。
             if not report_text.strip():
+                com_fail_ai_run(run)
                 self.stderr.write(self.style.ERROR(
                     f"❌ レポート本文が生成されませんでした。DBには保存していません。\n"
                     f"{self.sub_empty_report_hint(stats, think_text)}"
@@ -401,11 +456,15 @@ class Command(BaseCommand):
                 self.stdout.write(footer_text, ending='')
                 self.stdout.flush()
 
-            Tz302LlmAnalysis.objects.update_or_create(
-                target_month=base_month,
-                report_cls=mode,
-                defaults={'report_text': report_text}
-            )
+            # tz302(最新)と tz312(履歴)を同じトランザクションで書く。
+            # 片方だけが残ると、画面が見ているレポートと履歴が食い違う。
+            with transaction.atomic():
+                Tz302LlmAnalysis.objects.update_or_create(
+                    target_month=base_month,
+                    report_cls=mode,
+                    defaults={'report_text': report_text}
+                )
+                com_save_report_history(run, base_month, mode, report_text)
 
             # 実行時間の計算と完了ログの出力
             elapsed = time.time() - start_time
@@ -415,11 +474,13 @@ class Command(BaseCommand):
             msg = (
                 f"\n\n✅ {ym_str} [{mode}] のAIレポートをDBに保存しました。\n"
                 f" 実行時間: {time_str} | モデル: {target_model} | バージョン: {SCRIPT_VERSION}\n"
+                f" 実行履歴: run_id={run.run_id}\n"
             )
             self.stdout.write(msg, ending='')
             self.stdout.flush()
 
         except requests.exceptions.Timeout:
+            com_fail_ai_run(run)
             hints = [
                 "AIバッチ実行画面(490)の「実行パラメータ」から、時間の長いプリセットを選ぶ",
                 ".env の OLLAMA_TIMEOUT を増やす（既定 300 秒）",
@@ -436,4 +497,5 @@ class Command(BaseCommand):
             ))
             return
         except Exception as e:
+            com_fail_ai_run(run)
             self.stderr.write(self.style.ERROR(f"❌ {client.name} との通信または保存に失敗しました: {e}"))

@@ -26,8 +26,11 @@ class BaseSystemConfig:
         '330ticket_data.html': 'クーポン利用情報',
         '340zennen_hikaku.html': '前年情報比較',
     #AI予測分析系
-        '410raijyo_forecast.html': '来場者予測(AI)',        
-        '490ai_batch_run.html': 'AIバッチ手動実行',        
+        '410raijyo_forecast.html': '来場者予測推移',
+        '415forecast_hikaku.html': '予測実行履歴比較',
+        '480monthly_remark.html': '月次所見入力',
+        '485remark_maintenance.html': '所見メンテナンス',
+        '490ai_batch_run.html': 'AIバッチ手動実行',
     #メンテナンス系
     #  9xx は用途ごとに帯を分けています。同じ用途の画面が増えたときに番号が
     #  飛ばないよう、帯の中は詰めずに空けてあります。新しい画面を足すときは
@@ -105,6 +108,8 @@ class BaseSystemConfig:
         """特別なGET処理が必要な画面のみ定義"""
         return {
             '001dashbord.html': getattr(views_module, 'get001_main', None),
+            '480monthly_remark.html': getattr(views_module, 'get480_main', None),
+            '485remark_maintenance.html': getattr(views_module, 'get485_main', None),
             '490ai_batch_run.html': getattr(views_module, 'get490_main', None),            
             '905ai_data_sync.html': getattr(views_module, 'get905_main', None),
             '910weather_station_config.html': getattr(views_module, 'get910_main', None),
@@ -136,6 +141,9 @@ class BaseSystemConfig:
             '330ticket_data.html': getattr(views_module, 'post330_main', None),
             '340zennen_hikaku.html': getattr(views_module, 'post340_main', None),
             '410raijyo_forecast.html': getattr(views_module, 'post410_main', None),
+            '415forecast_hikaku.html': getattr(views_module, 'post415_main', None),
+            '480monthly_remark.html': getattr(views_module, 'post480_main', None),
+            '485remark_maintenance.html': getattr(views_module, 'post485_main', None),
             '490ai_batch_run.html': getattr(views_module, 'post490_main', None),
             '901weather_upload.html': getattr(views_module, 'post901_main', None),
             '903normal_temprature_upload.html': getattr(views_module, 'post903_main', None),

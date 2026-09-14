@@ -1,0 +1,151 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    .gf_run_table { font-size: 12px; }
+    .gf_run_table td, .gf_run_table th { padding: 5px 8px; vertical-align: middle; }
+    .gf_run_table tr.gf_run_picked { background-color: #eaf3fb; }
+    .gf_run_table tr.gf_run_nodata td { color: #aaa; }
+    .gf_run_note { color: #4B5F71; }
+
+    /* 選んだ2実行のどちらなのかを色で示す。グラフの線色と対応させる */
+    .gf_run_badge {
+      display: inline-block; min-width: 20px; padding: 0 5px;
+      border-radius: 3px; color: #fff; font-weight: bold; text-align: center;
+    }
+    .gf_run_badge_a { background-color: #5A738E; }
+    .gf_run_badge_b { background-color: #E67E22; }
+
+    /* 見出しの実行日時。何の日付か分かるようラベルを付け、本題(run #)より
+       小さくして主従を付ける。rem ではなく px で指定している。
+       Bootstrap3 が html{font-size:10px} を敷いているため rem が狂う */
+    .gf_run_head_date  { font-size: 11px; font-weight: normal; }
+    /* 「比較結果」とバッジが詰まって見えるため1文字ぶん空ける */
+    .gf_run_head_title { margin-right: 1em; }
+
+    /* テーマに .x_title span { color:#BDBDBD } があり、見出しを span で
+       囲むと薄い灰色になる。セレクタを .x_title 付きにして詳細度で上回らせ、
+       本文と同じ色へ戻す。クラス2つ(0,2,0)がテーマのクラス+要素(0,1,1)に勝つ。
+       span 全体をまとめて上書きしないのは、白抜きのバッジまで巻き込むため */
+    .x_title .gf_run_head_title,
+    .x_title .gf_run_head_date  { color: #73879C; }
+    .x_title .gf_run_head_sep   { color: #ccc; margin: 0 6px; }
+    .x_title .gf_run_badge      { color: #fff; }
+
+    .gf_diff_plus  { color: #C0392B; }
+    .gf_diff_minus { color: #2E86C1; }
+    .gf_diff_zero  { color: #999; }
+
+    .gf_summary_box {
+      border: 1px solid #E6E9ED; border-radius: 3px;
+      background-color: #FAFAFA; padding: 10px 14px; margin-bottom: 12px;
+      font-size: 13px; color: #4B5F71;
+    }
+    /* 日別の差分は行数が多くなるので、表だけを縦スクロールさせる */
+    .gf_detail_wrap { max-height: 360px; overflow-y: auto; }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2>予測実行履歴比較</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>
+                比較する実行を<b>2つ</b>選んでください。予測は同じ条件なら同じ結果になるため、
+                差が出た場合は実績の増加・設定変更・所見の補正が原因です。
+              </p>
+
+              <div class="table-responsive">
+                <table class="table table-hover gf_run_table" id="run_table">
+                  <thead>
+                    <tr>
+                      <th style="width: 60px;">選択</th>
+                      <th style="width: 60px;">ID</th>
+                      <th style="width: 130px;">実行日時</th>
+                      <th style="width: 70px;">状態</th>
+                      <th style="width: 70px;">予測日数</th>
+                      <th style="width: 70px;">保存日数</th>
+                      <th style="width: 80px;">第2休日</th>
+                      <th style="width: 90px;">休業補正</th>
+                      <th style="width: 70px;">所見</th>
+                      <th>メモ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="run_tbody">
+                    <tr><td colspan="10" class="text-muted">読み込み中...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_compare" class="btn btn-success" type="button" onclick="btnCompare()" disabled>比較する</button>
+                <button id="btn_reload" class="btn btn-primary" type="button" onclick="btnReload()">一覧を更新</button>
+                <span id="pick_label" class="text-muted" style="margin-left: 10px;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" id="result_area" style="display: none;">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2 id="compare_header">比較結果</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+
+              <div class="gf_summary_box" id="summary_box"></div>
+
+              <div style="position: relative; height: 340px; margin-bottom: 18px;">
+                <canvas id="chart_compare_canvas"></canvas>
+              </div>
+
+              <h4 style="font-size: 14px; font-weight: bold; color: #4B5F71;">日別の差分</h4>
+              <div class="table-responsive gf_detail_wrap">
+                <table class="table table-striped gf_run_table">
+                  <thead>
+                    <tr>
+                      <th>営業日</th>
+                      <th class="text-right"><span class="gf_run_badge gf_run_badge_a">A</span> 予測値</th>
+                      <th class="text-right"><span class="gf_run_badge gf_run_badge_b">B</span> 予測値</th>
+                      <th class="text-right">差 (B - A)</th>
+                      <th class="text-right">差の割合</th>
+                    </tr>
+                  </thead>
+                  <tbody id="detail_tbody"></tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+  <!-- Chart.js -->
+  <script src="/static/gf_vendors/chart.js-4.4.8/package/dist/chart.umd.js"></script>
+
+  <!-- 415forecast_hikaku専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_415.js"></script>
+{% endblock javascripts %}

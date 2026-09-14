@@ -88,6 +88,37 @@
               </div>
             </div>
 
+            <!-- 運営者の所見。グラフとレポートが何を織り込んでいるのかを示す。
+                 数値だけを見せると、補正が入っていることに気づけない。
+                 入力は 480 で行うので、ここは読むだけ -->
+            <div class="row" style="margin-top: 15px;" id="remark_panel_row">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel" style="border: 1px solid #CCD0D7; background-color: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div class="x_title" style="margin-bottom: 12px; padding-bottom: 5px;">
+                    <h3 style="font-size: 16px !important; font-weight: bold !important; color: #2A3F54; margin: 0;">
+                      <i class="fa-solid fa-pen-to-square text-primary"></i> 運営者の所見
+                      <small class="text-muted" style="font-size: 12px; margin-left: 8px;">
+                        データには現れない出来事。編集は
+                        <a href="480monthly_remark.html">月次所見入力</a> 画面で行います。
+                      </small>
+                      <style>
+                        .gf_rmk_state {
+                          display: inline-block; margin-left: 8px; padding: 1px 8px;
+                          border-radius: 3px; font-size: 11px; font-weight: bold; color: #fff;
+                        }
+                        .gf_rmk_state_on  { background-color: #1ABB9C; }
+                        .gf_rmk_state_off { background-color: #E67E22; }
+                      </style>
+                    </h3>
+                    <div class="clearfix"></div>
+                  </div>
+                  <div class="x_content" style="padding: 0 10px;">
+                    <div id="remark_view"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="row" style="margin-top: 15px;">
               <div class="col-md-12 col-sm-12 col-xs-12">
                 <div class="x_panel" style="border: 1px solid #CCD0D7; background-color: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">

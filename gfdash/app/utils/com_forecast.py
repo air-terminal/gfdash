@@ -267,3 +267,141 @@ def com_get_planned_closures(pDates):
             result[r['business_day']] = slots
 
     return result
+
+
+# ====================================================================
+# 所見による補正
+#
+# 休業補正と同じ「学習では係数を得られないので、外から決め打ちの係数を
+# 掛ける」方式の一般化。違いは係数の出どころで、休業補正は実績から算出
+# するが、こちらは人の見立て（tz305 の確定済み所見）から来る。
+# ====================================================================
+
+from datetime import date as _date
+
+# 合成後の係数の上下限。
+#
+# 複数のイベントが重なると乗算で積み上がる。3つ重なれば 1.1 でも 1.33 に
+# なり、それぞれの見立てが妥当でも合わせると現実味を失う。人の見立てで
+# 半減や1.5倍を超える補正が正しいことはまず無い。
+EVENT_FACTOR_MIN = 0.5
+EVENT_FACTOR_MAX = 1.5
+
+
+def com_apply_event_factors(pForecastDf, pEvents, pAfterDay=None):
+    """
+    確定済みイベントの係数を予測へ掛ける。
+
+    pAfterDay より後の日にだけ掛ける。学習に使った期間へ掛けると、実績に
+    既に現れている効果へ重ねて掛けることになる（過去日の値は当てはめ値で
+    あって予測ではない）。None なら全期間に掛ける。
+
+    上限・下限には中央値と別の係数を掛ける。人の見立てによる補正は不確かさを
+    増やすので、幅も同時に広がるべき。同じ係数を掛けると幅が変わらず、
+    不確実性が消えたように見える。
+
+    戻り値は {'days': 掛けた日数, 'clipped': 上下限で切った日数}。
+    """
+    if not pEvents:
+        return {'days': 0, 'clipped': 0}
+
+    ranges = []
+    for event in pEvents:
+        start = _date.fromisoformat(event['start_date'])
+        end = _date.fromisoformat(event['end_date']) if event.get('end_date') else None
+        ranges.append((start, end,
+                       float(event['factor_low']),
+                       float(event['factor_mid']),
+                       float(event['factor_high'])))
+
+    days = 0
+    clipped = 0
+
+    for idx, row in pForecastDf.iterrows():
+        day = row['ds'].date()
+        if pAfterDay is not None and day <= pAfterDay:
+            continue
+
+        f_low = f_mid = f_high = 1.0
+        hit = False
+        for start, end, lo, mid, hi in ranges:
+            if day < start or (end is not None and day > end):
+                continue
+            f_low *= lo
+            f_mid *= mid
+            f_high *= hi
+            hit = True
+
+        if not hit:
+            continue
+
+        c_low = sub_clip(f_low)
+        c_mid = sub_clip(f_mid)
+        c_high = sub_clip(f_high)
+        if (c_low, c_mid, c_high) != (f_low, f_mid, f_high):
+            clipped += 1
+
+        pForecastDf.at[idx, 'yhat'] = row['yhat'] * c_mid
+        pForecastDf.at[idx, 'yhat_lower'] = row['yhat_lower'] * c_low
+        pForecastDf.at[idx, 'yhat_upper'] = row['yhat_upper'] * c_high
+        days += 1
+
+    return {'days': days, 'clipped': clipped}
+
+
+def sub_clip(pFactor):
+    return max(EVENT_FACTOR_MIN, min(EVENT_FACTOR_MAX, pFactor))
+
+
+def com_split_effective_events(pEvents, pAfterDay, pUntilDay=None):
+    """
+    予測へ効き得るイベントと、そうでないものに分ける。
+
+    戻り値は (効くもの, 効かないもの)。判定は com_apply_event_factors が
+    実際に掛ける条件と同じで、pAfterDay より後・pUntilDay 以前に1日でも
+    掛かるかを見る。
+
+    分ける理由は表示のため。終わった出来事まで「適用します」と並べると、
+    件数と実際に効いた日数が食い違い、補正が効いていないのではと疑わせる。
+    確定済みの所見は消さずに残るので、過去のイベントは溜まっていく。
+    """
+    effective = []
+    skipped = []
+
+    for event in pEvents:
+        start = _date.fromisoformat(event['start_date'])
+        end = _date.fromisoformat(event['end_date']) if event.get('end_date') else None
+
+        if end is not None and pAfterDay is not None and end <= pAfterDay:
+            # 予測が始まる前に終わっている
+            skipped.append(event)
+            continue
+
+        if pUntilDay is not None and start > pUntilDay:
+            # 予測期間より後に始まる
+            skipped.append(event)
+            continue
+
+        effective.append(event)
+
+    return effective, skipped
+
+
+def com_find_overlapping_events(pEvents, pTrainUntil):
+    """
+    学習期間と重なるイベントを返す。
+
+    学習期間に始まったイベントの効果は、実績を通じて既にモデルが学習して
+    いる可能性がある。そこへ係数を掛けると二重に効く。掛ける対象は学習期間
+    より後の日に限っているので予測値は壊れないが、見立てとして正しいのかを
+    利用者に伝える必要がある。
+    """
+    if pTrainUntil is None:
+        return []
+
+    found = []
+    for event in pEvents:
+        start = _date.fromisoformat(event['start_date'])
+        if start <= pTrainUntil:
+            found.append(event)
+    return found

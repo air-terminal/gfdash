@@ -47,6 +47,9 @@ function sub410_postView(postParam){
         if (results.reportForecast1m) {
             $("#ai_report_forecast").html(marked.parse(results.reportForecast1m));
         }
+        // 運営者の所見。レポートより先に描く（何を織り込んだかを先に示す）
+        sub410_renderRemarks(results.remarks);
+
         if (results.reportReview) {
             $("#ai_report_review").html(marked.parse(results.reportReview));
         }
@@ -264,3 +267,72 @@ function executeMonthChange(targetDate) {
 $(document).ready(function() {
     initFor410();
 });
+
+/* ============================================================
+   運営者の所見（読み取り専用）
+
+   グラフとレポートが何を織り込んでいるのかを示す。数値だけを見せると、
+   補正が入っていることに気づけない。入力は 480 で行う。
+   ============================================================ */
+
+function sub410_renderRemarks(pRemarks) {
+    var remarks = pRemarks || [];
+
+    // 所見の無い月では枠ごと出さない。空の見出しだけが残ると場所を取る
+    if (remarks.length === 0) {
+        $('#remark_panel_row').hide();
+        return;
+    }
+    $('#remark_panel_row').show();
+
+    var html = '';
+
+    for (var i = 0; i < remarks.length; i++) {
+        var r = remarks[i];
+
+        html += '<div style="margin-bottom: 14px;">';
+        html += '<div style="margin-bottom: 4px;">'
+              + '<b style="color:#4B5F71;">' + sub410_escape(r.label) + '</b>'
+              + (r.confirmed
+                 ? '<span class="gf_rmk_state gf_rmk_state_on">確認済み</span>'
+                 : '<span class="gf_rmk_state gf_rmk_state_off">未確認 — 予測とレポートには反映されていません</span>')
+              + '</div>';
+
+        html += '<div style="font-size:13px; color:#4B5F71; white-space:pre-wrap;'
+              + ' background-color:#FAFBFC; border:1px solid #E6E9ED; border-radius:3px;'
+              + ' padding:8px 10px;">' + sub410_escape(r.text) + '</div>';
+
+        if (r.events && r.events.length) {
+            html += '<ul style="margin:6px 0 0 0; padding-left:18px; font-size:12px; color:#4B5F71;">';
+            for (var j = 0; j < r.events.length; j++) {
+                var e = r.events[j];
+                var uses = [];
+                if (e.use_for_forecast) { uses.push('予測'); }
+                if (e.use_for_report) { uses.push('レポート'); }
+
+                html += '<li>' + sub410_escape(e.name)
+                      + ' <span class="text-muted">（' + sub410_escape(e.type_name) + '）</span> '
+                      + sub410_escape(e.period);
+                if (e.percent !== null && e.percent !== undefined) {
+                    html += ' <b>' + (e.percent > 0 ? '+' : '') + e.percent + '%</b>';
+                }
+                if (uses.length) {
+                    html += ' <span class="text-muted">[' + uses.join(' / ') + ']</span>';
+                }
+                if (e.rationale) {
+                    html += '<br><span class="text-muted">' + sub410_escape(e.rationale) + '</span>';
+                }
+                html += '</li>';
+            }
+            html += '</ul>';
+        }
+
+        html += '</div>';
+    }
+
+    $('#remark_view').html(html);
+}
+
+function sub410_escape(pText) {
+    return $('<div>').text(pText === undefined || pText === null ? '' : pText).html();
+}

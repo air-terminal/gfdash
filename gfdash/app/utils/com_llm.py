@@ -63,6 +63,19 @@ class LlmClientBase:
         """利用可能なモデル名の一覧。取得できなければ空リスト"""
         raise NotImplementedError
 
+    def preload(self, pModel, pTimeout=600):
+        """
+        モデルをメモリに読み込む。既に常駐していれば即座に返る。
+
+        戻り値は要した秒数。対応しないエンジンでは None を返す。
+
+        生成のAPIはモデルの読み込みが終わるまで何も返さない。読み込みに
+        数十秒かかる環境では、画面が固まったように見える。先に読み込みだけを
+        済ませておけば「読み込み中」と伝えられる。読み込み自体の進捗は
+        取得できない（進捗を返すのはモデルの取得API側だけ）。
+        """
+        return None
+
     def release_others(self, pModel, pOnMessage):
         """
         指定モデル以外がメモリに常駐していれば解放する。
@@ -114,6 +127,24 @@ class OllamaClient(LlmClientBase):
             return 'thinking' in (res.json().get('capabilities') or [])
         except Exception:
             return False
+
+    def preload(self, pModel, pTimeout=600):
+        # プロンプトを空にすると、Ollama は生成せずモデルの読み込みだけを行う
+        started = time.time()
+
+        try:
+            res = requests.post(
+                self.api_url,
+                json={'model': pModel, 'prompt': '', 'stream': False},
+                timeout=pTimeout,
+            )
+            res.raise_for_status()
+        except Exception:
+            # 読み込みに失敗しても、このあとの生成で同じ理由のエラーが出る。
+            # ここで投げると同じ原因が二重に報告され、どちらが本体か分からない
+            return None
+
+        return time.time() - started
 
     def release_others(self, pModel, pOnMessage):
         try:

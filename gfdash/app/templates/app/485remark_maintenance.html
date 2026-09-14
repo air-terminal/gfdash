@@ -1,0 +1,159 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    /* SweetAlert2 は .swal2-popup に font-size:1rem を指定しているが、
+       Bootstrap3 が html{font-size:10px} を敷いているため 10px 基準になる。
+       この画面のダイアログだけ本体(13px)にそろえる */
+    .gf-mnt-dialog,
+    .gf-mnt-dialog .swal2-html-container { font-size: 13px; }
+
+    .gf_mnt_table { font-size: 12px; }
+    .gf_mnt_table td, .gf_mnt_table th { padding: 5px 8px; vertical-align: middle; }
+    .gf_mnt_table tr.gf_mnt_picked { background-color: #eaf3fb; }
+    .gf_mnt_table tbody tr { cursor: pointer; }
+
+    .gf_mnt_state {
+      display: inline-block; padding: 1px 8px; border-radius: 3px;
+      font-size: 11px; font-weight: bold; color: #fff;
+    }
+    .gf_mnt_none      { background-color: #95A5A6; }
+    .gf_mnt_parsed    { background-color: #E67E22; }
+    .gf_mnt_confirmed { background-color: #1ABB9C; }
+
+    /* 直接編集する JSON。等幅でないと括弧の対応を追えない */
+    #detail_json {
+      width: 100%; min-height: 320px; font-size: 12px;
+      font-family: 'Courier New', Courier, monospace;
+      border: 1px solid #E6E9ED; border-radius: 3px; padding: 8px;
+      white-space: pre; overflow-wrap: normal; overflow-x: auto;
+    }
+    .gf_mnt_readonly {
+      background-color: #FAFBFC; border: 1px solid #E6E9ED; border-radius: 3px;
+      padding: 8px 10px; font-size: 13px; color: #4B5F71; white-space: pre-wrap;
+      min-height: 60px;
+    }
+    .gf_mnt_warns {
+      background-color: #FFF8F0; border: 1px solid #F5E0C8; border-radius: 3px;
+      padding: 8px 10px; font-size: 12px; color: #8A5A2B; margin-top: 8px;
+    }
+    .gf_mnt_warns .fa { color: #E67E22; margin-right: 4px; }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2><i class="fa-solid fa-screwdriver-wrench"></i> 所見メンテナンス</h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+            <p>
+              登録済みの所見を一覧し、内容を直接編集します。
+              日常の入力は <a href="480monthly_remark.html">月次所見入力</a> 画面で行ってください。
+              こちらは<b>過去分の修正や、画面では表現できない編集</b>のための画面です。
+            </p>
+
+            <div class="table-responsive">
+              <table class="table table-hover gf_mnt_table" id="mnt_table">
+                <thead>
+                  <tr>
+                    <th style="width: 90px;">対象月</th>
+                    <th style="width: 110px;">区分</th>
+                    <th style="width: 130px;">状態</th>
+                    <th style="width: 60px;" class="text-right">件数</th>
+                    <th>所見（冒頭）</th>
+                    <th style="width: 130px;">解析モデル</th>
+                    <th style="width: 150px;">更新</th>
+                  </tr>
+                </thead>
+                <tbody id="mnt_tbody">
+                  <tr><td colspan="7" class="text-muted">読み込み中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-sm" onclick="btnMntReload()">
+              <i class="fa fa-refresh"></i> 一覧を更新
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" id="detail_row" style="display: none;">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2 id="detail_header">所見の内容</h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+
+            <div class="row">
+              <div class="col-md-5 col-sm-12 col-xs-12">
+                <label>所見（本文）</label>
+                <div class="gf_mnt_readonly" id="detail_text"></div>
+                <p class="text-muted" style="margin-top: 6px;">
+                  本文の編集は「月次所見入力」画面で行います。ここで本文を変えると、
+                  解析結果との対応が追えなくなるためです。
+                </p>
+                <!-- 対象月と区分を引き継いで遷移する。画面名を伝えるだけだと、
+                     利用者が月と区分を選び直すことになる -->
+                <button type="button" class="btn btn-default btn-sm" onclick="btnMntEditText()">
+                  <i class="fa-solid fa-pen-to-square"></i> 本文を修正（月次所見入力へ）
+                </button>
+                <div id="detail_warns"></div>
+              </div>
+
+              <div class="col-md-7 col-sm-12 col-xs-12">
+                <label>補正の内容（JSON）</label>
+                <textarea id="detail_json" spellcheck="false"></textarea>
+                <p class="text-muted" style="margin-top: 4px;">
+                  保存すると「月次所見入力」画面と同じ検証を通します。保存後は<b>未確認</b>に戻るので、
+                  内容を確かめてから確定してください。
+                </p>
+              </div>
+            </div>
+
+            <div class="ln_solid"></div>
+            <div class="form-group">
+              <button type="button" class="btn btn-primary" onclick="btnMntSaveJson()">
+                <i class="fa-solid fa-floppy-disk"></i> JSONを保存
+              </button>
+              <button type="button" class="btn btn-success" id="btn_mnt_confirm" onclick="btnMntConfirm()">
+                <i class="fa-solid fa-check"></i> 確定
+              </button>
+              <button type="button" class="btn btn-default" id="btn_mnt_unconfirm" onclick="btnMntUnconfirm()">
+                <i class="fa-solid fa-rotate-left"></i> 確定を解除
+              </button>
+              <button type="button" class="btn btn-danger" onclick="btnMntDelete()" style="margin-left: 30px;">
+                <i class="fa-solid fa-trash"></i> この所見を削除
+              </button>
+            </div>
+
+            <div id="detail_msg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <script>
+    var gStatusNames = {{ status_names_json|safe }};
+    var gTypeNames = {{ type_names_json|safe }};
+  </script>
+
+  <!-- 485remark_maintenance専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_485.js"></script>
+{% endblock javascripts %}

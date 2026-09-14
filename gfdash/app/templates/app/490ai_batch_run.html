@@ -14,6 +14,42 @@
     .gf-llm-param-dialog .swal2-html-container {
         font-size: 13px;
     }
+    /* 対象年月の枠。中に入る操作がこの年月に従うことを、囲いで示す */
+    .gf_ym_frame {
+      margin-top: 20px; border: 1px solid #E6E9ED; border-radius: 4px;
+    }
+    .gf_ym_head {
+      padding: 12px 15px; background-color: #F7F9FB;
+      border-bottom: 1px solid #E6E9ED; border-radius: 4px 4px 0 0;
+    }
+    .gf_ym_body { padding: 15px 15px 5px; }
+    .gf_ym_note { margin-left: 12px; }
+
+    /* タブレット縦など、横幅が中途半端に足りない画面への調整。
+       Bootstrap3 の sm（768〜991px）が該当する */
+    @media (max-width: 991px) {
+      /* 注記が文の途中で折り返すと読みにくい。年月の操作の後ろで改行させる */
+      .gf_ym_note { display: block; margin: 6px 0 0 0; }
+      /* ラベルが1文字ずつ折り返して行が増えるのを防ぐ。
+         桁を広げても足りない場合に備え、折り返し自体を禁じる */
+      #llm-form .control-label { white-space: nowrap; }
+    }
+    /* 操作の順番。上から順に見ていけばよいことを示す */
+    .gf_step_no {
+      display: inline-block; min-width: 18px; height: 18px; line-height: 18px;
+      margin-right: 6px; border-radius: 9px;
+      background-color: #5A738E; color: #fff; font-size: 11px; text-align: center;
+    }
+
+    /* 月次所見の状態表示。入力そのものは 480 で行う */
+    .gf_rmk_badge {
+        display: inline-block; padding: 1px 8px;
+        border-radius: 3px; font-size: 11px; font-weight: bold; color: #fff;
+    }
+    .gf_rmk_none      { background-color: #95A5A6; }
+    .gf_rmk_parsed    { background-color: #E67E22; }
+    .gf_rmk_confirmed { background-color: #1ABB9C; }
+
     .terminal-log {
         background-color: #1E1E1E;
         color: #00FF00;
@@ -39,22 +75,77 @@
           </div>
           <div class="x_content">
             <p>サーバー上で動作するAI予測・分析のバッチ処理を画面から直接キックします。<br>
-               <span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> LLMの生成には数分かかる場合があります。実行中は画面を閉じないでください。</span></p>
+               <span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> AI処理には数分かかる場合があります。実行中は画面を閉じないでください。</span></p>
 
             {% if disable_batch_execution %}
             <div class="alert alert-warning" style="margin-top: 15px;">
-              <i class="fa-solid fa-triangle-exclamation"></i> デモモードまたはLLM未設定環境のため、バッチの実行は無効化されています。
+              <i class="fa-solid fa-triangle-exclamation"></i> デモモードまたはAI未設定環境のため、バッチの実行は無効化されています。
             </div>
             {% endif %}
 
-            <div class="row" style="margin-top: 20px;">
+            <!-- 対象年月を最上位に置き、その下に操作を並べる。
+                 以前は年月がレポート欄の中にあり、所見の状態を切り替えるために
+                 レポートの設定を触る必要があった。何を決めると何が変わるのかが
+                 配置から読み取れる形にする -->
+            <div class="gf_ym_frame">
+              <div class="gf_ym_head">
+                <label style="margin: 0 10px 0 0;">対象年月</label>
+                <div style="display: inline-flex; vertical-align: middle;">
+                  <button type="button" class="btn btn-default glyphicon glyphicon-chevron-left"
+                          onclick="btnPrevMonth()" style="margin-bottom: 0;"></button>
+                  <div class="input-group date" style="margin-bottom: 0; width: 160px;">
+                    <span class="input-group-addon"><i class="fa-solid fa-calendar"></i></span>
+                    <input type="text" id="llm_ym" class="form-control" value="{{ latest_ym }}">
+                  </div>
+                  <button type="button" class="btn btn-default glyphicon glyphicon-chevron-right"
+                          onclick="btnNextMonth()" style="margin-bottom: 0;"></button>
+                </div>
+                <span class="text-muted gf_ym_note">
+                  月次所見とAI分析レポートの対象になります（来場者予測は下のチェック時のみ）。
+                </span>
+              </div>
+
+              <div class="gf_ym_body">
+                <!-- ① 月次所見の状態。入力は 480 で行う。
+                     ここに入力欄を置くと実行の手前に長い入力が挟まる。実行前に
+                     「入れたつもりで入っていない」を防げれば足りる -->
+                <div class="panel panel-default">
+                  <div class="panel-heading">
+                    <span class="gf_step_no">1</span>
+                    <i class="fa-solid fa-pen-to-square"></i> 月次所見の状態
+                  </div>
+                  <div class="panel-body" style="padding: 10px 15px;">
+                    <table style="width: 100%; font-size: 13px;">
+                      <tr>
+                        <td style="width: 50%;">
+                          予測所見 <span id="remark_state_forecast" class="gf_rmk_badge gf_rmk_none">未入力</span>
+                          <span id="remark_state_forecast_detail" class="text-muted"></span>
+                        </td>
+                        <td style="width: 50%;">
+                          振り返り所見 <span id="remark_state_review" class="gf_rmk_badge gf_rmk_none">未入力</span>
+                          <span id="remark_state_review_detail" class="text-muted"></span>
+                        </td>
+                      </tr>
+                    </table>
+                    <p class="text-muted" style="margin: 8px 0 0 0;">
+                      確認済みの所見だけが補正に使われます。
+                      入力・編集は <a href="480monthly_remark.html">月次所見入力</a> 画面で行います。
+                    </p>
+                  </div>
+                </div>
+
+            <div class="row">
               <div class="col-md-6 col-sm-6 col-xs-12">
                 <div class="panel panel-default">
-                  <div class="panel-heading"><i class="fa-solid fa-chart-line"></i> Prophet 来場者予測の実行</div>
+                  <div class="panel-heading">
+                    <span class="gf_step_no">2</span>
+                    <i class="fa-solid fa-chart-line"></i> 来場者予測の実行
+                  </div>
                   <div class="panel-body">
-                    <p>過去の実績データから、未来30日間の日別来場者予測を再生成します。</p>
+                    <p>過去の実績データから、日別の来場者予測を再生成します。
+                      <span class="text-muted">通常の起点は実績の最終日です。</span></p>
                     <form class="form-horizontal form-label-left" style="margin-bottom: 15px;">
-                      <div class="form-group" style="margin-bottom: 0;">
+                      <div class="form-group">
                         <label class="control-label col-md-4 col-sm-4 col-xs-12">予測期間</label>
                         <div class="col-md-8 col-sm-8 col-xs-12">
                           <select id="forecast_periods" class="form-control">
@@ -64,6 +155,25 @@
                             <option value="180">180日間 (半年)</option>
                             <option value="365">365日間 (1年)</option>
                           </select>
+                        </div>
+                      </div>
+
+                      <!-- 学習の打ち切り。既定は切っておく。月の途中で実行すると
+                           経過分が「当てはめ値」になり予測ではなくなるため、
+                           所見の効果を比べるときだけ基準をそろえる用途 -->
+                      <!-- 説明は実行前の確認ダイアログに出す。ここに広げると
+                           実行ログが画面の外へ押し出される -->
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <div class="col-md-12 col-sm-12 col-xs-12">
+                          <div class="checkbox" style="margin: 0;">
+                            <label style="font-weight: normal;">
+                              <input type="checkbox" id="forecast_from_ym">
+                              対象年月の1日からやり直す
+                              <small class="text-muted">
+                                （学習を前月末までに限定。補正の効果を比べるとき以外は外したまま）
+                              </small>
+                            </label>
+                          </div>
                         </div>
                       </div>
                     </form>
@@ -78,25 +188,17 @@
 
               <div class="col-md-6 col-sm-6 col-xs-12">
                 <div class="panel panel-default">
-                  <div class="panel-heading"><i class="fa-solid fa-robot"></i> LLM 分析レポートの生成</div>
+                  <div class="panel-heading">
+                    <span class="gf_step_no">3</span>
+                    <i class="fa-solid fa-robot"></i> AI 分析レポートの生成
+                  </div>
                   <div class="panel-body">
                     <form id="llm-form" class="form-horizontal form-label-left">
+                      <!-- 狭い画面ではラベルの桁を広げる。col-sm-3 のままだと
+                           「使用モデル」が1文字ずつ折り返し、行数が倍になる -->
                       <div class="form-group">
-                        <label class="control-label col-md-3 col-sm-3 col-xs-12">対象年月</label>
-                        <div class="col-md-9 col-sm-9 col-xs-12">
-                          <div style="display: flex; max-width: 280px;">
-                            <button type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()" style="margin-bottom: 0;"></button>
-                            <div class="input-group date" style="margin-bottom: 0; flex-grow: 1;">
-                              <span class="input-group-addon"><i class="fa-solid fa-calendar"></i></span>
-                              <input type="text" id="llm_ym" class="form-control" value="{{ latest_ym }}">
-                            </div>
-                            <button type="button" class="btn btn-default glyphicon glyphicon-chevron-right" onclick="btnNextMonth()" style="margin-bottom: 0;"></button>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="form-group">
-                        <label class="control-label col-md-3 col-sm-3 col-xs-12">モード</label>
-                        <div class="col-md-6 col-sm-6 col-xs-12">
+                        <label class="control-label col-md-3 col-sm-4 col-xs-12">モード</label>
+                        <div class="col-md-6 col-sm-8 col-xs-12">
                           <select id="llm_mode" class="form-control">
                             <option value="review">当月振り返り (review)</option>
                             <option value="forecast_1m">来月予測 (forecast_1m)</option>
@@ -107,8 +209,8 @@
 
                       {% if allow_model_select %}
                       <div class="form-group">
-                        <label class="control-label col-md-3 col-sm-3 col-xs-12">使用モデル</label>
-                        <div class="col-md-9 col-sm-9 col-xs-12">
+                        <label class="control-label col-md-3 col-sm-4 col-xs-12">使用モデル</label>
+                        <div class="col-md-9 col-sm-8 col-xs-12">
                           <select id="llm_model" class="form-control">
                             {% for m in ollama_models %}
                               <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
@@ -121,8 +223,8 @@
                       {% endif %}
 
                       <div class="form-group">
-                        <label class="control-label col-md-3 col-sm-3 col-xs-12">実行パラメータ</label>
-                        <div class="col-md-9 col-sm-9 col-xs-12">
+                        <label class="control-label col-md-3 col-sm-4 col-xs-12">パラメータ</label>
+                        <div class="col-md-9 col-sm-8 col-xs-12">
                           <p class="form-control-static" style="padding-top: 7px;">
                             <span id="llm_param_label">標準</span>
                             <small class="text-muted">
@@ -138,9 +240,9 @@
                       </div>
 
                       <div class="form-group">
-                        <div class="col-md-9 col-sm-9 col-xs-12 col-md-offset-3">
+                        <div class="col-md-9 col-sm-8 col-xs-12 col-md-offset-3 col-sm-offset-4">
                           <button type="button" class="btn btn-primary" onclick="runBatch('llm')" {% if disable_batch_execution %}disabled{% endif %}>
-                            <i class="fa-solid fa-play"></i> LLMバッチを実行
+                            <i class="fa-solid fa-play"></i> レポート作成バッチを実行
                           </button>
                         </div>
                       </div>
@@ -149,6 +251,8 @@
                 </div>
               </div>
             </div>
+              </div><!-- /gf_ym_body -->
+            </div><!-- /gf_ym_frame -->
 
             <div class="row" style="margin-top: 10px;">
               <div class="col-md-12 col-sm-12 col-xs-12">

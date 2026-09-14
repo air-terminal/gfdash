@@ -1,0 +1,281 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet" type="text/css">
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    /* SweetAlert2 は .swal2-popup に font-size:1rem を指定しているが、
+       Bootstrap3 が html{font-size:10px} を敷いているため 10px 基準になり、
+       画面本体(13px)より小さく表示される。この画面のダイアログだけそろえる */
+    .gf-rmk-dialog,
+    .gf-rmk-dialog .swal2-html-container { font-size: 13px; }
+
+    .gf_rmk_badge {
+      display: inline-block; margin-left: 10px; padding: 1px 8px;
+      border-radius: 3px; font-size: 11px; font-weight: bold; color: #fff;
+    }
+    .gf_rmk_none      { background-color: #95A5A6; }
+    .gf_rmk_parsed    { background-color: #E67E22; }
+    .gf_rmk_confirmed { background-color: #1ABB9C; }
+    /* テーマの .x_title span が薄い灰色を当てるため、見出し内では打ち消す */
+    .x_title .gf_rmk_badge { color: #fff; }
+
+    /* イベント1件のカード。中身は Bootstrap のグリッドで並べ、
+       画面が狭いときは各項目が縦に積まれる */
+    .gf_ev_card {
+      border: 1px solid #E6E9ED; border-radius: 4px;
+      margin-bottom: 10px; background-color: #FCFDFE;
+    }
+    .gf_ev_head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background-color: #F7F9FB;
+      border-bottom: 1px solid #E6E9ED; border-radius: 4px 4px 0 0;
+    }
+    .gf_ev_no {
+      flex: 0 0 auto; min-width: 20px; height: 20px; line-height: 20px;
+      border-radius: 10px; background-color: #5A738E; color: #fff;
+      font-size: 11px; text-align: center;
+    }
+    .gf_ev_head .rmk_name { flex: 1 1 auto; }
+    /* 本文から導けない値がある場合の目印。確定は止めないので警告色にとどめる */
+    .gf_ev_card_warn { border-color: #F0B37E; }
+    .gf_ev_card_warn .gf_ev_head { background-color: #FEF6EC; border-bottom-color: #F0B37E; }
+    .gf_ev_warn_badge {
+      flex: 0 0 auto; padding: 1px 8px; border-radius: 3px;
+      background-color: #E67E22; color: #fff; font-size: 11px; font-weight: bold;
+    }
+    .gf_ev_warns {
+      padding: 8px 12px; background-color: #FFF8F0; border-bottom: 1px solid #F5E0C8;
+      font-size: 12px; color: #8A5A2B; line-height: 1.6;
+    }
+    .gf_ev_warns .fa { color: #E67E22; margin-right: 4px; }
+    /* 承知したあと。指摘は残すが、目立たせる必要はなくなる */
+    .gf_ev_warn_badge_ack { background-color: #95A5A6; }
+    .gf_ev_warns_ack {
+      background-color: #F7F8F9; border-bottom-color: #E6E9ED; color: #7A8794;
+    }
+    .gf_ev_warns_ack .fa { color: #95A5A6; }
+    .gf_ev_ack {
+      display: block; margin: 6px 0 0 0; padding-top: 6px;
+      border-top: 1px dashed #E0CDB4; font-weight: normal; cursor: pointer;
+    }
+    .gf_ev_warns_ack .gf_ev_ack { border-top-color: #E0E3E6; }
+    .gf_ev_ack input { margin-right: 4px; }
+    .gf_ev_body { padding: 10px 12px 4px; }
+    .gf_ev_field { margin-bottom: 8px; }
+    .gf_ev_field > label {
+      display: block; margin: 0 0 2px 0;
+      font-size: 11px; font-weight: normal; color: #8A9BAC;
+    }
+    .gf_ev_card input[type="text"],
+    .gf_ev_card input[type="number"],
+    .gf_ev_card select {
+      width: 100%; padding: 3px 6px; font-size: 12px;
+      border: 1px solid #E6E9ED; border-radius: 2px; height: 28px;
+    }
+    /* 係数は算出結果なので読むだけにする。個別指定のときだけ編集できる */
+    .gf_ev_factors { display: flex; gap: 6px; }
+    .gf_ev_factors input { text-align: right; }
+    .gf_ev_use label {
+      font-weight: normal; margin: 0 12px 0 0; font-size: 12px;
+      display: inline-block;
+    }
+    /* 根拠は別窓で編集する。ここでは有無と冒頭だけを示す */
+    .gf_ev_rationale { display: flex; align-items: center; gap: 6px; }
+    .gf_ev_rationale .rmk_rationale_state {
+      font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* datepicker が他の要素に隠れないようにする */
+    .datepicker { z-index: 1060 !important; }
+
+    /* 操作の順序。番号と矢印で、押す順が見ただけで分かるようにする */
+    .gf_rmk_step {
+      display: inline-block; min-width: 16px; height: 16px; line-height: 16px;
+      margin-right: 5px; border-radius: 8px;
+      background-color: rgba(255,255,255,0.35); font-size: 10px; text-align: center;
+    }
+    .btn-default .gf_rmk_step,
+    .gf_rmk_step_dark { background-color: #E6E9ED; color: #4B5F71; }
+    .gf_rmk_arrow { color: #ccc; margin: 0 4px; }
+
+    .terminal-log {
+      background-color: #1E1E1E; color: #00FF00;
+      font-family: 'Courier New', Courier, monospace;
+      padding: 15px; height: 220px; overflow-y: scroll;
+      border-radius: 5px; font-size: 13px; white-space: pre-wrap;
+    }
+    /* 解析中のダイアログに出すログ。画面下の実行ログと同じ見た目にする */
+    .gf_dlg_log {
+      background-color: #1E1E1E; color: #00FF00;
+      font-family: 'Courier New', Courier, monospace;
+      padding: 12px; height: 300px; overflow-y: auto;
+      border: 0; border-radius: 4px; font-size: 12px;
+      white-space: pre-wrap; margin: 0;
+    }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2><i class="fa-solid fa-pen-to-square"></i> 月次所見入力
+              <span id="remark_status_badge" class="gf_rmk_badge gf_rmk_none">未解析</span>
+            </h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+            <p>
+              競合店の開業、近隣の工事、設備の入れ替えなど、<b>実績データに現れる前から分かっている出来事</b>を書いてください。
+              AIに読み取らせて補正の形に変換し、内容を確認して確定すると、予測とレポートに反映されます。
+            </p>
+
+            <div class="form-inline" style="margin-bottom: 12px;">
+              <label style="margin-right: 6px;">対象月</label>
+              <div style="display: inline-flex; vertical-align: middle;">
+                <button type="button" class="btn btn-default glyphicon glyphicon-chevron-left"
+                        onclick="btnRemarkPrevMonth()" style="margin-bottom: 0;"></button>
+                <div class="input-group date" style="margin-bottom: 0; width: 150px;">
+                  <span class="input-group-addon"><i class="fa-solid fa-calendar"></i></span>
+                  <input type="text" id="remark_ym" class="form-control" value="{{ latest_ym }}">
+                </div>
+                <button type="button" class="btn btn-default glyphicon glyphicon-chevron-right"
+                        onclick="btnRemarkNextMonth()" style="margin-bottom: 0;"></button>
+              </div>
+
+              <label style="margin: 0 6px 0 20px;">区分</label>
+              <label class="radio-inline">
+                <input type="radio" name="remark_cls" value="forecast" checked> 予測所見
+              </label>
+              <label class="radio-inline">
+                <input type="radio" name="remark_cls" value="review"> 振り返り所見
+              </label>
+
+              {% if allow_model_select %}
+                <label style="margin: 0 6px 0 20px;">解析モデル</label>
+                <select id="remark_model" class="form-control input-sm">
+                  {% for m in ollama_models %}
+                    <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+              {% endif %}
+            </div>
+
+            <p class="text-muted" id="remark_meta" style="margin-bottom: 6px;"></p>
+
+            <textarea id="remark_text" class="form-control" rows="5"
+                      placeholder="例）10月上旬に近隣へ競合施設が開業する予定。同規模の施設のため、影響は数%程度の減少と見込む。&#10;10月15日にボールを全交換する。"></textarea>
+
+            <!-- 押せる順序を絞る。4つが常に押せると、どれから押すのか読み取れない。
+                 解析はサーバに保存済みの本文を読むため、編集したまま解析させると
+                 前の本文が解析されるという実務上の理由もある -->
+            <div style="margin-top: 10px;">
+              <button type="button" class="btn btn-primary" id="btn_remark_save" onclick="btnRemarkSave()" disabled>
+                <span class="gf_rmk_step">1</span><i class="fa-solid fa-floppy-disk"></i> 所見を保存
+              </button>
+              <span class="gf_rmk_arrow">→</span>
+              <button type="button" class="btn btn-info" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
+                <span class="gf_rmk_step">2</span><i class="fa-solid fa-wand-magic-sparkles"></i> AIで解析
+              </button>
+              <span class="text-muted">または</span>
+
+              <!-- 削除は手順の流れから外れる操作なので、間隔を空けて右に置く -->
+              <button type="button" class="btn btn-danger" id="btn_remark_delete"
+                      onclick="btnRemarkDelete()" style="margin-left: 30px;" disabled>
+                <i class="fa-solid fa-trash"></i> 所見削除
+              </button>
+            </div>
+
+            <p class="text-muted" id="remark_hint" style="margin: 8px 0 0 0;"></p>
+            {% if disable_batch_execution %}
+              <p class="text-muted" style="margin: 2px 0 0 0;">
+                この環境ではAI解析は無効です。「手で追加」から入力してください。
+              </p>
+            {% endif %}
+
+            <div id="remark_msg" style="margin-top: 10px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2><i class="fa-solid fa-sliders"></i> 補正の内容</h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+            <!-- 追加と確定はこの表に対する操作なので、表と同じ枠に置く。
+                 上の枠に並べると、どの内容に対する操作なのかが読み取れない -->
+            <div style="margin-bottom: 12px;">
+              <button type="button" class="btn btn-default" id="btn_remark_add" onclick="btnRemarkAddEvent()" disabled>
+                <span class="gf_rmk_step gf_rmk_step_dark">2</span><i class="fa-solid fa-plus"></i> 手で追加
+              </button>
+              <span class="gf_rmk_arrow">→</span>
+              <button type="button" class="btn btn-success" id="btn_remark_confirm" onclick="btnRemarkConfirm()" disabled>
+                <span class="gf_rmk_step">3</span><i class="fa-solid fa-check"></i> 確定
+              </button>
+              <span class="text-muted" id="remark_hint2" style="margin-left: 10px;"></span>
+            </div>
+
+            <div id="remark_events_empty" class="text-muted">
+              補正の対象になる出来事はまだありません。上の「AIで解析」または「手で追加」を使ってください。
+            </div>
+
+            <!-- 1イベント=1カードの2段構成。表に11列を詰めると、狭い画面で
+                 プルダウンや日付が見切れる。カードなら列がそのまま縦に積まれる -->
+            <div id="remark_events_wrap" style="display: none;">
+              <div id="remark_events_list"></div>
+              <p class="text-muted" style="margin-bottom: 0;">
+                「影響の見立て」を選ぶと係数が入ります。<code>%</code> を選ぶと率で指定できます。
+                係数は通常を <code>1.00</code> とした倍率で、幅は見立ての不確かさを表します。
+                影響が読めない出来事は種別を「記録のみ」にしてください。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+            <h2><i class="fa-solid fa-terminal"></i> 実行ログ</h2>
+            <div class="clearfix"></div>
+          </div>
+          <div class="x_content">
+            <p class="text-muted" style="margin-bottom: 8px;">
+              解析中の経過はダイアログに表示されます。ここには終了後の全文が残ります。
+            </p>
+            <div id="remark_console" class="terminal-log">待機中... 「AIで解析」を押すと経過を表示します。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+  <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
+
+  <script>
+    // 係数の作り方はサーバ側(app/utils/com_remark.py)を正とする。
+    // 画面で別の式を持つと、手入力とAI解析で違う幅になりかねない。
+    var gFactorPresets = {{ factor_presets_json|safe }};
+    var gTypeNames = {{ type_names_json|safe }};
+    // AIが使えない環境。順序の制御に関わらず解析は押させない
+    var gAiDisabled = {{ disable_batch_execution|yesno:"true,false" }};
+  </script>
+
+  <!-- 480monthly_remark専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_480.js"></script>
+{% endblock javascripts %}

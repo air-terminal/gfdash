@@ -6,6 +6,8 @@ from dateutil.relativedelta import relativedelta
 import calendar
 
 from ..models import Ta215Attnd, Tz301AttendanceForecast, Tz302LlmAnalysis
+from ..models import Tz305MonthlyRemark
+from ..utils.com_remark import EVENT_TYPE_NAMES, com_get_remark, com_load_events
 
 def post410_main(request):
     from django.http import QueryDict
@@ -55,7 +57,12 @@ def post410_main(request):
     # JSON返却データに格納（データが無い場合は案内文を入れる）
     ret['reportForecast1m'] = report_forecast.report_text if report_forecast else "選択された月のAI予測レポートはまだ生成されていません。"
     ret['reportReview'] = report_review.report_text if report_review else "選択された月の振り返りレポートはまだ生成されていません。"
-    ret['hasReview'] = bool(report_review)    
+    ret['hasReview'] = bool(report_review)
+    # ---------------------------------------------------------
+
+    # 運営者の所見。グラフとレポートが何を織り込んでいるのかを示す。
+    # 数値だけを見せると、補正が入っていることに気づけない
+    ret['remarks'] = sub410_get_remarks(target_month_first_day)
     # ---------------------------------------------------------    
     
     # 4. フロントエンド連携用の付加情報
@@ -63,6 +70,57 @@ def post410_main(request):
     ret['header'] = f"{start_date.strftime('%Y/%m/%d')} ～ {end_date.strftime('%Y/%m/%d')}"
 
     return HttpResponse(json.dumps(ret, ensure_ascii=False, indent=2), content_type="application/json")
+
+
+def sub410_get_remarks(pTargetMonth):
+    """
+    対象月の所見を読み取り専用で返す。
+
+    確定済みかどうかも返す。確定していない所見は予測にもレポートにも
+    使われておらず、「書いたのに効いていない」状態を画面で気づけるように
+    するため。区分ごとに1件しか無いので、まとめて返す。
+    """
+    rows = []
+
+    for cls, label in (
+        (Tz305MonthlyRemark.REMARK_CLS_FORECAST, '予測所見'),
+        (Tz305MonthlyRemark.REMARK_CLS_REVIEW, '振り返り所見'),
+    ):
+        remark = com_get_remark(pTargetMonth, cls)
+        if remark is None or not (remark.remark_text or '').strip():
+            continue
+
+        confirmed = (remark.parse_status == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED)
+        events = com_load_events(remark)
+
+        rows.append({
+            'cls': cls,
+            'label': label,
+            'text': remark.remark_text,
+            'confirmed': confirmed,
+            'events': [{
+                'name': e.get('name') or '(名称なし)',
+                'type_name': EVENT_TYPE_NAMES.get(e.get('type'), ''),
+                'period': sub410_period_text(e),
+                # 係数ではなく増減率で見せる。1.05 より +5% のほうが読み取れる
+                'percent': (round((e['factor_mid'] - 1) * 100)
+                            if e.get('factor_mid') is not None else None),
+                'rationale': e.get('rationale') or '',
+                'use_for_forecast': bool(e.get('use_for_forecast')),
+                'use_for_report': bool(e.get('use_for_report')),
+            } for e in events],
+        })
+
+    return rows
+
+
+def sub410_period_text(pEvent):
+    text = pEvent.get('start_date') or ''
+    if pEvent.get('end_date'):
+        text += f"〜{pEvent['end_date']}"
+    else:
+        text += '〜（終了期限なし）'
+    return text
 
 
 def sub410_get_forecast_data(start_date, end_date, base_date):

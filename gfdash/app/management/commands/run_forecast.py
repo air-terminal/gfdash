@@ -1,16 +1,58 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.core.management import call_command
+from django.db import transaction
 from django.db.models import F
 from prophet import Prophet
+import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 from app.models import Ta215Attnd, Ta220Memo, Tz101WeatherReport, Tz102WeatherAvarage, Tz301AttendanceForecast
+from app.models import Tz310AiRun
+from app.utils.com_ai_run import com_save_forecast_history
+from app.utils.com_ai_run import com_track_ai_run
+from app.utils.com_ai_run import com_update_ai_run
 from app.utils.com_holiday2 import com_build_holiday2_regressors
+from app.utils.com_forecast import com_apply_event_factors
+from app.utils.com_forecast import com_find_overlapping_events
 from app.utils.com_forecast import com_get_closure_adjustment
 from app.utils.com_forecast import com_get_closure_factor
 from app.utils.com_forecast import com_get_planned_closures
+from app.utils.com_forecast import com_split_effective_events
+from app.utils.com_remark import com_get_confirmed_forecast_events
+import json
+
+# このスクリプトの版。実行履歴に残し、後から予測値の出どころを追えるようにする。
+SCRIPT_VERSION = "v0.2.0"   # v0.2.0: 所見による補正、学習期間の指定、乱数の固定
+
+# 予測の上下限を再現可能にするための乱数の種。
+#
+# Prophet の予測値(yhat)は MAP 推定で決定論的だが、上下限(yhat_lower / upper)は
+# シミュレーションで作られ、numpy の乱数を使う（sample_model の np.random.normal、
+# sample_predictive_trend の np.random.poisson 等）。種を固定しないと、同じ
+# データ・同じ条件でも上下限が実行ごとに数人ぶれる。
+#
+# 比較画面(415)で「所見の補正が幅をどう変えたか」を読むには、補正以外の理由で
+# 幅が動いてはいけない。値そのものに意味は無く、固定されていることに意味がある。
+PREDICT_SEED = 20260101
+
+
+def sub_parse_train_until(pFromYm):
+    """
+    --from-ym の指定を、学習に使う最終日（前月末）に変換する。
+
+    指定が無ければ None を返し、全実績を学習に使う。
+    """
+    if not pFromYm:
+        return None
+
+    try:
+        first = datetime.strptime(pFromYm.strip(), '%Y-%m').date().replace(day=1)
+    except ValueError:
+        raise CommandError('--from-ym は YYYY-MM の形式で指定してください。')
+
+    return first - timedelta(days=1)
 
 
 def sub_apply_closure_factor(pForecastDf, pPlanned, pAdjustment):
@@ -36,10 +78,41 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--periods', type=int, default=30, help='予測する未来の日数')
         parser.add_argument('--output', type=str, default='forecast.json', help='出力するJSONのパス')
+        parser.add_argument('--note', type=str, default='',
+                            help='実行履歴に残すメモ。比較画面(415)で実行を見分ける目印にする')
+        parser.add_argument('--from-ym', type=str, default=None,
+                            help='指定月(YYYY-MM)の1日から予測をやり直す。'
+                                 '学習は前月末までに限定される')
 
     def handle(self, *args, **options):
+        # 実行条件を記録してから始める。予測は毎回すべての履歴で再学習するため、
+        # 条件を残さないと前回との差が何に由来するのか追えない。
+        # 学習の打ち切りは予測値を左右する条件なので、メモに残す。
+        # 415 で条件の違いとして並ぶようにするため
+        note_parts = [options['note']] if options['note'] else []
+        if options.get('from_ym'):
+            note_parts.append(f"学習を {options['from_ym']} の前月末までに限定")
+
+        with com_track_ai_run(
+            Tz310AiRun.RUN_KIND_FORECAST,
+            script_version=SCRIPT_VERSION,
+            periods=options['periods'],
+            note=' / '.join(note_parts) or None,
+        ) as run:
+            self.sub_forecast(options, run)
+
+    def sub_forecast(self, options, run):
         periods_days = options['periods']
         output_file = options['output']
+
+        # 学習データの上限。--from-ym を指定すると前月末までに限定され、
+        # その月の1日から先が予測になる。
+        #
+        # 既定では全実績を学習に使う。直近の実績は近い将来の予測に最も効くため、
+        # 日々の運用では捨てないほうがよい。一方その場合、月途中に実行すると
+        # 経過分は「当てはめ値」になり予測ではなくなる。補正の効果を比べたい
+        # ときは基準をそろえたいので、選べるようにした。
+        train_until = sub_parse_train_until(options.get('from_ym'))
 
         # =========================================================
         # 1. 過去の実績データと学習用特徴量の取得・結合
@@ -52,11 +125,25 @@ class Command(BaseCommand):
         ).values('business_day', 'total').order_by('business_day')
 
         if not qs_attnd:
-            self.stderr.write(self.style.ERROR("学習用の来場者データが見つかりません。"))
-            return
+            # 例外にする。return で抜けると実行履歴が「成功」として残り、
+            # 予測値が無いのに完了した実行が比較画面に並ぶ。
+            raise CommandError("学習用の来場者データが見つかりません。")
 
         df_attnd = pd.DataFrame(list(qs_attnd)).rename(columns={'business_day': 'ds', 'total': 'y'})
         df_attnd['ds'] = pd.to_datetime(df_attnd['ds'])
+
+        if train_until is not None:
+            before = len(df_attnd)
+            df_attnd = df_attnd[df_attnd['ds'] <= pd.Timestamp(train_until)]
+
+            if df_attnd.empty:
+                raise CommandError(
+                    f'{train_until} 以前の来場者データがありません。'
+                    f'--from-ym の指定を見直してください。')
+
+            self.stdout.write(
+                f"学習データを {train_until} までに限定します"
+                f"（{before}日 → {len(df_attnd)}日）")
 
         # ② 備考情報データ: 特別営業、休業、時間休業
         qs_memo = Ta220Memo.objects.values('business_day', 'tokubetu_flg', 'closed_flg', 'temp_closed')
@@ -116,6 +203,10 @@ class Command(BaseCommand):
         if holiday2_cols:
             self.stdout.write(f"第2休日を考慮します: {holiday2_cols}")
 
+        # 第2休日を使ったかどうかは実行ごとに変わる。比較のとき、予測値の差が
+        # ここに由来するのか判断できるよう記録する。
+        com_update_ai_run(run, holiday2_enabled=bool(holiday2_cols))
+
         # =========================================================
         # 2. Prophetモデルの初期化と学習
         # =========================================================
@@ -171,6 +262,7 @@ class Command(BaseCommand):
         future_normal = future_base.copy()
         future_normal['summer_temp_diff'] = 0.0
         future_normal['winter_temp_diff'] = 0.0
+        np.random.seed(PREDICT_SEED)
         forecast_normal = m.predict(future_normal)
 
         # --- パターン2: 気温高め (+2.0度) ---
@@ -179,6 +271,7 @@ class Command(BaseCommand):
         future_high['winter_temp_diff'] = 0.0
         future_high.loc[f_summer_mask, 'summer_temp_diff'] = 2.0
         future_high.loc[f_winter_mask, 'winter_temp_diff'] = 2.0
+        np.random.seed(PREDICT_SEED)
         forecast_high = m.predict(future_high)
 
         # --- パターン3: 気温低め (-2.0度) ---
@@ -187,6 +280,7 @@ class Command(BaseCommand):
         future_low['winter_temp_diff'] = 0.0
         future_low.loc[f_summer_mask, 'summer_temp_diff'] = -2.0
         future_low.loc[f_winter_mask, 'winter_temp_diff'] = -2.0
+        np.random.seed(PREDICT_SEED)
         forecast_low = m.predict(future_low)
 
         # --- 計画休業日の補正 ---
@@ -196,6 +290,10 @@ class Command(BaseCommand):
         adjustment = com_get_closure_adjustment()
         target_dates = [d.date() for d in future_base['ds']]
         planned = com_get_planned_closures(target_dates)
+
+        # 補正係数は実績から算出するため、実績が増えると値が変わる。
+        # 何日分から出した係数なのかを記録しておく。
+        com_update_ai_run(run, closure_sample_count=adjustment['sample_count'])
 
         if planned:
             self.stdout.write(
@@ -207,11 +305,77 @@ class Command(BaseCommand):
         else:
             self.stdout.write("補正対象となる計画休業は登録されていません")
 
+        # --- 所見による補正 ---
+        # 確定済みの所見から係数を集め、休業補正のあとに掛ける。順序を固定
+        # しているのは、上下限のクリップが所見側にだけ掛かるため。休業補正は
+        # 営業時間という確定情報なので、クリップの対象にしない。
+        events, snapshot = com_get_confirmed_forecast_events()
+
+        # そのとき何を掛けたかを実行ヘッダへ複製する。所見は後から書き換え
+        # られるので、参照ではなく複製でないと検証のときに追えない
+        com_update_ai_run(run, applied_remark_json=json.dumps(
+            {'remarks': snapshot}, ensure_ascii=False) if snapshot else None)
+
+        if not events:
+            self.stdout.write("確定済みの所見はありません（補正なし）")
+        else:
+            last_train_day = df['ds'].max().date()
+            last_forecast_day = forecast_normal['ds'].max().date()
+
+            # 確定した所見は消さずに残るため、終わった出来事も一緒に返ってくる。
+            # 予測に掛かるものだけを対象にする。掛からないものまで「適用します」と
+            # 並べると、件数と実際に効いた日数が食い違い、補正が効いていないのでは
+            # ないかと疑わせる
+            events, skipped = com_split_effective_events(
+                events, last_train_day, last_forecast_day)
+
+            for event in skipped:
+                self.stdout.write(
+                    f"  （対象外）{event['name']} "
+                    f"{event['start_date']}〜{event['end_date'] or '（継続）'}"
+                    f" は予測期間（{last_train_day} の翌日〜{last_forecast_day}）に掛かりません")
+
+        if not events:
+            # 確定済みではあるが、どれも予測期間に掛からなかった場合。
+            # 「所見なし」とは区別する。所見は入っているのに効かない状態であり、
+            # 見るべきは所見の有無ではなく期間の指定
+            if snapshot:
+                self.stdout.write(
+                    "予測期間に掛かる所見はありません（補正なし）")
+        else:
+            overlapping = com_find_overlapping_events(events, last_train_day)
+            for event in overlapping:
+                # 学習期間に始まったイベントは、実績を通じて既にモデルが学習
+                # している可能性がある。掛けるのは学習期間より後だけなので
+                # 予測は壊れないが、見立てが二重になっていないか伝える
+                self.stdout.write(self.style.WARNING(
+                    f"注意: 「{event['name']}」は学習期間内({event['start_date']}〜)に"
+                    f"始まっています。実績に既に現れている効果へ重ねて掛ける可能性があります。"))
+
+            self.stdout.write(f"所見による補正 {len(events)}件 を適用します")
+            for event in events:
+                self.stdout.write(
+                    f"  ・{event['name']} {event['start_date']}〜{event['end_date'] or '（継続）'}"
+                    f" 係数 {event['factor_low']}/{event['factor_mid']}/{event['factor_high']}")
+
+            stats = None
+            for forecast_df in (forecast_normal, forecast_high, forecast_low):
+                stats = com_apply_event_factors(forecast_df, events, last_train_day)
+
+            self.stdout.write(f"  対象日数: {stats['days']}日")
+            if stats['clipped']:
+                # 合成後の係数が上下限で切られた。見立てが重なりすぎている合図
+                # なので、実行履歴にも残して比較のときに気づけるようにする
+                clip_note = f"所見の合成係数が上下限で切られた日: {stats['clipped']}日"
+                self.stdout.write(self.style.WARNING(f"  {clip_note}"))
+                com_update_ai_run(run, note=' / '.join(
+                    p for p in [run.note, clip_note] if p))
+
         # =========================================================
         # 4. データベースへ保存 (3パターン)
         # =========================================================
         self.stdout.write("予測結果をデータベースに保存しています...")
-        
+
         def save_forecast(forecast_df, target_cls_name):
             for _, row in forecast_df.iterrows():
                 Tz301AttendanceForecast.objects.update_or_create(
@@ -224,10 +388,23 @@ class Command(BaseCommand):
                     }
                 )
 
-        # 既存画面との互換性のため「平年通り」は 'total' として保存
-        save_forecast(forecast_normal, 'total')
-        save_forecast(forecast_high, 'total_high')
-        save_forecast(forecast_low, 'total_low')
+        # tz301(最新)と tz311(履歴)を同じトランザクションで書く。
+        # 片方だけが残ると、画面が見ている予測値と履歴が食い違う。
+        patterns = (
+            (forecast_normal, 'total'),      # 既存画面との互換性のため「平年通り」は total
+            (forecast_high, 'total_high'),
+            (forecast_low, 'total_low'),
+        )
+
+        with transaction.atomic():
+            history_rows = 0
+            for forecast_df, target_cls_name in patterns:
+                save_forecast(forecast_df, target_cls_name)
+                history_rows += com_save_forecast_history(run, forecast_df, target_cls_name)
+
+        self.stdout.write(
+            f"実行履歴を保存しました（run_id={run.run_id} / {run.history_from} 以降 {history_rows}件）"
+        )
 
         # =========================================================
         # 5. ラズパイ同期用のJSONファイルエクスポート

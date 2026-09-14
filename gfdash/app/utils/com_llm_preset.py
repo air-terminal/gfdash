@@ -62,6 +62,9 @@ LLM_PARAM_PRESETS = [
 
 DEFAULT_PRESET_KEY = 'standard'
 
+# どのプリセットにも一致しない組み合わせ。490画面の「個別指定」に相当する。
+MANUAL_PRESET_KEY = 'manual'
+
 
 def com_get_llm_presets():
     """プリセット一覧を返す"""
@@ -84,3 +87,23 @@ def com_get_llm_preset(pKey):
             return preset
 
     return LLM_PARAM_PRESETS[0]
+
+
+def com_find_llm_preset_key(pNumCtx, pTimeout, pThink):
+    """
+    実行パラメータの値からプリセットのキーを逆引きする。
+    一致するものが無ければ 'manual' を返す。
+
+    490画面の findLlmPreset() と同じ判定をサーバ側でも行う。コマンドは
+    プリセットのキーではなく個々の値を受け取るため、実行履歴に残すには
+    値から名前を引き直す必要がある。画面からキーを渡す形にしないのは、
+    コマンドを直接叩いた場合や .env の既定値で動いた場合にも同じ記録が
+    要るため。
+    """
+    for preset in LLM_PARAM_PRESETS:
+        if (preset['num_ctx'] == pNumCtx
+                and preset['timeout'] == pTimeout
+                and preset['think'] == pThink):
+            return preset['key']
+
+    return MANUAL_PRESET_KEY

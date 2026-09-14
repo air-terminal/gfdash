@@ -33,7 +33,10 @@ INSERT INTO gf.tz910_permission (template_name, required_level, memo) VALUES
 ('340zennen_hikaku.html', 1, '前年情報比較'),
 
 -- ▼ AI予測分析系（Manager以上: 1）
-('410raijyo_forecast.html', 1, '来場者予測(AI)'),
+('410raijyo_forecast.html', 1, '来場者予測推移'),
+('415forecast_hikaku.html', 1, '予測実行履歴比較'),
+('480monthly_remark.html', 1, '月次所見入力'),
+('485remark_maintenance.html', 1, '所見メンテナンス'),
 ('490ai_batch_run.html', 1, 'AIバッチ手動実行'),
 
 -- ▼ メンテナンス系（Admin専用: 2）

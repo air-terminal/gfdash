@@ -140,7 +140,7 @@ def sub905_import(file_name):
 
         return {
             'sync_success': True, 
-            'err_message': f"予測データ {count_301}件、LLMレポート {count_302}件を同期しました。"
+            'err_message': f"予測データ {count_301}件、AIレポート {count_302}件を同期しました。"
         }
 
     except Exception as e:

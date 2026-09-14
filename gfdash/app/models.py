@@ -316,6 +316,121 @@ class Tz302LlmAnalysis(models.Model):
         verbose_name = "AI月次分析レポート"
         verbose_name_plural = "AI月次分析レポート"
 
+class Tz305MonthlyRemark(models.Model):
+    """
+    月次の所見。予測モデルもLLMも知りようのない出来事を運営者が書き残す。
+
+    自由文(remark_text)のままでは予測に使えないため、構造化した結果を
+    parsed_json に置く。予測とレポートが読むのは parsed_json だけ。
+    LLM で解析しても画面から手で組み立てても同じ形になり、推論エンジンの
+    無い環境でも同じ経路で補正が効く。
+    """
+
+    REMARK_CLS_FORECAST = 'forecast'
+    REMARK_CLS_REVIEW = 'review'
+
+    PARSE_STATUS_NONE = 'none'
+    PARSE_STATUS_PARSED = 'parsed'
+    PARSE_STATUS_CONFIRMED = 'confirmed'
+
+    target_month = models.DateField(verbose_name="対象月")
+    remark_cls = models.CharField(max_length=20, verbose_name="所見区分")
+    remark_text = models.TextField(default='', verbose_name="所見")
+    parsed_json = models.TextField(blank=True, null=True, verbose_name="解析結果")
+    parsed_at = models.DateTimeField(blank=True, null=True, verbose_name="解析日時")
+    parsed_model = models.CharField(max_length=100, blank=True, null=True, verbose_name="解析モデル")
+    parse_status = models.CharField(max_length=20, default=PARSE_STATUS_NONE, verbose_name="解析状態")
+    updated_by = models.CharField(max_length=150, blank=True, null=True, verbose_name="更新者")
+    updated_at = models.DateTimeField(verbose_name="更新日時")
+
+    class Meta:
+        managed = False
+        db_table = 'tz305_monthly_remark'
+        unique_together = (('target_month', 'remark_cls'),)
+        verbose_name = "月次所見"
+        verbose_name_plural = "月次所見"
+
+class Tz310AiRun(models.Model):
+    """
+    AIバッチ実行ヘッダ。予測・レポート生成の1回の実行を1行で表す。
+
+    実行結果は tz311 / tz312 に持ち、この表は実行条件を持つ。
+    run_kind ごとにしか意味を持たない列は null 可。
+    """
+
+    RUN_KIND_FORECAST = 'forecast'
+    RUN_KIND_REPORT = 'report'
+
+    STATUS_RUNNING = 'running'
+    STATUS_DONE = 'done'
+    STATUS_FAILED = 'failed'
+
+    # DDL側の主キーは run_id。宣言しないと Django が id 列を前提にして落ちる。
+    # tz901_com_name と違い、ここは単独主キーなので primary_key にして差し支えない。
+    run_id = models.AutoField(primary_key=True, verbose_name="実行ID")
+
+    run_kind = models.CharField(max_length=20, verbose_name="実行区分")
+    executed_at = models.DateTimeField(verbose_name="実行日時")
+    status = models.CharField(max_length=20, default=STATUS_RUNNING, verbose_name="状態")
+    script_version = models.CharField(max_length=20, blank=True, null=True, verbose_name="スクリプト版")
+    prompt_version = models.CharField(max_length=20, blank=True, null=True, verbose_name="プロンプト版")
+    history_from = models.DateField(blank=True, null=True, verbose_name="履歴保存の下限日")
+
+    periods = models.IntegerField(blank=True, null=True, verbose_name="予測日数")
+    holiday2_enabled = models.BooleanField(blank=True, null=True, verbose_name="第2休日の利用")
+    closure_sample_count = models.IntegerField(blank=True, null=True, verbose_name="休業補正の実績日数")
+
+    llm_model = models.CharField(max_length=100, blank=True, null=True, verbose_name="LLMモデル")
+    llm_preset = models.CharField(max_length=20, blank=True, null=True, verbose_name="実行プリセット")
+
+    applied_remark_json = models.TextField(blank=True, null=True, verbose_name="採用した所見")
+    note = models.TextField(blank=True, null=True, verbose_name="メモ")
+
+    class Meta:
+        managed = False
+        db_table = 'tz310_ai_run'
+        verbose_name = "AIバッチ実行ヘッダ"
+        verbose_name_plural = "AIバッチ実行ヘッダ"
+
+class Tz311ForecastHistory(models.Model):
+    """
+    来場者予測の実行履歴。tz301 と同じ列に run_id を足したもの。
+
+    run_id は ForeignKey にしていない。参照整合性はDDLの外部キーで担保しており、
+    業務テーブル側でリレーションを持たない既存の書き方にそろえる。
+    """
+
+    run_id = models.IntegerField(verbose_name="実行ID")
+    business_day = models.DateField(verbose_name="予測対象日")
+    target_cls = models.CharField(max_length=255, verbose_name="予測対象区分")
+    yhat = models.FloatField(verbose_name="予測値")
+    yhat_lower = models.FloatField(verbose_name="予測下限値")
+    yhat_upper = models.FloatField(verbose_name="予測上限値")
+    input_date = models.DateField(auto_now_add=True, verbose_name="データ入力日")
+
+    class Meta:
+        managed = False
+        db_table = 'tz311_forecast_history'
+        unique_together = (('run_id', 'business_day', 'target_cls'),)
+        verbose_name = "来場者予測履歴"
+        verbose_name_plural = "来場者予測履歴"
+
+class Tz312ReportHistory(models.Model):
+    """LLM分析レポートの実行履歴。tz302 と同じ列に run_id を足したもの。"""
+
+    run_id = models.IntegerField(verbose_name="実行ID")
+    target_month = models.DateField(verbose_name="対象月")
+    report_cls = models.CharField(max_length=20, verbose_name="レポート区分")
+    report_text = models.TextField(verbose_name="AI分析レポート")
+    input_date = models.DateField(auto_now_add=True, verbose_name="データ入力日")
+
+    class Meta:
+        managed = False
+        db_table = 'tz312_report_history'
+        unique_together = (('run_id', 'target_month', 'report_cls'),)
+        verbose_name = "AI月次分析レポート履歴"
+        verbose_name_plural = "AI月次分析レポート履歴"
+
 class Tz810Holiday2(models.Model):
     """
     第2休日カレンダー。

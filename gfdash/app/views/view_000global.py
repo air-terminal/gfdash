@@ -1,6 +1,7 @@
 # app/views/view_000global.py
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, HttpResponseForbidden
+from django.http.response import HttpResponseBase
 from django.conf import settings
 from .. import views
 from django.views import View
@@ -59,6 +60,16 @@ def gentella_html(request):
             
             # 3. 解決済みの load_template を post_request に渡す
             json_ret = post_request(request, load_template)
+
+            # view が応答そのものを返した場合は包み直さない。
+            #
+            # HttpResponse(StreamingHttpResponse) は中身を最後まで読み切って
+            # 1つの本文にまとめてしまう。バッチの実行ログを少しずつ流すために
+            # StreamingHttpResponse を使っているのに、包み直した時点で
+            # 全部終わってからまとめて届く応答になっていた。
+            if isinstance(json_ret, HttpResponseBase):
+                return json_ret
+
             return HttpResponse(json_ret, content_type='application/json')
 
 # ▼ GET時の処理

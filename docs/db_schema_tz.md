@@ -12,6 +12,12 @@
 | `tz105_detailed_weather_info` | 天候情報(時別詳細)テーブル | 1時間ごとの詳細な気象観測データ |
 | `tz201_dept_report` | DEPTテーブル | 部門別売上などの外部システム連携用データ |
 | `tz202_clerk_report` | CLERKテーブル | 区分（担当者別等）売上などの外部システム連携用データ |
+| `tz301_forecast` | 来場者予測情報テーブル | 予測バッチが出した**最新**の日別予測値 |
+| `tz302_llm_analysis` | LLM分析月次レポート | AIが生成した**最新**の月次レポート本文 |
+| `tz305_monthly_remark` | 月次所見 | 予測モデルが知りえない出来事の記録と、構造化した補正定義 |
+| `tz310_ai_run` | AIバッチ実行ヘッダ | 予測・レポート生成の1回の実行と、その実行条件 |
+| `tz311_forecast_history` | 来場者予測履歴 | 実行ごとの日別予測値。`tz301` + `run_id` |
+| `tz312_report_history` | AI月次分析レポート履歴 | 実行ごとのレポート本文。`tz302` + `run_id` |
 | `tz810_holiday2` | 第2休日カレンダー | 祝日とは異なる休日体系を持つ顧客層の操業カレンダー |
 | `tz901_com_name` | 名前マスタ | コード値と名称（スクール名やアメダス地点など）の対応表 |
 | `tz910_permission` | 画面表示パーミッション | Djangoテンプレートごとのアクセス権限レベルを管理 |
@@ -27,6 +33,10 @@ erDiagram
     
     tb120_report ||--|{ tz201_dept_report : "日付で紐付け"
     tb120_report ||--|{ tz202_clerk_report : "日付で紐付け"
+
+    tz310_ai_run ||--o{ tz311_forecast_history : "run_id（実行ごとの予測値）"
+    tz310_ai_run ||--o{ tz312_report_history : "run_id（実行ごとのレポート）"
+    tz305_monthly_remark |o..o{ tz310_ai_run : "確定済みの所見を実行時に複製"
 
     tz910_permission {
         VARCHAR template_name PK
@@ -137,7 +147,15 @@ erDiagram
 
 ### 3.3 予測テーブル 
 
-#### tz310_forecast (reserve)
+予測とレポートは「**最新**」と「**実行履歴**」を分けて保持します。
+
+- `tz301` / `tz302` … 最新の1回分。画面・ラズパイ同期（905）が読む既存の経路
+- `tz310` / `tz311` / `tz312` … 実行ごとの記録。比較画面（415）が読む
+
+`tz301` に `run_id` を足して履歴化しなかったのは、ラズパイ同期が `tz301` を
+そのままの形で読み書きしているためです。キーを変えると同期の両端に改修が必要になります。
+
+#### tz301_forecast (来場者予測情報テーブル)
 | カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
 | :--- | :--- | :--- | :--- | :--- |
 | `business_day` | 予測対象日 | DATE | **PK** | |
@@ -147,13 +165,142 @@ erDiagram
 | `yhat_upper` | 予測上限値 | FLOAT | | |
 | `input_date` | データ入力日 | DATE | | |
 
-#### tz302_llm_analysis (reserve)
+#### tz302_llm_analysis (LLM分析月次レポート)
 | カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
 | :--- | :--- | :--- | :--- | :--- |
 | `target_month` | 対象月 | DATE | **PK** | |
 | `report_cls` | レポート区分 | VARCHAR(20) | **PK** |  |
 | `report_text` | AI分析レポート | TEXT | | |
 | `input_date` | データ入力日 | DATE | | |
+
+#### tz305_monthly_remark (月次所見)
+予測モデルもAIも知りようのない出来事を、運営者が自由文で書き残す場所です。
+「近隣に競合が開業した」「ボールを全交換した」といった情報は実績データに現れる前から
+分かっており、人しか持っていません。
+
+自由文のままでは予測に使えないため、構造化した結果を `parsed_json` に置きます。
+予測とレポートが読むのは `parsed_json` だけで、`remark_text` は人が読み返すために残します。
+
+**AIを必須にしない設計です。** `parsed_json` はAIに解析させても、画面から手で組み立てても
+同じ形になります。推論エンジンを用意できない環境でも、所見メンテナンス画面（413）から
+入力すれば同じ経路で補正が効きます。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | SERIAL | **PK** | - | Django用の単独主キー |
+| `target_month` | 対象月 | DATE | **UQ** | - | 必ず1日の日付で保持 |
+| `remark_cls` | 所見区分 | VARCHAR(20) | **UQ** | - | `forecast`:予測所見 / `review`:振り返り所見 |
+| `remark_text` | 所見 | TEXT | NOT NULL | `''` | 手入力の自由文 |
+| `parsed_json` | 解析結果 | TEXT | | - | 構造化した補正定義。下記参照 |
+| `parsed_at` | 解析日時 | TIMESTAMPTZ | | - | |
+| `parsed_model` | 解析モデル | VARCHAR(100) | | - | 手入力なら NULL |
+| `parse_status` | 解析状態 | VARCHAR(20) | NOT NULL | `none` | `none`:未解析 / `parsed`:解析済み・未確認 / `confirmed`:確認済み |
+| `updated_by` | 更新者 | VARCHAR(150) | | - | |
+| `updated_at` | 更新日時 | TIMESTAMPTZ | NOT NULL | `CURRENT_TIMESTAMP` | |
+
+区分を分けているのは、同じ月でも「これから先を見通すための情報」と「済んだ月を
+振り返るための情報」では書く内容も時点も違うためです。1行にまとめると、予測を回すたびに
+振り返りの記述まで読ませることになります。
+
+**補正に使うのは `parse_status = 'confirmed'` の行だけです。** AIが出した係数をそのまま
+予測へ流すと、根拠の無い数値が実績のように扱われます。人が見て確定させる一段を挟みます。
+
+##### parsed_json の形
+
+```json
+{
+  "events": [
+    {
+      "name": "近隣に競合施設が開業",
+      "type": "level_shift",
+      "start_date": "2026-10-01",
+      "end_date": null,
+      "factor_mid": 0.95, "factor_low": 0.90, "factor_high": 1.00,
+      "rationale": "10月上旬に開業。同規模施設の前例では…",
+      "use_for_forecast": true,
+      "use_for_report": true,
+      "ack": false
+    }
+  ]
+}
+```
+
+| 要素 | 内容 |
+| :--- | :--- |
+| `name` | イベント名 |
+| `type` | `level_shift`:恒久（`end_date` は null 可） / `period`:期間限定 / `note`:文章の材料のみ |
+| `start_date` / `end_date` | 期間（`YYYY-MM-DD`） |
+| `factor_mid` / `factor_low` / `factor_high` | 中央値・下限・上限への乗率。NULL なら予測に影響させない |
+| `rationale` | なぜその数値にしたかの根拠 |
+| `use_for_forecast` / `use_for_report` | 予測の補正に使うか / レポートの材料に使うか |
+| `ack` | 本文から導けない値であることを人が承知したか |
+
+`ack` は「要確認」の指摘を閉じるための印です。所見に数量が書かれていなくても、
+経験から見立てを置くことはあります。その場合、指摘は値を直しても消えません
+（本文に無いという事実は変わらないため）。承知したことを残せないと、
+消えない指摘を無視する癖が付きます。値を変えると `false` に戻ります。
+
+係数を3点で持つのは、人の見立てによる補正で上下限に同じ値を掛けると
+**不確実性が増えているのに予測幅が広がらない**という誤った出力になるためです。
+休業補正が上下限へ同率を掛けているのは、営業時間という確定情報だから成り立ちます。
+
+月をまたぐイベントは `end_date` で表します。予測は全月の所見からイベントを集めて
+適用するため、キーが月であることは制約になりません。
+
+#### tz310_ai_run (AIバッチ実行ヘッダ)
+予測（`run_forecast`）とレポート生成（`run_llm_analysis`）の1回の実行を1行で表します。
+実行結果そのものは `tz311` / `tz312` に持ち、この表は「**どういう条件で実行したか**」を持ちます。
+
+予測バッチは毎回すべての履歴で再学習するため、前回との差が「補正を変えたから」なのか
+「再学習で動いたから」なのか、条件の記録が無いと区別できません。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `run_id` | 実行ID | SERIAL | **PK** | - | |
+| `run_kind` | 実行区分 | VARCHAR(20) | NOT NULL | - | `forecast`:来場者予測 / `report`:LLM分析レポート |
+| `executed_at` | 実行日時 | TIMESTAMPTZ | NOT NULL | `CURRENT_TIMESTAMP` | |
+| `status` | 状態 | VARCHAR(20) | NOT NULL | `running` | `running` / `done` / `failed` |
+| `script_version` | スクリプト版 | VARCHAR(20) | | - | バッチの `SCRIPT_VERSION` |
+| `prompt_version` | プロンプト版 | VARCHAR(20) | | - | スクリプト版とは別に持つ |
+| `history_from` | 履歴保存の下限日 | DATE | | - | `tz311`/`tz312` を保存した下限。通常は実行した月の1日 |
+| `periods` | 予測日数 | INT | | - | `forecast` のみ |
+| `holiday2_enabled` | 第2休日の利用 | BOOLEAN | | - | `forecast` のみ |
+| `closure_sample_count` | 休業補正の実績日数 | INT | | - | `forecast` のみ。係数算出に使った日数 |
+| `llm_model` | LLMモデル | VARCHAR(100) | | - | `report` のみ |
+| `llm_preset` | 実行プリセット | VARCHAR(20) | | - | `report` のみ |
+| `applied_remark_json` | 採用した所見 | TEXT | | - | その実行で採用した所見の複製（参照ではなくスナップショット） |
+| `note` | メモ | TEXT | | - | 手入力メモ。補正の上限クリップが効いた旨も追記 |
+
+`applied_remark_json` は所見を参照せず**複製**します。所見は後から書き換えられるため、
+参照にすると「この実行が何を掛けたか」が失われ、補正の効果を検証できなくなります。
+
+#### tz311_forecast_history (来場者予測履歴)
+`tz301_forecast` と同じ列に `run_id` を足したものです。保存するのは
+**実行した月の1日以降**だけで、過去日の当てはめ値は残しません（再学習の副産物であり比較対象ではない）。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | SERIAL | **PK** | - | Django用の単独主キー |
+| `run_id` | 実行ID | INT | **UQ** / FK | - | → `tz310_ai_run` (ON DELETE CASCADE) |
+| `business_day` | 予測対象日 | DATE | **UQ** | - | |
+| `target_cls` | 予測対象区分 | VARCHAR(255) | **UQ** | - | `tz301` と同じ |
+| `yhat` | 予測値 | FLOAT | NOT NULL | - | |
+| `yhat_lower` | 予測下限値 | FLOAT | NOT NULL | - | |
+| `yhat_upper` | 予測上限値 | FLOAT | NOT NULL | - | |
+| `input_date` | データ入力日 | DATE | NOT NULL | `CURRENT_DATE` | |
+
+#### tz312_report_history (AI月次分析レポート履歴)
+`tz302_llm_analysis` と同じ列に `run_id` を足したものです。所見やプロンプトを変えて
+再生成したとき、前の文章が残っていないと良くなったのか判断できないため持ちます。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | SERIAL | **PK** | - | Django用の単独主キー |
+| `run_id` | 実行ID | INT | **UQ** / FK | - | → `tz310_ai_run` (ON DELETE CASCADE) |
+| `target_month` | 対象月 | DATE | **UQ** | - | 必ず1日の日付で保持 |
+| `report_cls` | レポート区分 | VARCHAR(20) | **UQ** | - | `tz302` と同じ |
+| `report_text` | AI分析レポート | TEXT | NOT NULL | - | |
+| `input_date` | データ入力日 | DATE | NOT NULL | `CURRENT_DATE` | |
 
 ---
 

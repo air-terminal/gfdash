@@ -206,6 +206,11 @@ function sub101_postView(postParam){
                         };
                     });
                     break;
+                case 'forecastSource':
+                    // 予測バッチの値を使ったか、当月平均で補ったか。
+                    // 同じ線で意味が変わるので凡例を出し分ける
+                    gForecastSource = val;
+                    break;
                 case 'preYear':
                     $.each(val, function(key2, val2) {
                         chartPreResults.push([
@@ -906,6 +911,9 @@ function sub101_set_summaryTemp(getChartMode, summaryTemp){
 
 }
 
+// 予測線の出どころ。'ai'なら予測バッチの結果、'average'なら当月平均
+var gForecastSource = 'average';
+
 function sub101_set_chatjs_gf(chartXLabels, chart_plot_02_data, chart_plot_02_data2, chart_plot_02_data3, chartPreResults) {
      // グラフ設定処理（概要）
 
@@ -1018,7 +1026,7 @@ function sub101_set_chatjs_gf(chartXLabels, chart_plot_02_data, chart_plot_02_da
                     yAxisID: 'y2'
                 }, {
                     order: 13,
-                    label: "予測来場者数",
+                    label: (gForecastSource === "ai") ? "予測来場者数（AI）" : "予測来場者数",
                     backgroundColor: "rgba(255, 255, 255, 1)",
                     borderColor: "rgba(3, 88, 106, 0.70)",
                     borderDash: [5, 5],
