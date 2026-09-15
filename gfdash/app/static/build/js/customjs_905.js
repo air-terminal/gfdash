@@ -68,17 +68,18 @@ function btnExport() {
     .then(response => {
         if (!response.ok) throw new Error('Network response was not ok');
         
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.indexOf('application/json') !== -1) {
+        // エクスポート成功時もエクスポートデータ自体が JSON (Content-Type: application/json) で返るため、
+        // Content-Type ではエラー応答と区別できない。ダウンロード指示 (attachment) の有無で判別する。
+        const disposition = response.headers.get('Content-Disposition') || '';
+        if (disposition.indexOf('attachment') === -1) {
             return response.json().then(errData => {
                 throw new Error(errData.err_message || 'エクスポートが許可されていません。');
             });
         }
-        
+
         // ファイル名をレスポンスヘッダから取得、無ければ現在時刻から生成
         let filename = `ai_sync_data_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`;
-        const disposition = response.headers.get('Content-Disposition');
-        if (disposition && disposition.indexOf('filename=') !== -1) {
+        if (disposition.indexOf('filename=') !== -1) {
             const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
             const matches = filenameRegex.exec(disposition);
             if (matches != null && matches[1]) {

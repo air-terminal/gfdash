@@ -11,6 +11,11 @@ services:
       - ./containers/postgres/config/postgresql.conf:/etc/postgresql/postgresql.conf # 追加
     env_file:
       - .env
+    # 必須の値が空のまま起動すると PostgreSQL が初期化を拒否し、Compose は
+    # 「container is unhealthy」としか言わない。しかも空のボリュームが残るため、
+    # 値を埋めただけでは復旧せず down -v が要る。コンテナを作る前にここで止める。
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env の POSTGRES_PASSWORD が未設定です。.env.example を参照して値を設定してください}
     tty: true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -40,7 +45,13 @@ services:
         condition: service_healthy # DBが完全に起動してから開始するように設定
     env_file:
       - .env
-      
+    # SECRET_KEY が空だと Django が起動時に落ち、DJANGO_SUPERUSER_PASSWORD が空だと
+    # 初期ユーザーの作成が黙って失敗してログインできなくなる。どちらもログを
+    # 読まないと原因が分からないため、起動前に止める。
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?.env の SECRET_KEY が未設定です。.env.example を参照して値を設定してください}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:?.env の DJANGO_SUPERUSER_PASSWORD が未設定です。.env.example を参照して値を設定してください}
+
 volumes:
     postgres-data:
       driver: local

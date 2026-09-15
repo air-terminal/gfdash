@@ -1,14 +1,7 @@
--- 1. テーブルの削除と再作成
-drop table if exists gf.tz901_com_name;
-create table gf.tz901_com_name(
-    code int,
-    num int,
-    code_name varchar(255),
-    code_name2 varchar(50),
-    primary key(code,num)
-);
+-- 初期データの投入。テーブルは 01_create_tz901.sql が作る。
+-- ここに DDL を置くと定義が二重管理になり、片方だけ直したときに食い違う。
+DELETE FROM gf.tz901_com_name;
 
--- 2. 初期データの投入
 INSERT INTO gf.tz901_com_name (code, num, code_name, code_name2) VALUES
  (1, 1, '内部スクール', '内部S')
 ,(1, 2, '社外スクール', '社外S')

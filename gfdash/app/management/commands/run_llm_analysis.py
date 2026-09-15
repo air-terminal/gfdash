@@ -19,7 +19,14 @@ from app.utils.com_llm import com_get_llm_client
 from app.utils.com_llm_preset import com_find_llm_preset_key
 from app.utils.com_remark import com_build_remark_section
 
-SCRIPT_VERSION = "v0.1.0"
+# このスクリプトの版。実行履歴(tz310)に残し、後からレポートの出どころを追えるようにする。
+# 製品のバージョンとは別に持つ。製品の版に揃えると、バッチの中身が変わっていなくても
+# リリースのたびに番号が動き、同じコードで動いたかを見分ける役に立たなくなる。
+#
+# v0.2.0: 運営者の所見をプロンプトへ差し込み、実行の条件と結果を履歴(tz310/tz312)に
+#         残すようにした。プロンプトの版だけ上げてこちらを据え置いていたが、
+#         run_forecast と同じ基準でスクリプトの構造が変わっている。
+SCRIPT_VERSION = "v0.2.0"
 
 # プロンプトの版。SCRIPT_VERSION とは別に持つ。
 #
@@ -447,8 +454,12 @@ class Command(BaseCommand):
                 ))
                 return
 
-            # DB保存用のレポート本文末尾に、使用モデルとバージョン情報を追記
-            footer_text = f"\n\n---\n* **Model**: {target_model}\n* **System Version**: run_llm_analysis {SCRIPT_VERSION}"
+            # DB保存用のレポート本文末尾に、使用モデルとバージョン情報を追記。
+            # プロンプトの版も添える。レポートの良し悪しはプロンプトで決まるため、
+            # スクリプトの版だけでは同じ文面で作られたかを見分けられない
+            footer_text = (f"\n\n---\n* **Model**: {target_model}"
+                           f"\n* **System Version**: run_llm_analysis {SCRIPT_VERSION}"
+                           f" / prompt {PROMPT_VERSION}")
             report_text += footer_text
             
             # ストリーミング時、末尾の追記情報も画面に流す
@@ -473,7 +484,8 @@ class Command(BaseCommand):
 
             msg = (
                 f"\n\n✅ {ym_str} [{mode}] のAIレポートをDBに保存しました。\n"
-                f" 実行時間: {time_str} | モデル: {target_model} | バージョン: {SCRIPT_VERSION}\n"
+                f" 実行時間: {time_str} | モデル: {target_model}"
+                f" | バージョン: {SCRIPT_VERSION} / prompt {PROMPT_VERSION}\n"
                 f" 実行履歴: run_id={run.run_id}\n"
             )
             self.stdout.write(msg, ending='')

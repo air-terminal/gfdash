@@ -126,6 +126,9 @@ class Ta215Attnd(models.Model):
     int_school = models.IntegerField(default=0, verbose_name="内部スクール")
     ext_school = models.IntegerField(default=0, verbose_name="外部スクール")
     school_total = models.IntegerField(default=0, verbose_name="スクール合計")
+    # DDL の DEFAULT CURRENT_DATE と同じ意味にそろえる。null=True で宣言すると
+    # Django が INSERT に NULL を含め、DB 側の既定値が効かなくなる
+    input_date = models.DateField(auto_now_add=True, verbose_name="入力日")
 
     class Meta:
         managed = False
@@ -133,17 +136,19 @@ class Ta215Attnd(models.Model):
         verbose_name = '来場統計メイン'
 
 class Ta216AttndAttr(models.Model):
+    # テーブルの主キーは (business_day, attr_name) の複合キー。
+    # managed = False でも、主キーを宣言しないと Django は暗黙の id 列を
+    # 仮定して SELECT に含めるため、参照した時点で落ちる。
+    pk = models.CompositePrimaryKey('business_day', 'attr_name')
     business_day = models.DateField(verbose_name="営業日")
     attr_name = models.CharField(max_length=50, verbose_name="属性名")
     val = models.IntegerField(default=0, verbose_name="数値")
+    input_date = models.DateField(auto_now_add=True, verbose_name="入力日")
 
     class Meta:
         managed = False
         db_table = 'ta216_attnd_attr'
         verbose_name = '拡張来場属性'
-        constraints = [
-            models.UniqueConstraint(fields=['business_day', 'attr_name'], name='unique_attnd_attr')
-        ]
 
 class Ta220Memo(models.Model):
     business_day = models.DateField(primary_key=True, verbose_name="営業日")
@@ -283,6 +288,8 @@ class Tz202ClerkReport(models.Model):
     trans_num = models.IntegerField(blank=True, null=True)
     sales_num = models.IntegerField(blank=True, null=True)
     sales = models.IntegerField(blank=True, null=True)
+    # DDL 側に既定値が無いので Tb330SalesDiff と同じ扱い
+    input_date = models.DateField(blank=True, null=True)
 
     class Meta:
         managed = False

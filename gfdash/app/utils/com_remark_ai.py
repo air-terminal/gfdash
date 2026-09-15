@@ -81,6 +81,112 @@ PROMPT_TEMPLATE = """あなたはゴルフ練習場の運営データを扱う�
 JSONのみを出力してください。"""
 
 
+# 日次備考の要約プロンプトの版。文面の構成を変えたら上げること。
+#
+# v0.2.0: 出力の例を1行示し、「その他」の分類を廃止した。v0.1.0 では記号や
+#         日付の形式がモデルごとに揺れ、あるモデルは天候による休業を「その他」へ
+#         誤分類して理由と時刻を本文から落とした。分類を求めると誤分類が起きる。
+# v0.2.1: 休業の範囲を印のとおりに書くよう明記した。時間帯の休業を「終日休業」と
+#         言い換えるモデルが2つあった。印の側にも営業している時間帯を添えた。
+SUMMARY_PROMPT_VERSION = "v0.2.1"
+
+# 要約は入力も出力も小さい。解析と同じ上限で足りる
+SUMMARY_NUM_CTX = PARSE_NUM_CTX
+
+SUMMARY_PROMPT_TEMPLATE = """あなたはゴルフ練習場の運営データを扱うアシスタントです。
+運営者が日々書き残した備考を読み、月次の振り返り所見の下書きを作ってください。
+
+【対象月】{target_month}
+
+【日次備考】
+{memo_lines}
+
+【出力の形】
+1日1行の箇条書きです。次の形にそろえてください。
+
+・06/05(木)：台風接近のため 20:00 に営業終了
+
+【書き方】
+1. 来場者数に影響しそうな出来事を拾ってください。
+   休業、臨時休業、特別営業、天候による影響、設備の不調、イベント、料金の変更など。
+2. **日付・時刻・人数・理由は備考に書かれたとおり残してください。** 短くまとめる
+   ために落とさないでください。同じ出来事が複数日にわたる場合だけ
+   「06/05(木)〜06/07(土)」のように1行にまとめます。
+3. 角括弧の印（[終日休業] など）は文章にしてください。印をそのまま写さないでください。
+   **休業の範囲は印のとおりに書いてください。** 「（夜は営業）」のように営業している
+   時間帯が書かれている日は終日休業ではありません。終日休業と書かないでください。
+4. **備考に書かれていないことは書かないでください。** 原因や影響を推測して
+   補わないでください。来場者数の増減も、備考に書かれていなければ書きません。
+5. **人名は書かないでください。** 「担当者」「講師」「お客様」のように役割で表します。
+6. 来場者数に関係しない事務的な記録（発注、書類の提出など）は省いてください。
+   見出しや「その他」の行は作らないでください。
+7. 前置きや説明は付けず、箇条書きだけを出力してください。
+
+箇条書きのみを出力してください。"""
+
+
+def com_build_summary_prompt(pTargetMonth, pMemoLines):
+    return SUMMARY_PROMPT_TEMPLATE.format(
+        target_month=pTargetMonth.strftime('%Y年%m月'),
+        memo_lines='\n'.join(line['text'] for line in pMemoLines),
+    )
+
+
+def com_summarize_memos(pTargetMonth, pMemoLines, pModel=None, pTimeout=None,
+                        pOnProgress=None, pOnText=None):
+    """
+    日次備考を要約して、所見の下書きの文章を返す。
+
+    戻り値は (text, info)。保存はしない。出力は本文の textarea へ挿入され、
+    人が読んで直してから保存する。要約は原文の言い換えであり、AI の推測が
+    混ざる余地は解析より小さいが、備考に無い因果を補う癖はどのモデルにもある。
+    挿入前に目で通す一段は外さない。
+    """
+    client = com_get_llm_client()
+
+    model = pModel or getattr(settings, 'OLLAMA_MODEL', '')
+    if not model:
+        raise RemarkParseError('AIモデルが設定されていません。')
+
+    timeout = pTimeout or getattr(settings, 'OLLAMA_TIMEOUT', 300)
+    num_ctx = min(SUMMARY_NUM_CTX, getattr(settings, 'OLLAMA_NUM_CTX', SUMMARY_NUM_CTX))
+
+    prompt = com_build_summary_prompt(pTargetMonth, pMemoLines)
+
+    if pOnProgress:
+        pOnProgress('モデルを読み込んでいます（初回や大きなモデルでは時間がかかります）...')
+
+    load_seconds = client.preload(model, max(timeout, 600))
+
+    if pOnProgress:
+        if load_seconds is None:
+            pOnProgress('モデルの読み込み状況は取得できません。そのまま要約へ進みます。')
+        else:
+            pOnProgress(f'モデルの読み込みが完了しました（{load_seconds:.1f}秒）。')
+        pOnProgress('備考の要約を依頼しています...')
+
+    try:
+        # 思考は無効。言い換えの作業で恩恵が無く、文脈を埋めて本文が空になる
+        # 事象を避ける。文章は出来た端から流す（待つ間に何も起きないと止まって
+        # 見える）
+        result = client.generate(prompt, model, num_ctx, timeout, False,
+                                 pOnText is not None, pOnText=pOnText)
+    except Exception as e:
+        raise RemarkParseError(f'{client.name} の呼び出しに失敗しました: {e}')
+
+    text = (result.text or '').strip()
+    if not text:
+        raise RemarkParseError('AIが応答を返しませんでした。')
+
+    info = {
+        'model': model,
+        'engine': client.name,
+        'prompt_version': SUMMARY_PROMPT_VERSION,
+        'finish_reason': (result.stats or {}).get('finish_reason'),
+    }
+    return text, info
+
+
 class RemarkParseError(Exception):
     """解析結果を扱えないときに投げる。利用者へそのまま見せる文面にする"""
 

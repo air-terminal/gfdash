@@ -99,6 +99,32 @@
     .gf_rmk_step_dark { background-color: #E6E9ED; color: #4B5F71; }
     .gf_rmk_arrow { color: #ccc; margin: 0 4px; }
 
+    /* 区分のタブ。テーマの nav-tabs は選択中も白のままで、どちらが選ばれて
+       いるのか読み取れない。選択中はサイドバーと同じ紺で塗り、それ以外は
+       枠付きの薄い灰色にして、押せるものと選ばれているものを色で分ける */
+    .gf_rmk_tabs { margin-bottom: 14px; border-bottom-color: #2A3F54; }
+    /* 非選択の下辺は下線と同じ色にする。透明にすると下線が箱で途切れ、
+       非選択のタブが手前に置かれたように見える */
+    .gf_rmk_tabs > li > a {
+      padding: 8px 20px; margin-right: 4px; color: #73879C;
+      background-color: #F7F9FB; border: 1px solid #D5D9DE; border-bottom-color: #2A3F54;
+    }
+    .gf_rmk_tabs > li > a:hover,
+    .gf_rmk_tabs > li > a:focus { background-color: #EDF1F5; color: #2A3F54; }
+    .gf_rmk_tabs > li.active > a,
+    .gf_rmk_tabs > li.active > a:hover,
+    .gf_rmk_tabs > li.active > a:focus {
+      background-color: #2A3F54; border-color: #2A3F54; color: #fff; font-weight: bold;
+    }
+    .gf_rmk_intro { margin-bottom: 12px; }
+
+    /* 白いボタン(btn-default)は無効にしても白いままで、押せるものと見分けが
+       付かない(Bootstrap3 は透明度を下げるだけ)。色付きのボタンは薄くなれば
+       分かるが、白は薄くしても白。無効なら灰色に沈める */
+    .btn-default[disabled], .btn-default.disabled {
+      background-color: #E6E9ED; border-color: #D5D9DE; color: #9AA5B1; opacity: 1;
+    }
+
     .terminal-log {
       background-color: #1E1E1E; color: #00FF00;
       font-family: 'Courier New', Courier, monospace;
@@ -112,6 +138,12 @@
       padding: 12px; height: 300px; overflow-y: auto;
       border: 0; border-radius: 4px; font-size: 12px;
       white-space: pre-wrap; margin: 0;
+    }
+    /* 要約のダイアログ。経過のログは小さく、要約の本文を主役にする */
+    .gf_dlg_log_small { height: 120px; }
+    .gf_dlg_summary {
+      width: 100%; min-height: 180px; margin-top: 10px;
+      font-size: 13px; line-height: 1.6;
     }
   </style>
 {% endblock stylesheets %}
@@ -128,11 +160,6 @@
             <div class="clearfix"></div>
           </div>
           <div class="x_content">
-            <p>
-              競合店の開業、近隣の工事、設備の入れ替えなど、<b>実績データに現れる前から分かっている出来事</b>を書いてください。
-              AIに読み取らせて補正の形に変換し、内容を確認して確定すると、予測とレポートに反映されます。
-            </p>
-
             <div class="form-inline" style="margin-bottom: 12px;">
               <label style="margin-right: 6px;">対象月</label>
               <div style="display: inline-flex; vertical-align: middle;">
@@ -146,16 +173,8 @@
                         onclick="btnRemarkNextMonth()" style="margin-bottom: 0;"></button>
               </div>
 
-              <label style="margin: 0 6px 0 20px;">区分</label>
-              <label class="radio-inline">
-                <input type="radio" name="remark_cls" value="forecast" checked> 予測所見
-              </label>
-              <label class="radio-inline">
-                <input type="radio" name="remark_cls" value="review"> 振り返り所見
-              </label>
-
               {% if allow_model_select %}
-                <label style="margin: 0 6px 0 20px;">解析モデル</label>
+                <label style="margin: 0 6px 0 20px;">AIモデル</label>
                 <select id="remark_model" class="form-control input-sm">
                   {% for m in ollama_models %}
                     <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
@@ -164,7 +183,46 @@
               {% endif %}
             </div>
 
-            <p class="text-muted" id="remark_meta" style="margin-bottom: 6px;"></p>
+            <!-- 区分はタブで切り替える。予測所見は「保存→解析→確定」の3段階で補正の
+                 表を持ち、振り返り所見は本文だけで「保存→確定」の2段階。必要な操作が
+                 大きく違うため、ラジオボタンで同じフォームを絞り込むように見せると
+                 実態と合わない。対象月はタブの外に置き、両方に共通であることを示す。
+                 切り替えは JS で行う（BS3 の CSS と BS4 の JS が混在しており、
+                 data-toggle は使えない） -->
+            <ul class="nav nav-tabs gf_rmk_tabs" id="remark_cls_tabs">
+              <li class="active" data-cls="forecast">
+                <a href="#" onclick="return btnRemarkSwitchCls('forecast')">
+                  <i class="fa-solid fa-chart-line"></i> 予測所見
+                </a>
+              </li>
+              <li data-cls="review">
+                <a href="#" onclick="return btnRemarkSwitchCls('review')">
+                  <i class="fa-solid fa-clock-rotate-left"></i> 振り返り所見
+                </a>
+              </li>
+            </ul>
+
+            <p class="gf_rmk_intro" data-for="forecast">
+              競合店の開業、近隣の工事、設備の入れ替えなど、<b>実績データに現れる前から分かっている出来事</b>を書いてください。
+              AIに読み取らせて補正の形に変換し、内容を確認して確定すると、予測とレポートに反映されます。
+            </p>
+            <p class="gf_rmk_intro" data-for="review" style="display: none;">
+              その月に<b>実際に起きたこと</b>を書いてください。天候による休業、設備の不調、イベント、料金の変更など。
+              確定すると振り返りレポートの材料になります。予測の補正には使われません。
+              先の月に影響が続く出来事は、予測所見のほうに書いてください。
+            </p>
+
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+              <p class="text-muted" id="remark_meta" style="margin: 0; flex: 1 1 auto;"></p>
+              <!-- 日次備考の要約。本文に挿入するだけで保存はしない。
+                   手順の外側に置いているのは、下書きの材料を作る補助であって
+                   保存→解析→確定の流れの一段ではないため。
+                   振り返り所見でだけ押せる（title と disabled は JS が区分に合わせて設定） -->
+              <button type="button" class="btn btn-default btn-sm" id="btn_remark_summary"
+                      onclick="btnRemarkSummary()" disabled>
+                <i class="fa-solid fa-list-check"></i> 日次備考から下書き
+              </button>
+            </div>
 
             <textarea id="remark_text" class="form-control" rows="5"
                       placeholder="例）10月上旬に近隣へ競合施設が開業する予定。同規模の施設のため、影響は数%程度の減少と見込む。&#10;10月15日にボールを全交換する。"></textarea>
@@ -176,11 +234,19 @@
               <button type="button" class="btn btn-primary" id="btn_remark_save" onclick="btnRemarkSave()" disabled>
                 <span class="gf_rmk_step">1</span><i class="fa-solid fa-floppy-disk"></i> 所見を保存
               </button>
-              <span class="gf_rmk_arrow">→</span>
-              <button type="button" class="btn btn-info" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
+              <span class="gf_rmk_arrow gf_rmk_only_forecast">→</span>
+              <button type="button" class="btn btn-info gf_rmk_only_forecast" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
                 <span class="gf_rmk_step">2</span><i class="fa-solid fa-wand-magic-sparkles"></i> AIで解析
               </button>
-              <span class="text-muted">または</span>
+              <span class="text-muted gf_rmk_only_forecast">または</span>
+
+              <!-- 振り返り所見は本文だけなので、確定を保存の隣に置く。
+                   予測所見の確定は補正の表に対する操作なので、表の枠にある -->
+              <span class="gf_rmk_arrow gf_rmk_only_review" style="display: none;">→</span>
+              <button type="button" class="btn btn-success gf_rmk_only_review" id="btn_remark_confirm_text"
+                      onclick="btnRemarkConfirm()" style="display: none;" disabled>
+                <span class="gf_rmk_step">2</span><i class="fa-solid fa-check"></i> 確定
+              </button>
 
               <!-- 削除は手順の流れから外れる操作なので、間隔を空けて右に置く -->
               <button type="button" class="btn btn-danger" id="btn_remark_delete"
@@ -191,7 +257,7 @@
 
             <p class="text-muted" id="remark_hint" style="margin: 8px 0 0 0;"></p>
             {% if disable_batch_execution %}
-              <p class="text-muted" style="margin: 2px 0 0 0;">
+              <p class="text-muted gf_rmk_only_forecast" style="margin: 2px 0 0 0;">
                 この環境ではAI解析は無効です。「手で追加」から入力してください。
               </p>
             {% endif %}
@@ -202,7 +268,8 @@
       </div>
     </div>
 
-    <div class="row">
+    <!-- 補正の表は予測所見だけ。振り返り所見は本文のみで、補正を持たない -->
+    <div class="row gf_rmk_only_forecast" id="remark_events_panel">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">
           <div class="x_title">
@@ -242,7 +309,8 @@
       </div>
     </div>
 
-    <div class="row">
+    <!-- 実行ログは解析の経過を残す場所。振り返り所見に解析は無い -->
+    <div class="row gf_rmk_only_forecast">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">
           <div class="x_title">

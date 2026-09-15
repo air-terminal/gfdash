@@ -14,10 +14,12 @@ from ..utils.com_llm import com_get_llm_client
 from ..utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
     com_check_grounding, com_check_month_span, com_dump_events,
-    com_get_factor_presets, com_get_remark, com_load_events, com_normalize_events,
-    com_save_remark_text,
+    com_get_factor_presets, com_get_month_memos, com_get_remark, com_load_events,
+    com_normalize_events, com_save_remark_text,
 )
-from ..utils.com_remark_ai import RemarkParseError, com_parse_remark_with_ai
+from ..utils.com_remark_ai import (
+    RemarkParseError, com_parse_remark_with_ai, com_summarize_memos,
+)
 
 REMARK_CLASSES = (Tz305MonthlyRemark.REMARK_CLS_FORECAST,
                   Tz305MonthlyRemark.REMARK_CLS_REVIEW)
@@ -58,6 +60,9 @@ def post480_main(request):
         # 解析はAIの応答を待つ間ログを流す。応答そのものを返すので、
         # 呼び出し元は包み直さない（view_000global を参照）
         return sub480_parse_stream(request, target_month, remark_cls, dic)
+
+    if mode == 'summarize':
+        return sub480_summary_stream(target_month, remark_cls, dic)
 
     if target_month is None:
         ret = {'remark_success': False, 'err_message': '対象月の指定が不正です。'}
@@ -166,12 +171,19 @@ def sub480_save_events(request, pTargetMonth, pRemarkCls, pDic):
         return {'remark_success': False,
                 'err_message': '所見が保存されていません。先に本文を保存してください。'}
 
+    is_confirm = (pDic.get('confirm') == 'true')
+
+    # 振り返り所見は補正を持たない。確定は「この本文で最終」という印だけで、
+    # 画面から events は来ない。既に入っているイベント（補正を切り離す前に
+    # 作られたもの）はレポートの材料として残し、書き換えない
+    if pRemarkCls == Tz305MonthlyRemark.REMARK_CLS_REVIEW:
+        return sub480_confirm_review(request, remark, is_confirm)
+
     events, errors = com_normalize_events(pDic.get('events') or '[]')
     if errors:
         return {'remark_success': False,
                 'err_message': '入力に誤りがあります。', 'parse_errors': errors}
 
-    is_confirm = (pDic.get('confirm') == 'true')
     warnings = []
 
     if is_confirm:
@@ -228,6 +240,25 @@ def sub480_save_events(request, pTargetMonth, pRemarkCls, pDic):
     return ret
 
 
+def sub480_confirm_review(request, pRemark, pIsConfirm):
+    """振り返り所見の確定。本文が最終版だという印を付けるだけ"""
+    if not pIsConfirm:
+        return {'remark_success': False, 'err_message': '振り返り所見に補正はありません。'}
+
+    if not (pRemark.remark_text or '').strip():
+        return {'remark_success': False, 'err_message': '本文が空です。先に所見を保存してください。'}
+
+    pRemark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
+    pRemark.updated_by = getattr(request.user, 'username', '') or ''
+    pRemark.updated_at = timezone.now()
+    pRemark.save(update_fields=['parse_status', 'updated_by', 'updated_at'])
+
+    ret = sub480_view(pRemark)
+    ret['message'] = '確定しました。振り返りレポートに反映されます。'
+    ret['warnings'] = []
+    return ret
+
+
 def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
     """所見をAIに解析させ、経過をログとして流す"""
     q = queue.Queue()
@@ -239,6 +270,10 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
 
     if pTargetMonth is None or pRemarkCls not in REMARK_CLASSES:
         return sub_fail('対象月または区分の指定が不正です。')
+
+    # 振り返り所見は補正を持たないので、解析する対象が無い
+    if pRemarkCls != Tz305MonthlyRemark.REMARK_CLS_FORECAST:
+        return sub_fail('AIによる解析は予測所見でのみ使えます。')
 
     if getattr(settings, 'DISABLE_BATCH_EXECUTION', False):
         return sub_fail('この環境ではAIの実行が無効化されています。')
@@ -308,6 +343,99 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
                 break
             yield data
         yield '\n=== 処理が完了しました ===\n'
+
+    response = StreamingHttpResponse(event_stream(),
+                                     content_type='text/plain; charset=utf-8')
+    response['X-Accel-Buffering'] = 'no'
+    response['Cache-Control'] = 'no-cache'
+    return response
+
+
+# 要約ストリームの区切り。この行より前が経過のログ、後が要約の本文。
+# 1本のテキストで流し、画面側で分ける。JSON にすると1文字ずつ包む必要があり、
+# 出来た端から流す利点が薄れる
+SUMMARY_MARKER = '<<<SUMMARY>>>'
+
+
+def sub480_summary_stream(pTargetMonth, pRemarkCls, pDic):
+    """
+    対象月の日次備考をAIに要約させ、所見の下書きとして流す。
+
+    保存はしない。要約は画面の textarea へ挿入され、人が読んで直してから
+    保存する。月末に備考を読み返して書き起こす手間と、読み落としを減らす
+    のが目的で、判断を肩代わりするものではない。
+    """
+    q = queue.Queue()
+
+    def sub_fail(pMessage):
+        def gen():
+            yield pMessage + '\n'
+        return StreamingHttpResponse(gen(), content_type='text/plain; charset=utf-8')
+
+    if pTargetMonth is None or pRemarkCls not in REMARK_CLASSES:
+        return sub_fail('対象月または区分の指定が不正です。')
+
+    # 振り返り所見だけに限る。予測所見の対象月は未来で、備考にあるのは
+    # せいぜい計画休業だが、それは予測が別の経路で既に織り込んでいる。
+    # 恒久的な変化や、終わりが予測期間に掛かる出来事でなければ材料にならず、
+    # 備考の要約からそれを選り分けるのは AI ではなく人の判断
+    if pRemarkCls != Tz305MonthlyRemark.REMARK_CLS_REVIEW:
+        return sub_fail('日次備考の要約は振り返り所見でのみ使えます。')
+
+    if getattr(settings, 'DISABLE_BATCH_EXECUTION', False):
+        return sub_fail('この環境ではAIの実行が無効化されています。')
+
+    memo_lines = com_get_month_memos(pTargetMonth)
+    if not memo_lines:
+        return sub_fail(f'{pTargetMonth:%Y年%m月} には備考も休業の記録もありません。')
+
+    model = pDic.get('model') or None
+
+    def sub_work():
+        try:
+            q.put(f'【{pTargetMonth:%Y年%m月}】日次備考の要約を開始します...\n')
+            q.put(f'対象の備考: {len(memo_lines)}日分\n')
+            for line in memo_lines:
+                q.put(f"  {line['text']}\n")
+
+            def sub_progress(pMessage):
+                q.put(pMessage + '\n')
+
+            marker_sent = []
+
+            def sub_text(pChunk):
+                # 最初の1文字が届いた時点で区切りを送る。先に送ると、モデルの
+                # 読み込み中に区切りの後ろが空のまま見えて、失敗したように映る
+                if not marker_sent:
+                    q.put(f'\n{SUMMARY_MARKER}\n')
+                    marker_sent.append(True)
+                q.put(pChunk)
+
+            text, info = com_summarize_memos(
+                pTargetMonth, memo_lines, model,
+                pOnProgress=sub_progress, pOnText=sub_text)
+
+            if not marker_sent:
+                # ストリームに対応しないエンジンでは、まとめて届く
+                q.put(f'\n{SUMMARY_MARKER}\n')
+                q.put(text)
+
+        except RemarkParseError as e:
+            q.put(f'\n[エラー] {e}\n')
+        except Exception:
+            q.put(f'\n[重大な内部エラー]\n{traceback.format_exc()}\n')
+        finally:
+            close_old_connections()
+            q.put(None)
+
+    threading.Thread(target=sub_work).start()
+
+    def event_stream():
+        while True:
+            data = q.get()
+            if data is None:
+                break
+            yield data
 
     response = StreamingHttpResponse(event_stream(),
                                      content_type='text/plain; charset=utf-8')

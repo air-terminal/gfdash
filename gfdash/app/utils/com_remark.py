@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 
 from django.utils import timezone
 
-from ..models import Tz305MonthlyRemark
+from ..models import Ta220Memo, Tz305MonthlyRemark
 
 # イベントの種別
 EVENT_TYPE_LEVEL_SHIFT = 'level_shift'   # 恒久的な水準の変化。end_date は省略可
@@ -382,13 +382,16 @@ def com_get_confirmed_forecast_events():
     真のものだけ。snapshot は実行ヘッダ(tz310.applied_remark_json)へ複製
     する内容で、どの所見から取ったかを含む。
 
-    区分(forecast / review)では絞らない。使うかどうかはイベント側の
-    use_for_forecast が決める。振り返り所見に書かれた「改修は年末まで
-    続く」のような記述も、未来に重なるなら補正の対象になる。
+    予測所見だけを見る。振り返り所見は「何が起きたか」の記録で、補正は
+    「これから何が起きるか」の見立て。当初は区分で絞らず「改修は年末まで続く」
+    のような振り返りの記述も未来に重なれば補正に使う設計だったが、目的が
+    混ざる。起きたことは実績に出ており、先の月に影響が続く出来事は予測所見に
+    書けばよい。2経路から同じ出来事が重なる余地も消える。
     """
     remarks = Tz305MonthlyRemark.objects.filter(
-        parse_status=Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
-    ).order_by('target_month', 'remark_cls')
+        remark_cls=Tz305MonthlyRemark.REMARK_CLS_FORECAST,
+        parse_status=Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED,
+    ).order_by('target_month')
 
     events = []
     snapshot = []
@@ -492,9 +495,12 @@ def com_check_against_confirmed(pEvents, pTargetMonth, pRemarkCls):
     """
     warnings = []
 
+    # 突き合わせる相手は予測所見だけ。補正に使われるのは予測所見だけなので、
+    # 振り返り所見と重なっても掛け合わさらない
     others = []
     for remark in Tz305MonthlyRemark.objects.filter(
-        parse_status=Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
+        remark_cls=Tz305MonthlyRemark.REMARK_CLS_FORECAST,
+        parse_status=Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED,
     ).exclude(target_month=pTargetMonth, remark_cls=pRemarkCls).order_by('target_month'):
         for event in com_load_events(remark):
             if event.get('use_for_forecast') and event.get('factor_mid') is not None:
@@ -537,6 +543,80 @@ def sub_periods_overlap(pStart, pEnd, pOther):
     if other_end is not None and pStart > other_end:
         return False
     return True
+
+
+def com_get_month_memos(pTargetMonth):
+    """
+    対象月の日次備考(ta220_memo)を、要約に渡す行の形にして返す。
+
+    戻り値は [{'day': date, 'text': '09/05(金) [臨時休業] 台風のため…'}, ...]。
+    備考が書かれている日と、休業・特別営業の印が付いた日だけを返す。
+    それ以外の日は「通常営業」であり、書き出しても要約の材料にならない。
+
+    休業の印は memo と別に付ける。備考の文章に休業と書かれていなくても、
+    フラグは事実として残っているため、要約が読み落とさないよう明示する。
+    """
+    month_end = sub_month_end(pTargetMonth)
+    rows = Ta220Memo.objects.filter(
+        business_day__range=(pTargetMonth, month_end)
+    ).order_by('business_day')
+
+    lines = []
+    for row in rows:
+        memo = (row.memo or '').strip()
+        marks = sub_memo_marks(row)
+
+        if not memo and not marks:
+            continue
+
+        head = f"{row.business_day:%m/%d}({'月火水木金土日'[row.business_day.weekday()]})"
+        mark_text = ''.join(f'[{m}]' for m in marks)
+        lines.append({'day': row.business_day,
+                      'text': ' '.join(p for p in (head, mark_text, memo) if p)})
+
+    return lines
+
+
+def sub_memo_marks(pRow):
+    """休業・特別営業のフラグを短い印にする。ビットの意味は docs/codes.md 3.4"""
+    marks = []
+
+    if pRow.closed_flg:
+        marks.append('終日休業')
+    else:
+        # 時間帯ごとの休業。計画ビット(8/16/32)が立っていれば計画休業、
+        # 無ければ天候などによる臨時休業として区別する。
+        # ただし計画ビットが1つも無い値(1〜6)は導入前の旧データで、理由は
+        # 未記録。臨時と断定せず「休業」とだけ書く
+        has_plan_bits = bool(pRow.temp_closed & (8 | 16 | 32))
+        closed = {}      # 種類 → 時間帯の並び
+        open_slots = []
+
+        for bit, plan_bit, label in ((1, 8, '朝'), (2, 16, '昼'), (4, 32, '夜')):
+            if not (pRow.temp_closed & bit):
+                open_slots.append(label)
+                continue
+            if not has_plan_bits:
+                kind = '休業'
+            elif pRow.temp_closed & plan_bit:
+                kind = '計画休業'
+            else:
+                kind = '臨時休業'
+            closed.setdefault(kind, []).append(label)
+
+        if closed and not open_slots:
+            marks.append('終日休業')
+        elif closed:
+            # 営業している時間帯を添える。「夜休業」だけでは夜だけであることが
+            # 伝わらず、要約が「終日休業」に言い換えた例があった。範囲が
+            # 広がる方向の誤りは、休業の理由を落とすより害が大きい
+            body = '・'.join(f"{'・'.join(labels)}{kind}" for kind, labels in closed.items())
+            marks.append(f"{body}（{'・'.join(open_slots)}は営業）")
+
+    if pRow.tokubetu_flg:
+        marks.append('特別営業')
+
+    return marks
 
 
 def com_build_remark_section(pMonths, pRemarkCls):

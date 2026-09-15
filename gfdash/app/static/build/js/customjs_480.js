@@ -35,7 +35,7 @@ $(document).ready(function() {
     // component 要素で change を見れば手入力・カレンダー選択・ボタンの
     // すべてを拾える。
     $('.input-group.date').on('change changeDate', sub480_onYmChanged);
-    $('input[name="remark_cls"]').on('change', sub480_load);
+    sub480_applyClsView();
 
     // 本文を編集したら、保存しないと次へ進めないことを示す
     $('#remark_text').on('input', sub480_syncButtons);
@@ -59,8 +59,41 @@ function sub480_applyUrlParams() {
 
     var cls = params.get('cls');
     if (cls === 'forecast' || cls === 'review') {
-        $('input[name="remark_cls"][value="' + cls + '"]').prop('checked', true);
+        gRemarkCls = cls;
     }
+}
+
+/* ------------------------------------------------------------------
+   区分（予測所見 / 振り返り所見）
+
+   予測所見は「保存→解析→確定」で補正の表を持つ。振り返り所見は本文だけで
+   「保存→確定」。必要な操作が大きく違うため、タブで別のフォームとして見せ、
+   区分ごとに出す要素を切り替える。
+   ------------------------------------------------------------------ */
+
+var gRemarkCls = 'forecast';
+
+function btnRemarkSwitchCls(pCls) {
+    if (pCls === gRemarkCls) { return false; }
+    gRemarkCls = pCls;
+    sub480_applyClsView();
+    sub480_load();
+    return false;   // href="#" で画面の先頭へ飛ばない
+}
+
+// 区分に合わせて、タブの選択と要素の表示を切り替える。
+// 表示の切り替えはここだけで行い、他の場所で個別に toggle しない
+function sub480_applyClsView() {
+    var isReview = (gRemarkCls === 'review');
+
+    $('#remark_cls_tabs > li').each(function() {
+        $(this).toggleClass('active', $(this).data('cls') === gRemarkCls);
+    });
+    $('.gf_rmk_intro').each(function() {
+        $(this).toggle($(this).data('for') === gRemarkCls);
+    });
+    $('.gf_rmk_only_forecast').toggle(!isReview);
+    $('.gf_rmk_only_review').toggle(isReview);
 }
 
 function sub480_onYmChanged() {
@@ -95,7 +128,7 @@ function btnRemarkPrevMonth() { sub480_moveMonth(-1); }
 function btnRemarkNextMonth() { sub480_moveMonth(1); }
 
 function sub480_ym()  { return $('#remark_ym').val(); }
-function sub480_cls() { return $('input[name="remark_cls"]:checked').val(); }
+function sub480_cls() { return gRemarkCls; }
 
 /* ------------------------------------------------------------------
    読み書き
@@ -205,13 +238,25 @@ function sub480_syncButtons() {
     var canSave = dirty && (text.trim() !== '' || (gSavedText || '').trim() !== '');
     // 解析と追加は、保存済みの本文に対して行う
     var ready = saved && !dirty && (gSavedText || '').trim() !== '';
-    var canConfirm = ready && (eventCount > 0 || gParseStatus === 'parsed');
+    var isReview = (sub480_cls() === 'review');
+    // 振り返り所見は本文だけなので、保存できていれば確定できる。
+    // 予測所見は補正の内容が要る
+    var canConfirm = isReview ? ready
+                              : ready && (eventCount > 0 || gParseStatus === 'parsed');
 
     $('#btn_remark_save').prop('disabled', !canSave);
     // AIが使えない環境では、順序に関わらず解析は押させない
     $('#btn_remark_parse').prop('disabled', !ready || gAiDisabled);
+    // 要約は手順の外なので保存状態に依らない。AIが無い環境では押せない。
+    // 振り返り所見だけで使える。予測所見の対象月は未来で、備考にあるのは
+    // 計画休業程度であり、それは予測が別の経路で既に織り込んでいる
+    $('#btn_remark_summary')
+        .prop('disabled', gAiDisabled || !isReview)
+        .attr('title', isReview
+            ? 'その月の日次備考（休業・祝日カレンダーの備考欄）をAIが要約し、本文に挿入します'
+            : '日次備考の要約は振り返り所見でのみ使えます');
     $('#btn_remark_add').prop('disabled', !ready);
-    $('#btn_remark_confirm').prop('disabled', !canConfirm);
+    $('#btn_remark_confirm, #btn_remark_confirm_text').prop('disabled', !canConfirm);
     // 削除は登録済みの所見がある月でだけ押せる
     $('#btn_remark_delete').prop('disabled', !gExists);
 
@@ -223,7 +268,12 @@ function sub480_syncButtons() {
     } else if (canSave) {
         hint = 'まず「所見を保存」を押してください。';
     } else if (!ready) {
-        hint = '所見を入力して保存すると、解析や追加ができます。';
+        hint = isReview ? '所見を入力して保存すると、確定できます。'
+                        : '所見を入力して保存すると、解析や追加ができます。';
+    } else if (isReview) {
+        hint = (gParseStatus === 'confirmed')
+             ? '確認済みです。本文を変えた場合はもう一度「確定」を押してください。'
+             : '「確定」を押すと、振り返りレポートの材料になります。';
     } else {
         hint = '「AIで解析」を押すと、所見から補正の内容を作ります。';
     }
@@ -243,11 +293,16 @@ function sub480_syncButtons() {
 }
 
 function btnRemarkConfirm() {
-    var events = sub480_collect();
+    // 振り返り所見は補正を持たない。表が無いので集めても空になるが、
+    // 意図を明示するため区分で分ける
+    var isReview = (sub480_cls() === 'review');
+    var events = isReview ? [] : sub480_collect();
 
     Swal.fire({
         title: '確定しますか？',
-        html: '確定すると、' + events.length + '件が予測とレポートの補正に使われます。',
+        html: isReview
+            ? 'この本文を振り返りレポートの材料として確定します。'
+            : '確定すると、' + events.length + '件が予測とレポートの補正に使われます。',
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: '確定する',
@@ -359,6 +414,135 @@ function sub480_parseDone(pMessage) {
 
     var $btn = Swal.getConfirmButton();
     if ($btn) { $btn.disabled = false; }
+}
+
+/* ------------------------------------------------------------------
+   日次備考の要約（所見の下書き）
+
+   月末に備考を読み返して書き起こす手間と読み落としを減らす。要約は
+   textarea へ挿入するだけで保存しない。人が読んで直してから保存する。
+   ------------------------------------------------------------------ */
+
+// サーバが流すテキストの区切り。前がログ、後が要約の本文
+var SUMMARY_MARKER = '<<<SUMMARY>>>';
+
+var gSummaryRaw = '';
+
+function btnRemarkSummary() {
+    gSummaryRaw = '';
+    $('#remark_msg').empty();
+
+    Swal.fire({
+        title: '日次備考から下書きを作ります',
+        html: '<div style="text-align:left;">'
+            + '<p id="dlg_sum_status" class="text-muted">AIに問い合わせています...</p>'
+            + '<pre id="dlg_sum_log" class="gf_dlg_log gf_dlg_log_small"></pre>'
+            + '<textarea id="dlg_sum_text" class="form-control gf_dlg_summary"'
+            + ' placeholder="要約がここに流れます。挿入前に直せます。"></textarea>'
+            + '<p class="text-muted" style="margin: 6px 0 0 0;">'
+            + '備考に書かれていない原因や影響が補われていないか、人名が残っていないかを確かめてから挿入してください。'
+            + '</p></div>',
+        width: 760,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showCancelButton: true,
+        confirmButtonText: '本文に挿入',
+        cancelButtonText: '閉じる',
+        customClass: { popup: 'gf-rmk-dialog' },
+        didOpen: function() {
+            // 要約が終わるまで挿入させない。途中の文章を入れると、続きが来ない
+            Swal.getConfirmButton().disabled = true;
+            sub480_runSummary();
+        },
+        preConfirm: function() {
+            return $(Swal.getPopup()).find('#dlg_sum_text').val();
+        }
+    }).then(function(r) {
+        if (!r.isConfirmed) { return; }
+        sub480_insertSummary(r.value);
+    });
+}
+
+function sub480_runSummary() {
+    var postData = { getMode: 'summarize', ym: sub480_ym(), cls: sub480_cls() };
+    if ($('#remark_model').length > 0) { postData.model = $('#remark_model').val(); }
+
+    fetch(location.pathname, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': (typeof com_csrftoken !== 'undefined') ? com_csrftoken : ''
+        },
+        body: $.param(postData)
+    }).then(function(response) {
+        if (!response.ok) { throw new Error('ネットワークの応答に問題があります。'); }
+
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+
+        function readChunks() {
+            return reader.read().then(function(r) {
+                if (r.done) {
+                    sub480_summaryDone();
+                    return;
+                }
+                gSummaryRaw += decoder.decode(r.value, { stream: true });
+                sub480_renderSummary();
+                return readChunks();
+            });
+        }
+        return readChunks();
+    }).catch(function(error) {
+        gSummaryRaw += '\n[通信エラー] ' + error.message + '\n';
+        sub480_renderSummary();
+        sub480_summaryDone();
+    });
+}
+
+// 届いた分を、区切りの前後でログと本文に振り分けて描き直す
+function sub480_renderSummary() {
+    var at = gSummaryRaw.indexOf(SUMMARY_MARKER);
+    var log = (at < 0) ? gSummaryRaw : gSummaryRaw.substring(0, at);
+    var text = (at < 0) ? '' : gSummaryRaw.substring(at + SUMMARY_MARKER.length).replace(/^\n/, '');
+
+    var logEl = document.getElementById('dlg_sum_log');
+    if (logEl) {
+        logEl.textContent = log;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+    var textEl = document.getElementById('dlg_sum_text');
+    if (textEl && at >= 0) {
+        textEl.value = text;
+        textEl.scrollTop = textEl.scrollHeight;
+    }
+}
+
+function sub480_summaryDone() {
+    var ok = (gSummaryRaw.indexOf(SUMMARY_MARKER) >= 0)
+          && $('#dlg_sum_text').val().trim() !== '';
+
+    $('#dlg_sum_status').text(ok ? '要約ができました。内容を確かめて「本文に挿入」を押してください。'
+                                 : '要約できませんでした。ログを確認してください。');
+
+    var $btn = Swal.getConfirmButton();
+    if ($btn) { $btn.disabled = !ok; }
+}
+
+// 本文の末尾に足す。上書きしないのは、既に書いた文章を消さないため。
+// 保存はしない。挿入しただけでは「未保存の編集」になり、保存ボタンが押せる
+function sub480_insertSummary(pText) {
+    var text = (pText || '').trim();
+    if (!text) { return; }
+
+    var $area = $('#remark_text');
+    var current = $area.val();
+    $area.val(current.trim() === '' ? text : current.replace(/\s+$/, '') + '\n\n' + text);
+
+    // 手で打ったときと同じ経路で「編集中」にする
+    $area.trigger('input');
+    $area.focus();
+
+    sub480_message('info', '下書きを本文に挿入しました。内容を確かめて「所見を保存」を押してください。');
 }
 
 function sub480_parseFinished() {

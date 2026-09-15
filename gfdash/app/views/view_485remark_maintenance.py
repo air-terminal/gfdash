@@ -146,7 +146,11 @@ def sub485_set_status(request, pId, pStatus):
 
     warnings = []
 
-    if pStatus == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED:
+    # 補正の確認は予測所見だけ。振り返り所見は補正に使われないので、
+    # 係数や期間の確認をしても意味が無い。本文が最終版だという印を付けるだけ
+    is_forecast = (remark.remark_cls == Tz305MonthlyRemark.REMARK_CLS_FORECAST)
+
+    if pStatus == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED and is_forecast:
         events = com_load_events(remark)
         errors, warnings = com_check_events(events)
         if errors:
@@ -174,9 +178,12 @@ def sub485_set_status(request, pId, pStatus):
     remark.save(update_fields=['parse_status', 'updated_by', 'updated_at'])
 
     ret = sub485_detail(remark.id)
-    ret['message'] = ('確定しました。予測とレポートに反映されます。'
-                      if pStatus == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
-                      else '確定を解除しました。補正には使われません。')
+    if pStatus != Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED:
+        ret['message'] = '確定を解除しました。予測にもレポートにも使われません。'
+    elif is_forecast:
+        ret['message'] = '確定しました。予測とレポートに反映されます。'
+    else:
+        ret['message'] = '確定しました。振り返りレポートに反映されます。'
     ret['warnings'] = warnings
     return ret
 
