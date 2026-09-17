@@ -250,12 +250,27 @@ function runBatch(batchType) {
             var fromYm = $('#llm_ym').val();
             postData.from_ym = fromYm;
 
+            // 起点が今月より前なら「過去の打ち直し」。評価用の履歴だけを残し、
+            // 運用中の最新予測は置き換えない（run_forecast 側の判定と同じ）。
+            // どちらになるかで結果の行き先が違うので、押す前に伝える
+            var now = new Date();
+            var thisYm = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+            var isBackfill = (fromYm < thisYm);
+
             confirmMsg = "【確認】" + fromYm + " の1日から予測をやり直します。\n\n"
                        + "・学習に使うのは " + fromYm + " の前月末までの実績です\n"
                        + "・それ以降の実績は学習に使いません（予測の精度は通常より落ちます）\n"
                        + "・予測期間 " + postData.periods + " 日は前月末からの日数です。"
-                       + "短いと現在までしか届きません\n\n"
-                       + "所見の効果を同じ条件で比べるための実行です。実行しますか？";
+                       + "その月の日数に満たない場合は月末まで延ばされます\n";
+
+            if (isBackfill) {
+                confirmMsg += "・過去の月なので、最新予測（来場者数情報の画面・ラズパイ同期）は"
+                            + "置き換えません。評価用の実行履歴だけを残します\n\n"
+                            + "過去の月の精度を評価するための実行です。実行しますか？";
+            } else {
+                confirmMsg += "・最新予測を置き換えます。来場者数情報の画面とラズパイ同期に反映されます\n\n"
+                            + "所見の効果を同じ条件で比べるための実行です。実行しますか？";
+            }
         }
 
     } else if (batchType === 'llm') {

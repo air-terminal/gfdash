@@ -858,7 +858,9 @@ function sub480_removeCard(pButton) {
    ------------------------------------------------------------------ */
 
 function sub480_openRationale(pButton) {
-    var $cell = $(pButton).closest('td');
+    // 親は根拠の欄(.gf_ev_field)。表の時代は td だったが、カードに変えたとき
+    // ここだけ残り、何にも当たらないまま黙って書き込みが消えていた(gitea #54)
+    var $cell = $(pButton).closest('.gf_ev_field');
     var $input = $cell.find('.rmk_rationale');
     var name = $cell.closest('.gf_ev_card').find('.rmk_name').val() || '(名称なし)';
 

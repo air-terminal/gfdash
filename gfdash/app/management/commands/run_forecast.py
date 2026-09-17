@@ -6,10 +6,12 @@ from prophet import Prophet
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+import calendar
 import os
 
 from app.models import Ta215Attnd, Ta220Memo, Tz101WeatherReport, Tz102WeatherAvarage, Tz301AttendanceForecast
 from app.models import Tz310AiRun
+from app.utils.com_ai_run import com_get_history_from
 from app.utils.com_ai_run import com_save_forecast_history
 from app.utils.com_ai_run import com_track_ai_run
 from app.utils.com_ai_run import com_update_ai_run
@@ -38,21 +40,27 @@ SCRIPT_VERSION = "v0.2.0"   # v0.2.0: 所見による補正、学習期間の指
 PREDICT_SEED = 20260101
 
 
-def sub_parse_train_until(pFromYm):
+def sub_parse_from_ym(pFromYm):
     """
-    --from-ym の指定を、学習に使う最終日（前月末）に変換する。
+    --from-ym の指定を、予測を始める月の1日に変換する。
 
-    指定が無ければ None を返し、全実績を学習に使う。
+    指定が無ければ None を返す。学習の打ち切り（前月末）と履歴の保存下限
+    （この日）の両方がここから決まる。片方だけ別の日付から作ると、実行した
+    月より前を指定したときに履歴が1件も残らない（gitea #49）。
     """
     if not pFromYm:
         return None
 
     try:
-        first = datetime.strptime(pFromYm.strip(), '%Y-%m').date().replace(day=1)
+        return datetime.strptime(pFromYm.strip(), '%Y-%m').date().replace(day=1)
     except ValueError:
         raise CommandError('--from-ym は YYYY-MM の形式で指定してください。')
 
-    return first - timedelta(days=1)
+
+def sub_parse_train_until(pFromYm):
+    """--from-ym の指定を、学習に使う最終日（前月末）に変換する。指定が無ければ None"""
+    first = sub_parse_from_ym(pFromYm)
+    return first - timedelta(days=1) if first else None
 
 
 def sub_apply_closure_factor(pForecastDf, pPlanned, pAdjustment):
@@ -93,11 +101,18 @@ class Command(BaseCommand):
         if options.get('from_ym'):
             note_parts.append(f"学習を {options['from_ym']} の前月末までに限定")
 
+        # 履歴の保存下限。既定は実行した月の1日だが、--from-ym で過去の月を
+        # 指定したときはその月の1日にする。実行月のままだと予測期間の全日が
+        # 下限より前になり、履歴が1件も残らない（gitea #49）。
+        # 書式の検査もここで済ませ、ヘッダを作る前に止める
+        history_from = sub_parse_from_ym(options.get('from_ym'))
+
         with com_track_ai_run(
             Tz310AiRun.RUN_KIND_FORECAST,
             script_version=SCRIPT_VERSION,
             periods=options['periods'],
             note=' / '.join(note_parts) or None,
+            history_from=history_from,
         ) as run:
             self.sub_forecast(options, run)
 
@@ -113,6 +128,28 @@ class Command(BaseCommand):
         # 経過分は「当てはめ値」になり予測ではなくなる。補正の効果を比べたい
         # ときは基準をそろえたいので、選べるようにした。
         train_until = sub_parse_train_until(options.get('from_ym'))
+
+        # 起点が実行月より前なら「過去の打ち直し」。目的は評価のための履歴で、
+        # 運用中の最新予測(tz301)を置き換える理由が無い。置き換えると、起点から
+        # periods 日ぶんの行が古いデータで学習した予測に変わり、periods が長ければ
+        # 現在の月まで及ぶ。履歴だけを残し、tz301 と forecast.json は触らない。
+        is_backfill = bool(run.history_from and run.history_from < com_get_history_from())
+
+        if run.history_from:
+            # その月全体が予測になるよう、periods は月の日数を下回らせない。
+            # 30日のままだと31日の月の末日が落ち、評価に使えない
+            month_days = calendar.monthrange(run.history_from.year, run.history_from.month)[1]
+            if periods_days < month_days:
+                self.stdout.write(
+                    f"予測期間を {periods_days} 日から {month_days} 日に延ばします"
+                    f"（{run.history_from:%Y-%m} の全日を含めるため）")
+                periods_days = month_days
+                com_update_ai_run(run, periods=periods_days)
+
+        if is_backfill:
+            self.stdout.write(self.style.WARNING(
+                f"{run.history_from:%Y-%m} は実行月より前のため、過去の打ち直しとして扱います。"
+                "実行履歴だけを残し、最新予測（tz301）と forecast.json は更新しません。"))
 
         # =========================================================
         # 1. 過去の実績データと学習用特徴量の取得・結合
@@ -399,12 +436,19 @@ class Command(BaseCommand):
         with transaction.atomic():
             history_rows = 0
             for forecast_df, target_cls_name in patterns:
-                save_forecast(forecast_df, target_cls_name)
+                if not is_backfill:
+                    save_forecast(forecast_df, target_cls_name)
                 history_rows += com_save_forecast_history(run, forecast_df, target_cls_name)
 
         self.stdout.write(
             f"実行履歴を保存しました（run_id={run.run_id} / {run.history_from} 以降 {history_rows}件）"
         )
+
+        if is_backfill:
+            self.stdout.write(self.style.SUCCESS(
+                "過去の打ち直しが完了しました。最新予測は変えていません。"
+                f" evaluate_forecast --runs {run.run_id} で評価できます。"))
+            return
 
         # =========================================================
         # 5. ラズパイ同期用のJSONファイルエクスポート

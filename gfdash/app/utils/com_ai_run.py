@@ -42,12 +42,18 @@ def com_track_ai_run(pRunKind, **pFields):
     途中で落ちた実行を 'done' として残さないために例外を捕まえる。
     BaseException を見ているのは、Ctrl-C による中断も未完了として
     記録したいため。状態を書いたうえで例外はそのまま投げ直す。
+
+    history_from を渡せば履歴の保存下限を差し替えられる。省略か None なら
+    実行した月の1日。過去の月を起点に予測をやり直すときは、その月の1日を
+    渡さないと予測期間の全日が下限より前になり、履歴が1件も残らない。
     """
+    history_from = pFields.pop('history_from', None) or com_get_history_from()
+
     run = Tz310AiRun.objects.create(
         run_kind=pRunKind,
         executed_at=timezone.now(),
         status=Tz310AiRun.STATUS_RUNNING,
-        history_from=com_get_history_from(),
+        history_from=history_from,
         **pFields,
     )
 
