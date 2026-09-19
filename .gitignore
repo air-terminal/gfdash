@@ -41,6 +41,7 @@ containers/postgres/sql/*_gf.sql
 # --- LLM 独自プロンプト（settings.LLM_CUSTOM_PROMPT_DIR） ---
 gfdash/custom_prompts/*
 !gfdash/custom_prompts/.gitkeep
+!gfdash/custom_prompts/*.example
 
 # --- 生成物・ログ ---
 forecast.json
