@@ -14,6 +14,15 @@
     .gf-llm-param-dialog .swal2-html-container {
         font-size: 13px;
     }
+    /* 実行前の確認。幅は文に合わせ（width:'auto'）、狭い画面では収める。
+       本文は左寄せで読ませ、途中の月の警告は枠で目立たせる */
+    .gf-llm-confirm-dialog { max-width: 90vw; }
+    .gf_confirm_body { text-align: left; }
+    .gf_confirm_warning {
+        text-align: left; margin-bottom: 12px; padding: 10px 12px;
+        border: 1px solid #F0AD4E; border-radius: 4px; background-color: #FCF8E3;
+        color: #8A6D3B; font-weight: bold;
+    }
     /* 対象年月の枠。中に入る操作がこの年月に従うことを、囲いで示す */
     .gf_ym_frame {
       margin-top: 20px; border: 1px solid #E6E9ED; border-radius: 4px;
@@ -122,7 +131,7 @@
                           <span id="remark_state_forecast_detail" class="text-muted"></span>
                         </td>
                         <td style="width: 50%;">
-                          振り返り所見 <span id="remark_state_review" class="gf_rmk_badge gf_rmk_none">未入力</span>
+                          レビュー所見 <span id="remark_state_review" class="gf_rmk_badge gf_rmk_none">未入力</span>
                           <span id="remark_state_review_detail" class="text-muted"></span>
                         </td>
                       </tr>
@@ -200,7 +209,7 @@
                         <label class="control-label col-md-3 col-sm-4 col-xs-12">モード</label>
                         <div class="col-md-6 col-sm-8 col-xs-12">
                           <select id="llm_mode" class="form-control">
-                            <option value="review">当月振り返り (review)</option>
+                            <option value="review">当月レビュー (review)</option>
                             <option value="forecast_1m">来月予測 (forecast_1m)</option>
                             <option value="forecast_3m">３ヶ月予測 (forecast_3m)</option>
                           </select>
@@ -230,7 +239,7 @@
                             <small class="text-muted">
                               (<span id="llm_param_ctx_wrap">num_ctx <span id="llm_param_ctx">{{ llm_num_ctx }}</span> / </span>timeout
                                <span id="llm_param_timeout">{{ llm_timeout }}</span>秒<span id="llm_param_think_wrap">
-                               / 思考 <span id="llm_param_think"></span></span>)
+                               / thinking <span id="llm_param_think"></span></span>)
                             </small>
                             <button type="button" class="btn btn-default btn-sm" onclick="openLlmParamDialog()" style="margin-left: 8px;">
                               <i class="fa-solid fa-sliders"></i> 実行パラメータを変更
@@ -277,7 +286,12 @@
   <script>
     // LLM実行パラメータのプリセットと既定値。定義は app/utils/com_utils.py にある。
     var gLlmPresets = {{ llm_presets_json|safe }};
-    var gLlmParams  = { num_ctx: {{ llm_num_ctx }}, timeout: {{ llm_timeout }}, think: {{ llm_think|yesno:"true,false" }} };
+    var gLlmParams  = { num_ctx: {{ llm_num_ctx }}, timeout: {{ llm_timeout }}, think: {{ llm_think|yesno:"true,false" }},
+                        think_effort: "{{ llm_think_effort|escapejs }}" };
+    // thinking の強さの選択肢（弱い順）。空文字は「指定しない」で、画面では先頭に置く
+    var gLlmThinkEfforts = {{ llm_think_efforts_json|safe }};
+    // モードごとの既定。エンジン（多段版など）が自分の既定を持つため、モードで変わる
+    var gLlmModeDefaults = {{ llm_mode_defaults_json|safe }};
     // 推論エンジンが受け付けない項目は入力させない。
     // 送っても効かない値を入力できると、反映されない理由が画面から分からない。
     var gLlmEngine  = {

@@ -22,7 +22,7 @@ STATUS_NAMES = {
 
 CLS_NAMES = {
     Tz305MonthlyRemark.REMARK_CLS_FORECAST: '予測所見',
-    Tz305MonthlyRemark.REMARK_CLS_REVIEW: '振り返り所見',
+    Tz305MonthlyRemark.REMARK_CLS_REVIEW: 'レビュー所見',
 }
 
 
@@ -146,7 +146,7 @@ def sub485_set_status(request, pId, pStatus):
 
     warnings = []
 
-    # 補正の確認は予測所見だけ。振り返り所見は補正に使われないので、
+    # 補正の確認は予測所見だけ。レビュー所見は補正に使われないので、
     # 係数や期間の確認をしても意味が無い。本文が最終版だという印を付けるだけ
     is_forecast = (remark.remark_cls == Tz305MonthlyRemark.REMARK_CLS_FORECAST)
 
@@ -183,7 +183,7 @@ def sub485_set_status(request, pId, pStatus):
     elif is_forecast:
         ret['message'] = '確定しました。予測とレポートに反映されます。'
     else:
-        ret['message'] = '確定しました。振り返りレポートに反映されます。'
+        ret['message'] = '確定しました。レビューレポートに反映されます。'
     ret['warnings'] = warnings
     return ret
 

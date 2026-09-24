@@ -7,14 +7,16 @@ import time
 from datetime import datetime
 
 from app.models import Tz302LlmAnalysis, Tz310AiRun
-from app.utils import report_forecast, report_review_single
 from app.utils.com_ai_run import com_fail_ai_run
 from app.utils.com_ai_run import com_save_report_history
 from app.utils.com_ai_run import com_track_ai_run
 from app.utils.com_ai_run import com_update_ai_run
-from app.utils.com_llm import com_get_llm_client
+from app.utils.com_llm import THINK_EFFORTS, com_finish_label, com_get_llm_client, com_think_effort
 from app.utils.com_llm_preset import com_find_llm_preset_key
 from app.utils.report_common import com_load_custom_prompt
+from app.utils.report_engines import (
+    REVIEW_ENGINES, REVIEW_ENGINE_DEFAULT, com_engine_for_mode, com_resolve_llm_params,
+)
 
 # このスクリプトの版。実行履歴(tz310)に残し、後からレポートの出どころを追えるようにする。
 # 製品のバージョンとは別に持つ。製品の版に揃えると、バッチの中身が変わっていなくても
@@ -27,21 +29,22 @@ from app.utils.report_common import com_load_custom_prompt
 #         エンジンの追加（多段版など）は構造を変えないので、以降は 1.x で足す
 SCRIPT_VERSION = "v1.0.0"
 
-# モードとエンジンの対応。エンジンは report_common に書いた2関数を公開する。
-# 振り返りの多段版(#14)はここに1行足すだけで選べるようになる
-ENGINES = {
-    'review': report_review_single,
-    'forecast_1m': report_forecast,
-    'forecast_3m': report_forecast,
-}
+# 段の出力を tz312 に残すときの report_cls。最終レポートの 'review' と
+# 一意制約の中で衝突しないよう、接頭辞で区別する
+STAGE_REPORT_CLS = 'review:{name}'
+
+# thinking の進捗を書き直す間隔（秒）。思考は数万文字になるので中身は流さず、
+# 行頭復帰(\r)で同じ行を書き換えて文字数だけを伸ばす。
+# 短くしても書き換えが増えるだけで、読み手の情報は変わらない
+THINK_PROGRESS_SEC = 0.3
 
 
 class Command(BaseCommand):
-    help = 'ローカルLLMを呼び出して、月次の振り返りおよび未来予測レポートを生成します'
+    help = 'ローカルLLMを呼び出して、月次のレビューおよび未来予測レポートを生成します'
 
     def add_arguments(self, parser):
         parser.add_argument('--mode', type=str, choices=['review', 'forecast_1m', 'forecast_3m'],
-                            help='生成モード (review:当月振り返り, forecast_1m:1ヶ月予測, forecast_3m:3ヶ月予測)')
+                            help='生成モード (review:当月レビュー, forecast_1m:1ヶ月予測, forecast_3m:3ヶ月予測)')
         parser.add_argument('--ym', type=str, default=datetime.now().strftime('%Y-%m'),
                             help='対象年月 (フォーマット: YYYY-MM)')
         parser.add_argument('--model', type=str, default=None, help='使用するAIモデル名')
@@ -52,18 +55,24 @@ class Command(BaseCommand):
         parser.add_argument('--timeout', type=int, default=None,
                             help='APIのタイムアウト秒数。未指定なら OLLAMA_TIMEOUT')
         parser.add_argument('--think', dest='think', action='store_true', default=None,
-                            help='思考(thinking)を有効にする。未指定なら OLLAMA_THINK')
+                            help='thinking を ON にする。未指定なら OLLAMA_THINK')
         parser.add_argument('--no-think', dest='think', action='store_false',
-                            help='思考(thinking)を無効にする')
+                            help='thinking を OFF にする')
+        parser.add_argument('--think-effort', type=str, choices=THINK_EFFORTS, default=None,
+                            help='thinking の強さ。未指定なら .env の LLM_THINK_EFFORT'
+                                 '（強さを持たない銘柄では無視される）')
         parser.add_argument('--dry-run', action='store_true',
                             help='AIを呼ばず、組み立てたプロンプトを表示して終了する（履歴も残さない）')
+        parser.add_argument('--review-engine', type=str, choices=sorted(REVIEW_ENGINES), default=None,
+                            help='レビューのエンジン。未指定なら .env の LLM_REVIEW_ENGINE'
+                                 f'（既定 {REVIEW_ENGINE_DEFAULT}）')
 
     def sub_write_stats(self, pStats, pThinkText):
         """
         推論エンジンが返す診断情報を出力する。
 
-        終了理由が length ならコンテキスト超過、生成速度が極端に遅ければ
-        CPUオフロードというように、原因の切り分けに直接使える。
+        終了ステータスが truncated (length) ならコンテキスト超過、生成速度が
+        極端に遅ければCPUオフロードというように、原因の切り分けに直接使える。
         これが無いと、空のレポートが出来た理由を追えない。
 
         項目名は方言によらずクライアントが正規化して返す。
@@ -75,32 +84,34 @@ class Command(BaseCommand):
         seconds = pStats.get('output_seconds') or 0
 
         parts = [
-            f"終了理由={pStats.get('finish_reason')}",
+            f"終了ステータス={com_finish_label(pStats.get('finish_reason'))}",
             f"プロンプト={pStats.get('prompt_tokens') or 0}トークン",
             f"生成={completion}トークン",
         ]
         if seconds > 0:
             parts.append(f"生成時間={seconds:.1f}秒 ({completion / seconds:.1f}トークン/秒)")
         if pThinkText:
-            parts.append(f"思考={len(pThinkText)}文字")
+            parts.append(f"thinking={len(pThinkText)}文字")
 
         self.stdout.write("\n[実行情報] " + " / ".join(parts) + "\n", ending='')
         self.stdout.flush()
 
     def sub_empty_report_hint(self, pStats, pThinkText):
-        """本文が空だったときに、状況に応じた対処を案内する"""
+        """本文が空か途中で切れたときに、状況に応じた対処を案内する"""
         if pStats.get('finish_reason') == 'length':
+            head = "本文が途中で切れました" if pStats.get('truncated') else "コンテキストを使い切っています"
             return (
-                "コンテキストを使い切っています（終了理由: length）。\n"
-                "  ・思考を無効にする（--no-think / .env の OLLAMA_THINK=False）\n"
-                "  ・OLLAMA_NUM_CTX を増やす、または画面のプリセットで大きい値を選ぶ\n"
-                "  思考は与えられた文脈を埋めるように消費されるため、有効にする場合は\n"
-                "  「プロンプト + 思考 + 本文」が収まる大きさが必要です。"
+                f"{head}（終了ステータス: {com_finish_label('length')}）。\n"
+                "  ・thinking を OFF にする（--no-think / .env の OLLAMA_THINK=False）\n"
+                "  ・Ollama なら OLLAMA_NUM_CTX を増やす（画面のスライダーでも変えられます）\n"
+                "  ・OpenAI互換なら推論エンジン側のコンテキスト長を広げる\n"
+                "  thinking は与えられたコンテキストを埋めるように消費するため、ON にする場合は\n"
+                "  「プロンプト + thinking + 本文」が収まる大きさが必要です。"
             )
         if pThinkText:
             return (
-                "思考のみが出力され、本文が生成されませんでした。\n"
-                "  --no-think で思考を無効にするか、OLLAMA_NUM_CTX を増やしてください。"
+                "thinking だけが出力され、本文が生成されませんでした。\n"
+                "  --no-think で thinking を OFF にするか、コンテキストを広げてください。"
             )
         return (
             "モデルが応答を返しませんでした。モデル名の指定と、\n"
@@ -122,7 +133,7 @@ class Command(BaseCommand):
             return
 
         mode = options['mode']
-        engine = ENGINES[mode]
+        engine = self.sub_select_engine(mode, options.get('review_engine'))
         base_month = datetime.strptime(options['ym'], "%Y-%m").date().replace(day=1)
 
         custom_text, custom_error = com_load_custom_prompt(mode)
@@ -146,6 +157,13 @@ class Command(BaseCommand):
             prompt_version=f"{engine.ENGINE_NAME}/{engine.PROMPT_VERSION}",
         ) as run:
             self.sub_analyze(options, run, start_time, engine, context, base_month)
+
+    def sub_select_engine(self, pMode, pOverride):
+        """モードに応じたエンジン。設定値が不正なら既定に倒して警告する（止めない）"""
+        engine, warning = com_engine_for_mode(pMode, pOverride)
+        if warning:
+            self.stderr.write(self.style.WARNING(warning))
+        return engine
 
     def sub_print_prompts(self, pMode, pYmStr, pEngine, pContext):
         self.stdout.write(
@@ -207,19 +225,31 @@ class Command(BaseCommand):
         # ---------------------------------------------------------
         # 推論エンジンの呼び出し（方言の差はクライアントが吸収する）
         # ---------------------------------------------------------
-        # 引数での指定を優先し、無ければ .env(settings)の既定値を使う
-        num_ctx = options.get('num_ctx') or getattr(settings, 'OLLAMA_NUM_CTX', 4096)
-        timeout_val = options.get('timeout') or getattr(settings, 'OLLAMA_TIMEOUT', 300)
+        # 引数での指定を優先し、無ければエンジンの既定と .env(settings) から決める
+        # （優先順位は com_resolve_llm_params のとおり）
+        defaults = com_resolve_llm_params(engine)
+        num_ctx = options.get('num_ctx') or defaults['num_ctx']
+        timeout_val = options.get('timeout') or defaults['timeout']
 
         think_val = options.get('think')
         if think_val is None:
-            think_val = getattr(settings, 'OLLAMA_THINK', False)
+            think_val = defaults['think']
+
+        # thinking の強さ。引数 ＞ .env の順。有効なときだけ意味を持ち、
+        # 強さを指定したときは think そのものを強さの文字列にして渡す
+        # （クライアントが方言ごとの項目に振り分ける）
+        think_effort = options.get('think_effort') or com_think_effort()
+        if think_val and think_effort:
+            think_val = think_effort
 
         # 実行パラメータが確定した時点で履歴に残す。プリセットは値から逆引きする。
         # 個別指定された組み合わせは 'manual' になる。
+        # モデルは名前にダイジェストを添える。同じ名前でも取り直せば中身が変わるため、
+        # 名前だけでは「同じモデルで作った」と言えない。取れないエンジンでは名前だけ
+        digest = client.model_digest(target_model)
         com_update_ai_run(
             run,
-            llm_model=target_model,
+            llm_model=f"{target_model}@{digest}" if digest else target_model,
             llm_preset=com_find_llm_preset_key(num_ctx, timeout_val, bool(think_val)),
         )
 
@@ -230,7 +260,8 @@ class Command(BaseCommand):
             parts.append(f"num_ctx={num_ctx}")
         parts.append(f"timeout={timeout_val}秒")
         if client.supports_think:
-            parts.append(f"思考={'有効' if think_val else '無効'}")
+            parts.append(f"thinking={'ON' if think_val else 'OFF'}"
+                         + (f" ({think_effort})" if think_val and think_effort else ''))
 
         self.stdout.write(
             f"実行パラメータ[{client.name}]: " + " / ".join(parts) + "\n", ending=''
@@ -249,12 +280,28 @@ class Command(BaseCommand):
         prompt_version = f"{engine.ENGINE_NAME}/{engine.PROMPT_VERSION}"
 
         try:
+            # thinking の進捗。中身は出さず、同じ行の文字数だけを伸ばす。
+            # 本文が来たら行を閉じて、進捗の続きに本文が付くのを防ぐ
+            think_progress = {'chars': 0, 'at': 0.0, 'open': False}
+
             def sub_on_text(pText):
+                if think_progress['open']:
+                    self.stdout.write("\n", ending='')
+                    think_progress['open'] = False
                 self.stdout.write(pText, ending='')
                 self.stdout.flush()
 
-            def sub_on_think():
-                self.stdout.write("\n[思考中...]\n", ending='')
+            def sub_on_think(pPart=''):
+                think_progress['chars'] += len(pPart)
+                now = time.time()
+                if think_progress['open'] and now - think_progress['at'] < THINK_PROGRESS_SEC:
+                    return
+
+                head = '' if think_progress['open'] else '\n'
+                think_progress['at'] = now
+                think_progress['open'] = True
+                self.stdout.write(
+                    f"{head}\r[thinking... {think_progress['chars']:,}文字]", ending='')
                 self.stdout.flush()
 
             result = engine.com_generate(
@@ -290,6 +337,11 @@ class Command(BaseCommand):
 
             # tz302(最新)と tz312(履歴)を同じトランザクションで書く。
             # 片方だけが残ると、画面が見ているレポートと履歴が食い違う。
+            # 段の出力は設定で選んだときだけ履歴に残す。最終レポートと同じ
+            # トランザクションで書き、「まとめが何を元に書かれたか」を後から追える
+            # ようにする。tz302(最新)には最終レポートだけ
+            save_stages = bool(getattr(settings, 'LLM_SAVE_STAGE_OUTPUT', False)) and result.stage_outputs
+
             with transaction.atomic():
                 Tz302LlmAnalysis.objects.update_or_create(
                     target_month=base_month,
@@ -297,6 +349,21 @@ class Command(BaseCommand):
                     defaults={'report_text': report_text}
                 )
                 com_save_report_history(run, base_month, mode, report_text)
+
+                if save_stages:
+                    for stage in result.stage_outputs:
+                        com_save_report_history(
+                            run, base_month, STAGE_REPORT_CLS.format(name=stage['name']), stage['text'])
+
+                # 履歴のメモ。llm_preset は思考ありのまま残るので、まとめを思考なしで
+                # やり直したことはここに書く。無いと「思考ありで作った」と読める
+                note_parts = [run.note]
+                if save_stages:
+                    note_parts.append(f"中間出力あり({len(result.stage_outputs)}段)")
+                if stats.get('think_fallback'):
+                    note_parts.append('まとめは thinking なしで再実行')
+                if any(note_parts[1:]):
+                    com_update_ai_run(run, note=' / '.join(p for p in note_parts if p))
 
             # 実行時間の計算と完了ログの出力
             elapsed = time.time() - start_time

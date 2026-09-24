@@ -64,11 +64,11 @@ function sub410_postView(postParam){
         var $forecastIcon = $forecastWrap.siblings('h4').find('.gf-toggle-icon');
 
         if (results.hasReview) {
-            // ① 振り返りがある場合 ＝ 予測レポートを「畳んだ状態」にする
+            // ① レビューがある場合 ＝ 予測レポートを「畳んだ状態」にする
             $forecastWrap.hide();
             $forecastIcon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
         } else {
-            // ② 振り返りがない(予測のみ)場合 ＝ 予測レポートを「展開した状態」にする
+            // ② レビューがない(予測のみ)場合 ＝ 予測レポートを「展開した状態」にする
             $forecastWrap.show();
             $forecastIcon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
         }

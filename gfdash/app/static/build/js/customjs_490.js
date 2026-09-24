@@ -16,8 +16,9 @@ $(document).ready(function() {
 
     }
 
-    // 既定値がどのプリセットに当たるかを表示に反映する
-    updateLlmParamDisplay();
+    // 実行パラメータはモードの既定から始める。利用者が変えるまではモードに追従する
+    sub490_applyModeDefaults();
+    $('#llm_mode').on('change', sub490_applyModeDefaults);
 
     // 月次所見の状態。対象年月を変えたら読み直す。
     //
@@ -52,6 +53,34 @@ function sub490_onYmChanged() {
 var LLM_MANUAL_KEY = 'manual';
 var LLM_MANUAL_NAME = 'Manual';
 
+// コンテキスト長のスライダー。4096刻みで止まる。
+// 範囲外や刻みに合わない値は数値入力で指定でき、そのときスライダーは
+// 一番近い端に寄る（数値入力の値が優先される）
+var LLM_CTX_MIN = 4096;
+var LLM_CTX_MAX = 65536;
+var LLM_CTX_STEP = 4096;
+
+// thinking の強さ。スライダーの 0 は「指定しない」で、1 以降が gLlmThinkEfforts の順
+function sub490_effortToIndex(pValue) {
+    var i = gLlmThinkEfforts.indexOf(pValue || '');
+    return i < 0 ? 0 : i + 1;
+}
+
+function sub490_indexToEffort(pIndex) {
+    var i = parseInt(pIndex, 10);
+    return i > 0 ? (gLlmThinkEfforts[i - 1] || '') : '';
+}
+
+function sub490_effortLabel(pValue) {
+    return pValue || '指定しない';
+}
+
+function sub490_ctxToSlider(pValue) {
+    var n = parseInt(pValue, 10);
+    if (!n) { return LLM_CTX_MIN; }
+    return Math.min(LLM_CTX_MAX, Math.max(LLM_CTX_MIN, n));
+}
+
 // 現在の値に一致するプリセットを返す（無ければ null）
 function findLlmPreset(numCtx, timeout, think) {
     for (var i = 0; i < gLlmPresets.length; i++) {
@@ -63,12 +92,38 @@ function findLlmPreset(numCtx, timeout, think) {
     return null;
 }
 
+// 利用者がダイアログで値を決めたか。決めるまではモードの既定に追従する。
+// 決めた後にモードを変えても値は保つ（自分で決めた値が黙って変わらないように）
+var gLlmCustomized = false;
+
+function sub490_modeDefaults() {
+    return gLlmModeDefaults[$('#llm_mode').val()] || null;
+}
+
+function sub490_applyModeDefaults() {
+    var d = sub490_modeDefaults();
+    if (d && !gLlmCustomized) {
+        gLlmParams.num_ctx = d.num_ctx;
+        gLlmParams.timeout = d.timeout;
+        gLlmParams.think   = d.think;
+    }
+    updateLlmParamDisplay();
+}
+
 function updateLlmParamDisplay() {
     var preset = findLlmPreset(gLlmParams.num_ctx, gLlmParams.timeout, gLlmParams.think);
-    $('#llm_param_label').text(preset ? preset.name : LLM_MANUAL_NAME);
+    var d = sub490_modeDefaults();
+    var isDefault = d && d.num_ctx === gLlmParams.num_ctx
+                      && d.timeout === gLlmParams.timeout && d.think === gLlmParams.think;
+    // プリセットに一致すればその名前。一致しなくてもモードの既定なら「既定」と出す。
+    // 多段版の既定（thinking オン・広い num_ctx）はどのプリセットにも無いが、個別指定ではない
+    $('#llm_param_label').text(preset ? preset.name : (isDefault ? 'モードの既定' : LLM_MANUAL_NAME));
     $('#llm_param_ctx').text(gLlmParams.num_ctx);
     $('#llm_param_timeout').text(gLlmParams.timeout);
-    $('#llm_param_think').text(gLlmParams.think ? '有効' : '無効');
+    $('#llm_param_think').text(
+        gLlmParams.think
+            ? 'ON' + (gLlmParams.think_effort ? ' (' + gLlmParams.think_effort + ')' : '')
+            : 'OFF');
 
     // 送っていない項目は表示しない。効いていない値を出すと誤解を生む
     $('#llm_param_ctx_wrap').toggle(!!gLlmEngine.supportsNumCtx);
@@ -118,7 +173,7 @@ function openLlmParamDialog() {
         var p = gLlmPresets[i];
         html += sub490_presetRow(
             p.key, p.name, p.hint,
-            'num_ctx ' + p.num_ctx + ' / ' + p.timeout + '秒 / 思考' + (p.think ? 'あり' : 'なし'),
+            'num_ctx ' + p.num_ctx + ' / ' + p.timeout + '秒 / thinking ' + (p.think ? 'ON' : 'なし'),
             current && current.key === p.key
         );
     }
@@ -133,14 +188,25 @@ function openLlmParamDialog() {
     html += '<hr style="margin: 12px 0;">';
     html += '<label style="display:block;">詳細</label>';
 
+    // コンテキスト長はスライダーと数値入力の両方から決められるようにする。
+    // 刻みの良い値はスライダーが速く、プリセットに無い値は数値入力で指定できる
     var ctxOff = !gLlmEngine.supportsNumCtx;
+    var disabled = ctxOff ? ' disabled' : '';
     html += '<label style="display:block; font-weight:normal;">コンテキスト長 (num_ctx)</label>';
-    html += '<input type="number" id="dlg_llm_ctx" class="form-control" min="256" step="256" value="'
-          + gLlmParams.num_ctx + '"' + (ctxOff ? ' disabled' : '') + '>';
+    html += '<div style="display:flex; align-items:center; gap:10px;">';
+    html += '<input type="range" id="dlg_llm_ctx_range" style="flex:1; margin:0;"'
+          + ' min="' + LLM_CTX_MIN + '" max="' + LLM_CTX_MAX + '" step="' + LLM_CTX_STEP + '"'
+          + ' value="' + sub490_ctxToSlider(gLlmParams.num_ctx) + '"' + disabled + '>';
+    html += '<input type="number" id="dlg_llm_ctx" class="form-control" style="width:110px; margin:0;"'
+          + ' min="256" step="256" value="' + gLlmParams.num_ctx + '"' + disabled + '>';
+    html += '</div>';
     html += '<p class="text-muted" style="margin: 4px 0 12px;">'
           + (ctxOff
              ? gLlmEngine.name + ' では推論エンジン側の設定に従います。'
-             : '大きいほど多くの実績を渡せますが、VRAMの使用量が増えます。')
+             : 'スライダーは ' + LLM_CTX_STEP + ' 刻み（' + LLM_CTX_MIN + '〜' + LLM_CTX_MAX + '）。'
+               + '細かい値は右の欄に直接入力できます。<br>'
+               + '目安: 8192 = レポート1本ぶん / 16384 = thinking あり。'
+               + '大きいほど多くの実績を渡せますが、VRAMの使用量が増えます。')
           + '</p>';
 
     html += '<label style="display:block; font-weight:normal;">タイムアウト (秒)</label>';
@@ -150,12 +216,26 @@ function openLlmParamDialog() {
     html += '<div class="checkbox" style="margin-top: 12px;">';
     html += '<label style="font-weight:normal;"><input type="checkbox" id="dlg_llm_think"'
           + (gLlmParams.think ? ' checked' : '') + (thinkOff ? ' disabled' : '')
-          + '> 思考(thinking)を使う</label>';
+          + '> thinking を使う</label>';
     html += '</div>';
+
+    // 強さ。thinking を使うときだけ意味を持つので、チェックに連動して出し入れする。
+    // コンテキスト長と同じくスライダーで、左端は「指定しない」（従来どおり ON/OFF だけ送る）
+    html += '<div id="dlg_llm_effort_wrap" style="margin: 4px 0 0;">';
+    html += '<label style="display:block; font-weight:normal;">thinking の強さ</label>';
+    html += '<div style="display:flex; align-items:center; gap:10px;">';
+    html += '<input type="range" id="dlg_llm_effort" style="flex:1; margin:0;"'
+          + ' min="0" max="' + gLlmThinkEfforts.length + '" step="1"'
+          + ' value="' + sub490_effortToIndex(gLlmParams.think_effort) + '">';
+    html += '<span id="dlg_llm_effort_label" class="text-muted" style="width:110px;"></span>';
+    html += '</div>';
+    html += '<p class="text-muted" style="margin: 4px 0 0;">'
+          + '強さを持たない銘柄では無視されます。指定しないと従来どおり ON/OFF だけを送ります。'
+          + '</p></div>';
     html += '<p class="text-muted" style="margin: 0;">'
           + (thinkOff
              ? gLlmEngine.name + ' では推論エンジン側の設定に従います。'
-             : '思考はコンテキストを大きく消費します。'
+             : 'thinking はコンテキストを大きく消費します。'
                + '有効にする場合はコンテキスト長に余裕を持たせてください。'
                + '足りないと本文が生成されません。')
           + '</p>';
@@ -184,12 +264,32 @@ function openLlmParamDialog() {
                 for (var i = 0; i < gLlmPresets.length; i++) {
                     if (gLlmPresets[i].key === key) {
                         $popup.find('#dlg_llm_ctx').val(gLlmPresets[i].num_ctx);
+                        $popup.find('#dlg_llm_ctx_range').val(sub490_ctxToSlider(gLlmPresets[i].num_ctx));
                         $popup.find('#dlg_llm_timeout').val(gLlmPresets[i].timeout);
                         $popup.find('#dlg_llm_think').prop('checked', gLlmPresets[i].think);
                         return;
                     }
                 }
             });
+
+            // スライダーと数値入力を互いに追従させる。数値入力が主で、
+            // スライダーは刻みの範囲に収まるときだけ位置を合わせる
+            $popup.on('input change', '#dlg_llm_ctx_range', function() {
+                $popup.find('#dlg_llm_ctx').val($(this).val()).trigger('change');
+            });
+            $popup.on('input change', '#dlg_llm_ctx', function() {
+                $popup.find('#dlg_llm_ctx_range').val(sub490_ctxToSlider($(this).val()));
+            });
+
+            // 強さは thinking を使うときだけ出す。値の表示もここで更新する
+            function subEffortSync() {
+                var on = $popup.find('#dlg_llm_think').is(':checked') && !thinkOff;
+                $popup.find('#dlg_llm_effort_wrap').toggle(on);
+                $popup.find('#dlg_llm_effort_label').text(
+                    sub490_effortLabel(sub490_indexToEffort($popup.find('#dlg_llm_effort').val())));
+            }
+            $popup.on('input change', '#dlg_llm_effort, #dlg_llm_think', subEffortSync);
+            subEffortSync();
 
             // 詳細欄を触ったらプリセットの選択を実態に合わせ直す。
             // 選択と値がずれたまま表示されると、どちらが効くのか分からなくなる。
@@ -207,6 +307,7 @@ function openLlmParamDialog() {
             var $popup = $(Swal.getPopup());
             var numCtx = parseInt($popup.find('#dlg_llm_ctx').val(), 10);
             var timeout = parseInt($popup.find('#dlg_llm_timeout').val(), 10);
+            var effort = sub490_indexToEffort($popup.find('#dlg_llm_effort').val());
 
             if (!numCtx || numCtx < 256) {
                 Swal.showValidationMessage('コンテキスト長は256以上で指定してください。');
@@ -219,7 +320,8 @@ function openLlmParamDialog() {
             return {
                 num_ctx: numCtx,
                 timeout: timeout,
-                think: $popup.find('#dlg_llm_think').is(':checked')
+                think: $popup.find('#dlg_llm_think').is(':checked'),
+                think_effort: effort
             };
         }
     }).then(function(result) {
@@ -229,6 +331,8 @@ function openLlmParamDialog() {
         gLlmParams.num_ctx = result.value.num_ctx;
         gLlmParams.timeout = result.value.timeout;
         gLlmParams.think   = result.value.think;
+        gLlmParams.think_effort = result.value.think_effort;
+        gLlmCustomized = true;
         updateLlmParamDisplay();
     });
 }
@@ -287,22 +391,105 @@ function runBatch(batchType) {
         }
         if (gLlmEngine.supportsThink) {
             postData.think = gLlmParams.think ? 'true' : 'false';
+            if (gLlmParams.think && gLlmParams.think_effort) {
+                postData.think_effort = gLlmParams.think_effort;
+            }
         }
 
         var paramText = [];
         if (gLlmEngine.supportsNumCtx) { paramText.push("num_ctx " + gLlmParams.num_ctx); }
         paramText.push("タイムアウト " + gLlmParams.timeout + "秒");
-        if (gLlmEngine.supportsThink) { paramText.push("思考 " + (gLlmParams.think ? "有効" : "無効")); }
+        if (gLlmEngine.supportsThink) {
+            paramText.push("thinking " + (gLlmParams.think ? "ON" : "OFF")
+                           + (gLlmParams.think && gLlmParams.think_effort
+                              ? " (" + gLlmParams.think_effort + ")" : ""));
+        }
 
         var selectedModeText = $('#llm_mode option:selected').text();
         confirmMsg = postData.ym + " を基準とした [" + selectedModeText + "] レポート生成を実行しますか？\n"
                    + "(" + gLlmEngine.name + " / " + paramText.join(" / ") + ")";
+
+        // レビューは月の合計を前年と比べる。途中の月で実行すると前年の半分の
+        // ような表になり、月を間違えて押したことに生成後まで気づけない。
+        // 実行前にデータが月末まであるかを問い合わせ、無ければ確認文に添える
+        if (postData.mode === 'review') {
+            sub490_reviewDataCheck(postData.ym, function(pWarning) {
+                sub490_confirmAndRun(batchType, postData, confirmMsg, pWarning);
+            });
+            return;
+        }
     }
 
-    if (!confirm(confirmMsg)) {
-        return;
+    sub490_confirmAndRun(batchType, postData, confirmMsg, '');
+}
+
+function sub490_reviewDataCheck(pYm, pCallback) {
+    /* 対象月の来場者データが月末まで揃っていなければ、警告文を作って渡す。
+       問い合わせに失敗したときは空文で進める。確認の補助であって、
+       これが原因で実行できなくなるのは本末転倒 */
+    $.ajax({
+        type: 'POST',
+        url: location.pathname,
+        dataType: 'json',
+        data: { getMode: 'data_status', ym: pYm },
+        beforeSend: function(xhr) { xhr.setRequestHeader('X-CSRFToken', csrftoken); }
+    }).done(function(res) {
+        if (!res.success || res.complete) {
+            pCallback('');
+            return;
+        }
+        var warning;
+        if (res.last_day) {
+            warning = pYm + " の来場者データは " + sub490_fmtMd(res.last_day)
+                    + " までです（月末は " + sub490_fmtMd(res.month_end) + "）。\n"
+                    + "途中までのデータで実行しても良いですか？";
+        } else {
+            warning = pYm + " の来場者データがありません。\n実行しても良いですか？";
+        }
+        pCallback(warning);
+    }).fail(function() {
+        pCallback('');
+    });
+}
+
+function sub490_fmtMd(pYmd) {
+    /* '2026-09-14' → '9月14日' */
+    var parts = pYmd.split('-');
+    return parseInt(parts[1], 10) + '月' + parseInt(parts[2], 10) + '日';
+}
+
+function sub490_confirmAndRun(batchType, postData, confirmMsg, pWarning) {
+    /* 実行前の確認。他の画面と同じ SweetAlert2 で出す。
+       ブラウザ標準の confirm は見た目が揃わないうえ、改行や強調が効かない */
+    var html = '<div class="gf_confirm_body">' + sub490_textToHtml(confirmMsg) + '</div>';
+    if (pWarning) {
+        html = '<div class="gf_confirm_warning">' + sub490_textToHtml(pWarning) + '</div>' + html;
     }
 
+    Swal.fire({
+        title: '実行の確認',
+        html: html,
+        icon: pWarning ? 'warning' : 'question',
+        // 幅は文に合わせる。固定幅にすると左寄せの文の右に空白が残る
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        showCancelButton: true,
+        confirmButtonText: '実行する',
+        cancelButtonText: 'キャンセル',
+        // 途中の月は「実行しない」を既定にする。Enter で通ってしまわないように
+        focusCancel: !!pWarning
+    }).then(function(r) {
+        if (!r.isConfirmed) { return; }
+        sub490_startBatch(batchType, postData);
+    });
+}
+
+function sub490_textToHtml(pText) {
+    /* 改行だけを <br> にする。それ以外はエスケープして文字として出す */
+    return $('<div>').text(pText).html().replace(/\n/g, '<br>');
+}
+
+function sub490_startBatch(batchType, postData) {
     // UIのロックと初期化
     var $console = $('#batch_console');
 
@@ -316,8 +503,10 @@ function runBatch(batchType) {
     } else if (batchType === 'llm') {
         var modelName = postData.model ? postData.model : "デフォルトモデル";
         $console.append("【" + postData.ym + " / モード: " + postData.mode + "】AIレポートの生成を開始します...\n");
-        $console.append("Ollama API (モデル: " + modelName + ") にリクエストを送信中...\n");
-        $console.append("※AIの思考が完了するまでしばらくお待ちください。\n\n");
+        // 推論エンジンの名前は固定にしない。OpenAI互換を使っていても
+        // 「Ollama API」と出ると、どこへ投げているのか読み取れない
+        $console.append(gLlmEngine.name + " (モデル: " + modelName + ") にリクエストを送信中...\n");
+        $console.append("※AIの応答が完了するまでしばらくお待ちください。\n\n");
     }
 
     $('button').prop('disabled', true);
@@ -343,12 +532,13 @@ function runBatch(batchType) {
                 if (done) {
                     $('button').prop('disabled', false);
                     if (typeof NProgress != 'undefined') { NProgress.done(); }
+                    sub490_afterRun($console.text());
                     return;
                 }
                 
                 // 🌟 修正: 複雑なJSONパースを撤廃し、届いた文字をそのまま追加するだけ！
                 const chunkText = decoder.decode(value, { stream: true });
-                $console.append(chunkText);
+                sub490_appendLog($console, chunkText);
                 $console.scrollTop($console[0].scrollHeight);
                 
                 return readChunks();
@@ -361,6 +551,49 @@ function runBatch(batchType) {
         $('button').prop('disabled', false);
         if (typeof NProgress != 'undefined') { NProgress.done(); }
     });
+}
+
+// ログに流れる印。まとめを思考なしでやり直したときにバッチが出す
+// （report_review_staged.THINK_FALLBACK_MARK と同じ文字列）
+var LLM_THINK_FALLBACK_MARK = '[think-fallback]';
+
+function sub490_afterRun(pLogText) {
+    /* 処理の終了後に、ログの中では流れて見落とす事柄をダイアログで知らせる。
+       thinking なしでのやり直しは、履歴の実行パラメータ（thinking ON）と実際が
+       食い違うので、その場で伝える */
+    if (pLogText.indexOf(LLM_THINK_FALLBACK_MARK) < 0) { return; }
+    // やり直しても本文が出なかったときはバッチの ❌ の説明で足りる
+    if (pLogText.indexOf('DBに保存しました') < 0) { return; }
+
+    Swal.fire({
+        title: 'まとめは thinking なしで生成しました',
+        html: '<div class="gf_confirm_body">'
+            + 'thinking が上限に達して本文が生成されなかったため、'
+            + 'まとめの段だけ thinking を OFF にしてやり直しました。<br>'
+            + '段1〜3の出力はそのまま使っています。レポートは保存されています。<br><br>'
+            + '1回目がどこで切れたかは実行ログに出しています。thinking ありで作りたい場合は、'
+            + 'Ollama なら実行パラメータの num_ctx を大きく、OpenAI互換なら推論エンジン側の'
+            + 'コンテキスト長を広げるか、thinking の短いモデルを選んでください。</div>',
+        icon: 'info',
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        confirmButtonText: '閉じる'
+    });
+}
+
+function sub490_appendLog($console, pText) {
+    /* 実行ログへの追記。'\r'（行頭復帰）は端末と同じく「直前の行を書き直す」
+       として扱う。thinking の進捗は数万文字になるので、中身を流す代わりに
+       同じ行を書き換えて文字数だけを伸ばしている */
+    var parts = pText.split('\r');
+    $console.append(parts[0]);
+
+    for (var i = 1; i < parts.length; i++) {
+        var current = $console.text();
+        var head = current.lastIndexOf('\n');
+        $console.text(current.slice(0, head + 1));   // 最後の行を捨てる
+        $console.append(parts[i]);
+    }
 }
 
 function btnPrevMonth() {

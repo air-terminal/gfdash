@@ -184,7 +184,7 @@
             </div>
 
             <!-- 区分はタブで切り替える。予測所見は「保存→解析→確定」の3段階で補正の
-                 表を持ち、振り返り所見は本文だけで「保存→確定」の2段階。必要な操作が
+                 表を持ち、レビュー所見は本文だけで「保存→確定」の2段階。必要な操作が
                  大きく違うため、ラジオボタンで同じフォームを絞り込むように見せると
                  実態と合わない。対象月はタブの外に置き、両方に共通であることを示す。
                  切り替えは JS で行う（BS3 の CSS と BS4 の JS が混在しており、
@@ -197,7 +197,7 @@
               </li>
               <li data-cls="review">
                 <a href="#" onclick="return btnRemarkSwitchCls('review')">
-                  <i class="fa-solid fa-clock-rotate-left"></i> 振り返り所見
+                  <i class="fa-solid fa-clock-rotate-left"></i> レビュー所見
                 </a>
               </li>
             </ul>
@@ -208,7 +208,7 @@
             </p>
             <p class="gf_rmk_intro" data-for="review" style="display: none;">
               その月に<b>実際に起きたこと</b>を書いてください。天候による休業、設備の不調、イベント、料金の変更など。
-              確定すると振り返りレポートの材料になります。予測の補正には使われません。
+              確定するとレビューレポートの材料になります。予測の補正には使われません。
               先の月に影響が続く出来事は、予測所見のほうに書いてください。
             </p>
 
@@ -217,7 +217,7 @@
               <!-- 日次備考の要約。本文に挿入するだけで保存はしない。
                    手順の外側に置いているのは、下書きの材料を作る補助であって
                    保存→解析→確定の流れの一段ではないため。
-                   振り返り所見でだけ押せる（title と disabled は JS が区分に合わせて設定） -->
+                   レビュー所見でだけ押せる（title と disabled は JS が区分に合わせて設定） -->
               <button type="button" class="btn btn-default btn-sm" id="btn_remark_summary"
                       onclick="btnRemarkSummary()" disabled>
                 <i class="fa-solid fa-list-check"></i> 日次備考から下書き
@@ -240,7 +240,7 @@
               </button>
               <span class="text-muted gf_rmk_only_forecast">または</span>
 
-              <!-- 振り返り所見は本文だけなので、確定を保存の隣に置く。
+              <!-- レビュー所見は本文だけなので、確定を保存の隣に置く。
                    予測所見の確定は補正の表に対する操作なので、表の枠にある -->
               <span class="gf_rmk_arrow gf_rmk_only_review" style="display: none;">→</span>
               <button type="button" class="btn btn-success gf_rmk_only_review" id="btn_remark_confirm_text"
@@ -268,7 +268,7 @@
       </div>
     </div>
 
-    <!-- 補正の表は予測所見だけ。振り返り所見は本文のみで、補正を持たない -->
+    <!-- 補正の表は予測所見だけ。レビュー所見は本文のみで、補正を持たない -->
     <div class="row gf_rmk_only_forecast" id="remark_events_panel">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">
@@ -309,7 +309,7 @@
       </div>
     </div>
 
-    <!-- 実行ログは解析の経過を残す場所。振り返り所見に解析は無い -->
+    <!-- 実行ログは解析の経過を残す場所。レビュー所見に解析は無い -->
     <div class="row gf_rmk_only_forecast">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">

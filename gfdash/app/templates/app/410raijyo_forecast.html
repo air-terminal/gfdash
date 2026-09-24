@@ -4,6 +4,14 @@
   {{ block.super }}
     <link href="/static/gf_vendors/bootstrap-datepicker/dist/css/bootstrap-datepicker.min.css" rel="stylesheet" type="text/css">
     <link href="/static/build/css/custom_gf.css" rel="stylesheet" type="text/css">
+    <style>
+      /* AIレポートの本文。見出し（###）の下の段落と箇条書きを一段下げ、
+         見出しと本文の区切りを目で追えるようにする。表は幅を使いたいので下げない */
+      #ai_report_forecast p, #ai_report_forecast ul, #ai_report_forecast ol,
+      #ai_report_review p, #ai_report_review ul, #ai_report_review ol {
+        margin-left: 1.5em;
+      }
+    </style>
 {% endblock stylesheets %}
 
 {% block content %}
@@ -146,7 +154,7 @@
                     <div style="margin-bottom: 5px;">
                       <h4 onclick="$('#ai_report_review_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');" 
                           style="font-size: 14px; font-weight: bold; color: #1ABB9C; border-left: 4px solid #1ABB9C; padding-left: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;">
-                        <i class="fa-solid fa-history"></i> 当月の営業振り返り・総括
+                        <i class="fa-solid fa-history"></i> 当月の営業レビュー・総括
                         <i class="fa fa-chevron-up pull-right gf-toggle-icon" style="font-size: 11px; margin-top: 4px; color: #95A5A6;"></i>
                       </h4>
                       <div id="ai_report_review_wrap">

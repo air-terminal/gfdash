@@ -1,5 +1,5 @@
 """
-月次振り返りレポート・軽量版。1回の生成で書く。
+月次レビューレポート・軽量版。1回の生成で書く。
 
 run_llm_analysis から切り出し、共通ヘッダ（施設プロファイルと固定ルール）を
 付けたもの。渡すデータは月の合計値だけで、月の中の推移は持たない。推移まで
@@ -18,7 +18,10 @@ ENGINE_NAME = 'single'
 # v1.0.0: 正式版として開始。共通ヘッダに移し、提案・助言を全面的に禁止した。
 #         v0.2.0 までは「悪化しているときだけ簡潔に提案」を許していたが、
 #         その条件付きの許可が想像の入口になり、提案部分でレポートが崩れていた。
-PROMPT_VERSION = 'v1.0.0'
+# v1.0.1: レポートの題名を「月次振り返りレポート」から「月次レビューレポート」へ。
+#         用語の統一（画面・docs も同時に変えた）。プロンプトに渡る文言が
+#         変わるので、公開済みの v1.0.0 と区別できるよう版を上げる
+PROMPT_VERSION = 'v1.0.1'
 
 
 def com_build_context(pMode, pBaseMonth, pCustomText):
@@ -67,7 +70,7 @@ def com_build_context(pMode, pBaseMonth, pCustomText):
 
     header = com_build_common_header(pCustomText)
 
-    body = f"""以下の【提供データ】のみを使用して、{ym_str}の「月次振り返りレポート」を作成してください。
+    body = f"""以下の【提供データ】のみを使用して、{ym_str}の「月次レビューレポート」を作成してください。
 
 【出力の形】
 1. 必ずMarkdown形式で出力してください。見出し（###）を使い、比較データはMarkdownの表（テーブル）を使って視覚的にわかりやすく整理してください。
@@ -92,7 +95,7 @@ def com_build_context(pMode, pBaseMonth, pCustomText):
 [前年同月] 平均最高気温: {wea_prev['avg_max']}℃ / 降水指標(最大雨量合計): {wea_prev['total_rain']}mm
 """
 
-    # 運営者の所見。対象月の振り返り所見を、確定済みのものだけ差し込む
+    # 運営者の所見。対象月のレビュー所見を、確定済みのものだけ差し込む
     remark_section, remark_snapshot = com_build_remark_section(
         [pBaseMonth], Tz305MonthlyRemark.REMARK_CLS_REVIEW)
 

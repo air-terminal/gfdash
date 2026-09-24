@@ -49,14 +49,14 @@ def post410_main(request):
         target_month=target_month_first_day, report_cls='forecast_1m'
     ).first()
     
-    # 当月振り返り（review）の取得
+    # 当月レビュー（review）の取得
     report_review = Tz302LlmAnalysis.objects.filter(
         target_month=target_month_first_day, report_cls='review'
     ).first()    
 
     # JSON返却データに格納（データが無い場合は案内文を入れる）
     ret['reportForecast1m'] = report_forecast.report_text if report_forecast else "選択された月のAI予測レポートはまだ生成されていません。"
-    ret['reportReview'] = report_review.report_text if report_review else "選択された月の振り返りレポートはまだ生成されていません。"
+    ret['reportReview'] = report_review.report_text if report_review else "選択された月のレビューレポートはまだ生成されていません。"
     ret['hasReview'] = bool(report_review)
     # ---------------------------------------------------------
 
@@ -84,7 +84,7 @@ def sub410_get_remarks(pTargetMonth):
 
     for cls, label in (
         (Tz305MonthlyRemark.REMARK_CLS_FORECAST, '予測所見'),
-        (Tz305MonthlyRemark.REMARK_CLS_REVIEW, '振り返り所見'),
+        (Tz305MonthlyRemark.REMARK_CLS_REVIEW, 'レビュー所見'),
     ):
         remark = com_get_remark(pTargetMonth, cls)
         if remark is None or not (remark.remark_text or '').strip():

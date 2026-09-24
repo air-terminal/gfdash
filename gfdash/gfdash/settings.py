@@ -182,8 +182,9 @@ IS_SAMPLE_MODE = os.environ.get('IS_SAMPLE_MODE', 'False') == 'True'
 #   ollama … Ollama のネイティブAPI（既定。従来どおりの動作）
 #   openai … OpenAI互換API。FreeToken / llama.cpp server / vLLM / LM Studio など
 #
-# 互換APIではコンテキスト長と思考の切り替えをリクエストで指定できないため、
-# OLLAMA_NUM_CTX / OLLAMA_THINK は送信されない（サーバ側の設定に従う）。
+# 互換APIではコンテキスト長をリクエストで指定できないため、OLLAMA_NUM_CTX は
+# 送信されない（サーバ起動時の設定に従う）。思考の切り替えは OPENAI_THINK_PARAM
+# で送る項目を選ぶ。
 LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'ollama')
 
 # OpenAI互換API（LLM_PROVIDER=openai のとき）の接続先。
@@ -191,6 +192,16 @@ LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'ollama')
 # APIキーは空のままで構わない（空なら Authorization ヘッダを送らない）。
 OPENAI_API_BASE = os.environ.get('OPENAI_API_BASE', 'http://host.docker.internal:8080/v1')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+
+# 思考(thinking)の切り替えをどの項目で送るか（LLM_PROVIDER=openai のとき）。
+# OpenAI互換を名乗るエンジンでも受け付ける方言が違うため、選べるようにする。
+#   chat_template_kwargs … FreeToken / vLLM / SGLang / llama.cpp server（既定）
+#   reasoning_effort     … OpenAI 方言
+#   thinking             … DeepSeek 方言
+#   off                  … 何も送らない（サーバ側の設定に従う）
+# 未知の項目を拒否するサーバで 400 が返る場合は off にする。
+# 思考そのものの有無は、エンジンによらず OLLAMA_PRESET / OLLAMA_THINK で指定する。
+OPENAI_THINK_PARAM = os.environ.get('OPENAI_THINK_PARAM', 'chat_template_kwargs')
 
 # OllamaのAPIエンドポイント (Dockerのネットワーク構成に合わせて .env で上書き可能)
 OLLAMA_API_URL = os.environ.get('OLLAMA_API_URL', 'http://host.docker.internal:11434/api/generate')
@@ -200,6 +211,16 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma4:e4b')
 
 # 独自の追加プロンプトを格納するディレクトリ (このディレクトリは .gitignore で非公開にする)
 LLM_CUSTOM_PROMPT_DIR = os.path.join(BASE_DIR, 'custom_prompts')
+
+# レビューレポートのエンジン。
+#   staged … 多段版（既定）。日別の推移を3つの角度で読ませ、最後にまとめる。生成は4回
+#   single … 軽量版。月の合計だけを1回で渡す。軽い機械や、短時間で済ませたいとき
+LLM_REVIEW_ENGINE = os.environ.get('LLM_REVIEW_ENGINE', 'staged')
+
+# 多段版の段ごとの出力を履歴(tz312)に残すか。既定は残さない。
+# 残すと「まとめが何を元に書かれたか」を後から追えるが、月に4行ずつ増える。
+# 実行ログには設定に関わらず全段が流れる
+LLM_SAVE_STAGE_OUTPUT = os.environ.get('LLM_SAVE_STAGE_OUTPUT', 'False') == 'True'
 
 # プリセットの定義は Django に依存しないモジュールへ置いている。
 # settings の評価時点ではアプリがロードされておらず、models を import する
@@ -241,6 +262,21 @@ if 'OLLAMA_THINK' in os.environ:
     OLLAMA_THINK = os.environ['OLLAMA_THINK'] == 'True'
 else:
     OLLAMA_THINK = _llm_preset['think']
+
+# thinking の強さ。空なら従来どおり「有効・無効」だけを送る。
+#   low / medium / high / max のいずれかを指定すると、
+#   Ollama は think にその値を、OpenAI互換は reasoning_effort に送る。
+# thinking が無効のときは意味を持たない。強さを持たない銘柄では無視される
+# （Ollama は 400 を返さず、従来どおり思考する／しない）。
+LLM_THINK_EFFORT = os.environ.get('LLM_THINK_EFFORT', '')
+
+# .env で明示された項目。レポートのエンジンは自分に合った既定（多段版のまとめは
+# 思考を使うので広い文脈）を持つが、.env の明示指定はそれより優先する。
+# 未指定なら standard の値になるが、それは「指定していない」のでエンジンの既定が勝つ
+OLLAMA_PARAMS_EXPLICIT = frozenset(
+    key for key in ('num_ctx', 'timeout', 'think')
+    if 'OLLAMA_PRESET' in os.environ or f'OLLAMA_{key.upper()}' in os.environ
+)
 # Ollama に送るプロンプトをログ出力するか（開発時の調査用）
 # .env / docker-compose の環境変数で上書きできます
 OLLAMA_LOG_PROMPT = os.environ.get('OLLAMA_LOG_PROMPT', 'False') == 'True'

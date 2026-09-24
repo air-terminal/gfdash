@@ -64,9 +64,9 @@ function sub480_applyUrlParams() {
 }
 
 /* ------------------------------------------------------------------
-   区分（予測所見 / 振り返り所見）
+   区分（予測所見 / レビュー所見）
 
-   予測所見は「保存→解析→確定」で補正の表を持つ。振り返り所見は本文だけで
+   予測所見は「保存→解析→確定」で補正の表を持つ。レビュー所見は本文だけで
    「保存→確定」。必要な操作が大きく違うため、タブで別のフォームとして見せ、
    区分ごとに出す要素を切り替える。
    ------------------------------------------------------------------ */
@@ -239,7 +239,7 @@ function sub480_syncButtons() {
     // 解析と追加は、保存済みの本文に対して行う
     var ready = saved && !dirty && (gSavedText || '').trim() !== '';
     var isReview = (sub480_cls() === 'review');
-    // 振り返り所見は本文だけなので、保存できていれば確定できる。
+    // レビュー所見は本文だけなので、保存できていれば確定できる。
     // 予測所見は補正の内容が要る
     var canConfirm = isReview ? ready
                               : ready && (eventCount > 0 || gParseStatus === 'parsed');
@@ -248,13 +248,13 @@ function sub480_syncButtons() {
     // AIが使えない環境では、順序に関わらず解析は押させない
     $('#btn_remark_parse').prop('disabled', !ready || gAiDisabled);
     // 要約は手順の外なので保存状態に依らない。AIが無い環境では押せない。
-    // 振り返り所見だけで使える。予測所見の対象月は未来で、備考にあるのは
+    // レビュー所見だけで使える。予測所見の対象月は未来で、備考にあるのは
     // 計画休業程度であり、それは予測が別の経路で既に織り込んでいる
     $('#btn_remark_summary')
         .prop('disabled', gAiDisabled || !isReview)
         .attr('title', isReview
             ? 'その月の日次備考（休業・祝日カレンダーの備考欄）をAIが要約し、本文に挿入します'
-            : '日次備考の要約は振り返り所見でのみ使えます');
+            : '日次備考の要約はレビュー所見でのみ使えます');
     $('#btn_remark_add').prop('disabled', !ready);
     $('#btn_remark_confirm, #btn_remark_confirm_text').prop('disabled', !canConfirm);
     // 削除は登録済みの所見がある月でだけ押せる
@@ -273,7 +273,7 @@ function sub480_syncButtons() {
     } else if (isReview) {
         hint = (gParseStatus === 'confirmed')
              ? '確認済みです。本文を変えた場合はもう一度「確定」を押してください。'
-             : '「確定」を押すと、振り返りレポートの材料になります。';
+             : '「確定」を押すと、レビューレポートの材料になります。';
     } else {
         hint = '「AIで解析」を押すと、所見から補正の内容を作ります。';
     }
@@ -293,7 +293,7 @@ function sub480_syncButtons() {
 }
 
 function btnRemarkConfirm() {
-    // 振り返り所見は補正を持たない。表が無いので集めても空になるが、
+    // レビュー所見は補正を持たない。表が無いので集めても空になるが、
     // 意図を明示するため区分で分ける
     var isReview = (sub480_cls() === 'review');
     var events = isReview ? [] : sub480_collect();
@@ -301,7 +301,7 @@ function btnRemarkConfirm() {
     Swal.fire({
         title: '確定しますか？',
         html: isReview
-            ? 'この本文を振り返りレポートの材料として確定します。'
+            ? 'この本文をレビューレポートの材料として確定します。'
             : '確定すると、' + events.length + '件が予測とレポートの補正に使われます。',
         icon: 'question',
         showCancelButton: true,

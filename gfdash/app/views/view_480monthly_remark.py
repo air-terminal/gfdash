@@ -173,9 +173,10 @@ def sub480_save_events(request, pTargetMonth, pRemarkCls, pDic):
 
     is_confirm = (pDic.get('confirm') == 'true')
 
-    # 振り返り所見は補正を持たない。確定は「この本文で最終」という印だけで、
+    # レビュー所見は補正を持たない。確定は「この本文で最終」という印だけで、
     # 画面から events は来ない。既に入っているイベント（補正を切り離す前に
-    # 作られたもの）はレポートの材料として残し、書き換えない
+    # 作られたもの）は書き換えないが、レポートにも渡さない
+    # （com_build_remark_section がレビューでは本文だけを使う）
     if pRemarkCls == Tz305MonthlyRemark.REMARK_CLS_REVIEW:
         return sub480_confirm_review(request, remark, is_confirm)
 
@@ -241,9 +242,9 @@ def sub480_save_events(request, pTargetMonth, pRemarkCls, pDic):
 
 
 def sub480_confirm_review(request, pRemark, pIsConfirm):
-    """振り返り所見の確定。本文が最終版だという印を付けるだけ"""
+    """レビュー所見の確定。本文が最終版だという印を付けるだけ"""
     if not pIsConfirm:
-        return {'remark_success': False, 'err_message': '振り返り所見に補正はありません。'}
+        return {'remark_success': False, 'err_message': 'レビュー所見に補正はありません。'}
 
     if not (pRemark.remark_text or '').strip():
         return {'remark_success': False, 'err_message': '本文が空です。先に所見を保存してください。'}
@@ -254,7 +255,7 @@ def sub480_confirm_review(request, pRemark, pIsConfirm):
     pRemark.save(update_fields=['parse_status', 'updated_by', 'updated_at'])
 
     ret = sub480_view(pRemark)
-    ret['message'] = '確定しました。振り返りレポートに反映されます。'
+    ret['message'] = '確定しました。レビューレポートに反映されます。'
     ret['warnings'] = []
     return ret
 
@@ -271,7 +272,7 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
     if pTargetMonth is None or pRemarkCls not in REMARK_CLASSES:
         return sub_fail('対象月または区分の指定が不正です。')
 
-    # 振り返り所見は補正を持たないので、解析する対象が無い
+    # レビュー所見は補正を持たないので、解析する対象が無い
     if pRemarkCls != Tz305MonthlyRemark.REMARK_CLS_FORECAST:
         return sub_fail('AIによる解析は予測所見でのみ使えます。')
 
@@ -299,7 +300,7 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
 
             q.put(f"エンジン: {info['engine']} / モデル: {info['model']}"
                   f" / プロンプト版: {info['prompt_version']}\n")
-            q.put(f"終了理由: {info['finish_reason']}\n")
+            q.put(f"終了ステータス: {com_finish_label(info['finish_reason'])}\n")
             q.put(f'読み取ったイベント: {len(raw_events)}件\n')
 
             # AIの出力も手入力と同じ検証にかける。素通しにすると、画面から
@@ -375,12 +376,12 @@ def sub480_summary_stream(pTargetMonth, pRemarkCls, pDic):
     if pTargetMonth is None or pRemarkCls not in REMARK_CLASSES:
         return sub_fail('対象月または区分の指定が不正です。')
 
-    # 振り返り所見だけに限る。予測所見の対象月は未来で、備考にあるのは
+    # レビュー所見だけに限る。予測所見の対象月は未来で、備考にあるのは
     # せいぜい計画休業だが、それは予測が別の経路で既に織り込んでいる。
     # 恒久的な変化や、終わりが予測期間に掛かる出来事でなければ材料にならず、
     # 備考の要約からそれを選り分けるのは AI ではなく人の判断
     if pRemarkCls != Tz305MonthlyRemark.REMARK_CLS_REVIEW:
-        return sub_fail('日次備考の要約は振り返り所見でのみ使えます。')
+        return sub_fail('日次備考の要約はレビュー所見でのみ使えます。')
 
     if getattr(settings, 'DISABLE_BATCH_EXECUTION', False):
         return sub_fail('この環境ではAIの実行が無効化されています。')

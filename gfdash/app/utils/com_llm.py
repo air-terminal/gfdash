@@ -26,6 +26,48 @@ from django.conf import settings
 PROVIDER_OLLAMA = 'ollama'
 PROVIDER_OPENAI = 'openai'
 
+# thinking の強さ。弱い順に並べる。空文字は「強さを指定しない」。
+# Ollama は think に、OpenAI互換は reasoning_effort に同じ語を送る。
+# 強さを持たない銘柄では無視される（Ollama はエラーにしない）
+THINK_EFFORTS = ('low', 'medium', 'high', 'max')
+
+
+def com_think_effort():
+    """設定された thinking の強さ。未設定・未知の値なら空（強さを指定しない）"""
+    value = (getattr(settings, 'LLM_THINK_EFFORT', '') or '').strip().lower()
+    return value if value in THINK_EFFORTS else ''
+
+
+def sub_think_level(pThink):
+    """
+    generate() の pThink を (有効か, 強さ) に分ける。
+
+    呼び出し側は True/False のほかに強さの文字列（'low' 等）を渡せる。
+    文字列は「有効かつその強さ」を意味する
+    """
+    if isinstance(pThink, str):
+        return True, (pThink if pThink in THINK_EFFORTS else '')
+    return bool(pThink), ''
+
+
+# 終了ステータス(finish_reason)の表示名。推論エンジンが返す生の値は
+# stop / length などで、「stop」は正常完了なのに異常終了と読まれる。
+# 生の値も括弧で残し、調査のときに引けるようにする
+FINISH_LABELS = {
+    'stop': 'completed',
+    'length': 'truncated',
+    'content_filter': 'filtered',
+    'tool_calls': 'tool_calls',
+}
+
+
+def com_finish_label(pReason):
+    """終了ステータスを読める形にする。未知の値はそのまま出す"""
+    if not pReason:
+        return 'unknown'
+    label = FINISH_LABELS.get(pReason)
+    return f'{label} ({pReason})' if label else pReason
+
 
 def com_get_llm_client():
     """設定に応じたクライアントを返す"""
@@ -63,6 +105,17 @@ class LlmClientBase:
         """利用可能なモデル名の一覧。取得できなければ空リスト"""
         raise NotImplementedError
 
+    def model_digest(self, pModel):
+        """
+        モデルの中身を特定する短い識別子。取得できないエンジンでは None。
+
+        同じ名前のモデルでも、取り直せば中身（重み）が変わることがある。
+        実行履歴にプロンプトの版は残しているのに、モデルが名前だけでは
+        「同じモデルで作ったレポート」の同一性を保証できない。
+        OpenAI互換API の /v1/models には中身を特定する標準の項目が無い。
+        """
+        return None
+
     def preload(self, pModel, pTimeout=600):
         """
         モデルをメモリに読み込む。既に常駐していれば即座に返る。
@@ -87,6 +140,13 @@ class LlmClientBase:
 
     def generate(self, pPrompt, pModel, pNumCtx, pTimeout, pThink, pStream,
                  pOnText=None, pOnThink=None):
+        """
+        pThink は True / False / 強さの文字列（'low' 'medium' 'high' 'max'）。
+        None なら指定せず、推論エンジン側の既定に従う。
+
+        pOnText は本文の断片、pOnThink は思考の断片を受け取る（ストリーム時のみ）。
+        思考は本文と違って画面へそのまま流さず、呼び出し側が進捗として扱う
+        """
         raise NotImplementedError
 
 
@@ -110,6 +170,21 @@ class OllamaClient(LlmClientBase):
             return [m['name'] for m in res.json().get('models', [])]
         except Exception:
             return []
+
+    def model_digest(self, pModel):
+        """/api/tags の digest (sha256) の先頭12桁。ollama list の表示と同じ長さ"""
+        try:
+            res = requests.get(self.sub_url('/api/tags'), timeout=5)
+            res.raise_for_status()
+            for m in res.json().get('models', []):
+                # "gemma4:e4b" は "gemma4:e4b" にも "gemma4:e4b:latest" にも
+                # 一致させない。名前は完全一致で見る
+                if m.get('name') == pModel or m.get('model') == pModel:
+                    digest = (m.get('digest') or '').replace('sha256:', '')
+                    return digest[:12] or None
+        except Exception:
+            pass
+        return None
 
     def sub_supports_thinking(self, pModel):
         """
@@ -180,9 +255,12 @@ class OllamaClient(LlmClientBase):
             'stream': pStream,
             'options': {'num_ctx': pNumCtx, 'num_predict': -1},
         }
-        # 思考は対応モデルにのみ指定する。非対応モデルに送るとエラーになる
+        # 思考は対応モデルにのみ指定する。非対応モデルに送るとエラーになる。
+        # 有効なときは強さ（low/medium/high/max）も指定できる。強さを持たない
+        # 銘柄では無視される
         if pThink is not None and self.sub_supports_thinking(pModel):
-            payload['think'] = bool(pThink)
+            on, effort = sub_think_level(pThink)
+            payload['think'] = (effort or True) if on else False
 
         started = time.time()
         res = requests.post(self.api_url, json=payload, timeout=pTimeout, stream=pStream)
@@ -199,9 +277,9 @@ class OllamaClient(LlmClientBase):
                 chunk = json.loads(line.decode('utf-8'))
                 part = chunk.get('thinking') or ''
                 if part:
-                    if not think_text and pOnThink:
-                        pOnThink()
                     think_text += part
+                    if pOnThink:
+                        pOnThink(part)
                 body = chunk.get('response', '')
                 text += body
                 if body and pOnText:
@@ -229,13 +307,43 @@ class OllamaClient(LlmClientBase):
 class OpenAiClient(LlmClientBase):
     # コンテキスト長はサーバ起動時の設定に従うため、リクエストでは指定できない
     supports_num_ctx = False
-    supports_think = False
     name = 'OpenAI互換'
+
+    # 思考の切り替えをどの項目で送るか。OpenAI互換を名乗るエンジンでも、
+    # 受け付ける方言が違う。どれで送るかは .env（OPENAI_THINK_PARAM）で選ぶ。
+    # 単純な有効・無効にしないのは、未知の項目を 400 で弾くサーバがあるため
+    # 引数は (有効か, 強さ)。強さを載せられるのは reasoning_effort だけ
+    THINK_DIALECTS = {
+        # チャットテンプレートの変数として渡る。
+        # vLLM / SGLang / llama.cpp server / FreeToken が共通で読む
+        'chat_template_kwargs': lambda on, effort: {
+            'chat_template_kwargs': {'enable_thinking': on}},
+        # OpenAI 方言。本家 OpenAI の推論モデルもこれ
+        'reasoning_effort': lambda on, effort: {
+            'reasoning_effort': (effort or 'medium') if on else 'none'},
+        # DeepSeek 方言
+        'thinking': lambda on, effort: {
+            'thinking': {'type': 'enabled' if on else 'disabled'}},
+    }
+    THINK_PARAM_OFF = 'off'
+    THINK_PARAM_DEFAULT = 'chat_template_kwargs'
 
     def __init__(self):
         base = getattr(settings, 'OPENAI_API_BASE', 'http://localhost:8080/v1')
         self.base_url = base.rstrip('/')
         self.api_key = getattr(settings, 'OPENAI_API_KEY', '')
+
+        # 未知の値は既定の方言に倒す。綴り間違いで思考が黙って無効になるより、
+        # 主要なエンジンが読む項目で送るほうが意図に近い
+        param = getattr(settings, 'OPENAI_THINK_PARAM', self.THINK_PARAM_DEFAULT)
+        if param != self.THINK_PARAM_OFF and param not in self.THINK_DIALECTS:
+            param = self.THINK_PARAM_DEFAULT
+        self.think_param = param
+
+    @property
+    def supports_think(self):
+        """思考を切り替えられるか。off のときだけ画面・コマンドから隠す"""
+        return self.think_param != self.THINK_PARAM_OFF
 
     def sub_headers(self):
         headers = {'Content-Type': 'application/json'}
@@ -256,13 +364,25 @@ class OpenAiClient(LlmClientBase):
 
     def generate(self, pPrompt, pModel, pNumCtx, pTimeout, pThink, pStream,
                  pOnText=None, pOnThink=None):
-        # num_ctx と think は指定できないため受け取っても使わない。
+        # num_ctx は指定できないため受け取っても使わない。
         # 呼び出し側は supports_* を見て画面表示を出し分ける。
         payload = {
             'model': pModel,
             'messages': [{'role': 'user', 'content': pPrompt}],
             'stream': pStream,
         }
+        # 思考は明示されたときだけ送る。送らなければエンジン側の既定に従う。
+        # 強さを指定したときは reasoning_effort で送る。chat_template_kwargs の
+        # enable_thinking は真偽しか載せられず、強さを渡す先が無いため
+        if pThink is not None and self.supports_think:
+            on, effort = sub_think_level(pThink)
+            param = self.think_param
+            # enable_thinking は真偽しか載せられない。強さを指定したときだけ
+            # reasoning_effort へ切り替える
+            if on and effort and param == 'chat_template_kwargs':
+                param = 'reasoning_effort'
+            payload.update(self.THINK_DIALECTS[param](on, effort))
+
         if pStream:
             # 使用トークン数は既定では返らない。明示して受け取る
             payload['stream_options'] = {'include_usage': True}
@@ -324,9 +444,9 @@ class OpenAiClient(LlmClientBase):
                 delta = choice.get('delta') or {}
                 part = delta.get('reasoning_content') or ''
                 if part:
-                    if not think_text and pOnThink:
-                        pOnThink()
                     think_text += part
+                    if pOnThink:
+                        pOnThink(part)
                 body_text = delta.get('content') or ''
                 if body_text:
                     text += body_text

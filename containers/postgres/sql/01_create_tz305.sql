@@ -12,7 +12,7 @@ drop table IF EXISTS gf.tz305_monthly_remark;
 --
 -- LLM を必須依存にしない設計。parsed_json は LLM に解析させても、画面から
 -- 手で組み立てても同じ形になる。推論エンジンを用意できない環境でも、
--- 所見メンテナンス画面(413)から入力すれば同じ経路で補正が効く。
+-- 所見メンテナンス画面(485)から入力すれば同じ経路で補正が効く。
 create table gf.tz305_monthly_remark (
     -- Django が単独主キーを要求するため id を持たせ、実際の一意性は
     -- (target_month, remark_cls) の UNIQUE で担保する。
@@ -22,11 +22,11 @@ create table gf.tz305_monthly_remark (
 
     target_month date not null,         -- 必ず1日の日付で保持（tz302 と同じ）
 
-    -- 'forecast':予測所見 / 'review':振り返り所見
+    -- 'forecast':予測所見 / 'review':レビュー所見
     --
     -- 同じ月でも、これから先を見通すための情報と、済んだ月を振り返るための
     -- 情報は書く内容も時点も違う。1行にまとめると、予測を回すたびに
-    -- 振り返りの記述まで読ませることになる。
+    -- レビューの記述まで読ませることになる。
     remark_cls varchar(20) not null,
 
     remark_text text not null default '',   -- 手入力の所見（自由文）

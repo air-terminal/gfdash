@@ -12,13 +12,14 @@ import threading
 from datetime import datetime
 
 from app.models import Ta215Attnd, Tz305MonthlyRemark
-from app.utils.com_llm import com_get_llm_client
+from app.utils.com_llm import THINK_EFFORTS, com_get_llm_client, com_think_effort
 from app.utils.com_llm_preset import com_get_llm_presets
 from app.utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_events, com_dump_events, com_get_remark,
     com_load_events, com_normalize_events, com_save_remark_text,
 )
 from app.utils.com_remark_ai import RemarkParseError, com_parse_remark_with_ai
+from app.utils.report_engines import com_engine_for_mode, com_resolve_llm_params
 
 # 所見の操作。バッチ実行と同じPOSTの入口を使うため、getMode で振り分ける。
 REMARK_MODES = ('remark_get', 'remark_save', 'remark_parse', 'remark_events')
@@ -33,7 +34,18 @@ def get490_main(ctx):
     ctx['llm_num_ctx'] = getattr(settings, 'OLLAMA_NUM_CTX', 4096)
     ctx['llm_timeout'] = getattr(settings, 'OLLAMA_TIMEOUT', 300)
     ctx['llm_think'] = getattr(settings, 'OLLAMA_THINK', False)
+    # thinking の強さ。空なら「指定しない」。画面は空を含めた並びから選ぶ
+    ctx['llm_think_effort'] = com_think_effort()
+    ctx['llm_think_efforts_json'] = json.dumps(list(THINK_EFFORTS))
     ctx['llm_presets_json'] = json.dumps(com_get_llm_presets(), ensure_ascii=False)
+
+    # モードごとの実行パラメータの既定。エンジンが自分の既定を持つ（多段版は
+    # 思考オン・広い文脈）ので、モードを切り替えたら表示もそれに追従させる。
+    # 判断は司令塔と同じ関数で行い、画面に見えた値がそのまま実行される
+    ctx['llm_mode_defaults_json'] = json.dumps({
+        mode: com_resolve_llm_params(com_engine_for_mode(mode)[0])
+        for mode in ('review', 'forecast_1m', 'forecast_3m')
+    })
 
     # 推論エンジンによって指定できる項目が違う。OpenAI互換ではコンテキスト長も
     # 思考の切り替えもリクエストで指定できず、サーバ側の設定に従う。
@@ -220,6 +232,36 @@ def sub490_parse_month(pYm):
         return None
 
 
+def sub490_data_status(pDic):
+    """
+    対象月の来場者データ(ta215)が月末まで揃っているかを返す。
+
+    レビューは月の合計を前年と比べるので、途中の月で実行すると前年の
+    半分のような表になる。月を間違えて押した場合に、実行前に気づけるよう
+    画面へ「何日までのデータか」を返す。判定は実績のある最終日が月末か
+    どうかだけ。途中の欠落日までは見ない（休業日は行が無いこともある）。
+    """
+    import calendar
+
+    target_month = sub490_parse_month(pDic.get('ym'))
+    if target_month is None:
+        return {'success': False, 'err_message': '対象月の指定が不正です。'}
+
+    month_end = target_month.replace(
+        day=calendar.monthrange(target_month.year, target_month.month)[1])
+    last_day = Ta215Attnd.objects.filter(
+        business_day__range=[target_month, month_end]
+    ).order_by('-business_day').values_list('business_day', flat=True).first()
+
+    return {
+        'success': True,
+        'ym': target_month.strftime('%Y-%m'),
+        'last_day': last_day.strftime('%Y-%m-%d') if last_day else None,
+        'month_end': month_end.strftime('%Y-%m-%d'),
+        'complete': last_day == month_end,
+    }
+
+
 def post490_main(request):
     """
     ストリーミング形式でバッチの実行ログをリアルタイム返却する関数
@@ -233,6 +275,12 @@ def post490_main(request):
     if get_mode in REMARK_MODES:
         return HttpResponse(
             json.dumps(sub490_remark(request, dic, get_mode), ensure_ascii=False),
+            content_type='application/json')
+
+    # 実行前の確認用。対象月のデータが揃っているかを画面へ返す
+    if get_mode == 'data_status':
+        return HttpResponse(
+            json.dumps(sub490_data_status(dic), ensure_ascii=False),
             content_type='application/json')
 
     batch_type = dic.get('batch_type')
@@ -296,6 +344,12 @@ def post490_main(request):
         raw_think = dic.get('think')
         if raw_think in ('true', 'false'):
             call_kwargs['think'] = (raw_think == 'true')
+
+        # thinking の強さ。画面の選択肢以外は無視する（不正な値でコマンドを
+        # 止めるより、指定なしで動いたうえで設定を見直せるほうがよい）
+        raw_effort = dic.get('think_effort')
+        if raw_effort in THINK_EFFORTS:
+            call_kwargs['think_effort'] = raw_effort
 
         # 実行パラメータ。未指定なら settings の既定値が使われる。
         # 画面からの入力なので、数値にならない値は無視して既定値に委ねる。

@@ -94,7 +94,7 @@ SUMMARY_PROMPT_VERSION = "v0.2.1"
 SUMMARY_NUM_CTX = PARSE_NUM_CTX
 
 SUMMARY_PROMPT_TEMPLATE = """あなたはゴルフ練習場の運営データを扱うアシスタントです。
-運営者が日々書き残した備考を読み、月次の振り返り所見の下書きを作ってください。
+運営者が日々書き残した備考を読み、月次のレビュー所見の下書きを作ってください。
 
 【対象月】{target_month}
 

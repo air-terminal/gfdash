@@ -382,9 +382,9 @@ def com_get_confirmed_forecast_events():
     真のものだけ。snapshot は実行ヘッダ(tz310.applied_remark_json)へ複製
     する内容で、どの所見から取ったかを含む。
 
-    予測所見だけを見る。振り返り所見は「何が起きたか」の記録で、補正は
+    予測所見だけを見る。レビュー所見は「何が起きたか」の記録で、補正は
     「これから何が起きるか」の見立て。当初は区分で絞らず「改修は年末まで続く」
-    のような振り返りの記述も未来に重なれば補正に使う設計だったが、目的が
+    のようなレビューの記述も未来に重なれば補正に使う設計だったが、目的が
     混ざる。起きたことは実績に出ており、先の月に影響が続く出来事は予測所見に
     書けばよい。2経路から同じ出来事が重なる余地も消える。
     """
@@ -496,7 +496,7 @@ def com_check_against_confirmed(pEvents, pTargetMonth, pRemarkCls):
     warnings = []
 
     # 突き合わせる相手は予測所見だけ。補正に使われるのは予測所見だけなので、
-    # 振り返り所見と重なっても掛け合わさらない
+    # レビュー所見と重なっても掛け合わさらない
     others = []
     for remark in Tz305MonthlyRemark.objects.filter(
         remark_cls=Tz305MonthlyRemark.REMARK_CLS_FORECAST,
@@ -564,7 +564,7 @@ def com_get_month_memos(pTargetMonth):
     lines = []
     for row in rows:
         memo = (row.memo or '').strip()
-        marks = sub_memo_marks(row)
+        marks = com_memo_marks(row)
 
         if not memo and not marks:
             continue
@@ -577,8 +577,13 @@ def com_get_month_memos(pTargetMonth):
     return lines
 
 
-def sub_memo_marks(pRow):
-    """休業・特別営業のフラグを短い印にする。ビットの意味は docs/codes.md 3.4"""
+def com_memo_marks(pRow):
+    """
+    休業・特別営業のフラグを短い印にする。ビットの意味は docs/codes.md 3.4。
+
+    備考の要約(#36)とレビューレポートの日別データ(#14)が同じ印を使う。
+    片方だけ別の書き方にすると、同じ日の休業が2通りに読まれる。
+    """
     marks = []
 
     if pRow.closed_flg:
@@ -627,6 +632,12 @@ def com_build_remark_section(pMonths, pRemarkCls):
     本文と、use_for_report が真のイベントを箇条書きにする。数値の根拠は
     AIが読めるように、係数ではなく増減の見立て（%）で書く。
 
+    レビュー所見は本文だけを渡す。補正（イベント）を持つのは予測所見で、
+    レビューは #44 で本文のみにした。それ以前に作られたレビュー所見には
+    イベントが残っていることがあり、渡すと AI が本文から作った「+10%」が
+    レポートに事実のように載る。イベントは本文から解析したものなので、
+    本文だけでも出来事の情報は落ちない。
+
     独立した関数にしているのは、多段構成(#14)へ移すとき「外部要因パス」の
     入力としてそのまま使えるようにするため。run_llm_analysis の本文へ
     文字列を直接混ぜない。
@@ -637,11 +648,13 @@ def com_build_remark_section(pMonths, pRemarkCls):
         parse_status=Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED,
     ).order_by('target_month')
 
+    text_only = (pRemarkCls == Tz305MonthlyRemark.REMARK_CLS_REVIEW)
     blocks = []
     snapshot = []
 
     for remark in remarks:
-        events = [e for e in com_load_events(remark) if e.get('use_for_report')]
+        events = [] if text_only else [
+            e for e in com_load_events(remark) if e.get('use_for_report')]
         text = (remark.remark_text or '').strip()
 
         if not text and not events:
