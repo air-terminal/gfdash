@@ -438,6 +438,51 @@ class Tz312ReportHistory(models.Model):
         verbose_name = "AI月次分析レポート履歴"
         verbose_name_plural = "AI月次分析レポート履歴"
 
+class Tz391LlmCapability(models.Model):
+    """
+    推論エンジンと銘柄の組み合わせごとの能力と、最後に使った実行パラメータ。
+
+    thinking の強さは構成によって黙って無視される（エラーにならない）ため、
+    実測した結果をここに残し、画面の出し分けに使う。測定は 490 のボタンを
+    押したときだけ行う。
+    """
+
+    PROVIDER_OLLAMA = 'ollama'
+    PROVIDER_OPENAI = 'openai'
+
+    # 強さが効くかの状態。真偽値にしないのは「未測定」と「判定不能」を
+    # 区別するため（DDL のコメントに対応）
+    EFFORT_UNKNOWN = 'unknown'
+    EFFORT_EFFECTIVE = 'effective'
+    EFFORT_INEFFECTIVE = 'ineffective'
+    EFFORT_INDETERMINATE = 'indeterminate'
+
+    provider = models.CharField(max_length=20, verbose_name="プロバイダ")
+    endpoint = models.CharField(max_length=200, verbose_name="接続先")
+    model_name = models.CharField(max_length=200, verbose_name="モデル名")
+    model_digest = models.CharField(max_length=80, blank=True, default='', verbose_name="ダイジェスト")
+
+    think_supported = models.BooleanField(default=False, verbose_name="thinkingの可否")
+    effort_status = models.CharField(max_length=20, default=EFFORT_UNKNOWN, verbose_name="強さの状態")
+    effort_values = models.JSONField(default=list, verbose_name="acceptedな強さ")
+    probe_note = models.TextField(blank=True, default='', verbose_name="判定の根拠")
+
+    last_engine = models.CharField(max_length=20, blank=True, default='', verbose_name="最後のエンジン")
+    last_num_ctx = models.IntegerField(blank=True, null=True, verbose_name="最後のコンテキスト長")
+    last_timeout = models.IntegerField(blank=True, null=True, verbose_name="最後のタイムアウト")
+    last_think = models.BooleanField(blank=True, null=True, verbose_name="最後のthinking")
+    last_effort = models.CharField(max_length=10, blank=True, default='', verbose_name="最後の強さ")
+
+    measured_at = models.DateTimeField(blank=True, null=True, verbose_name="測定日時")
+    input_date = models.DateField(auto_now_add=True, verbose_name="データ入力日")
+
+    class Meta:
+        managed = False
+        db_table = 'tz391_llm_capability'
+        unique_together = (('provider', 'endpoint', 'model_name'),)
+        verbose_name = "推論エンジン能力"
+        verbose_name_plural = "推論エンジン能力"
+
 class Tz810Holiday2(models.Model):
     """
     第2休日カレンダー。

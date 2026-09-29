@@ -13,6 +13,9 @@ from datetime import datetime
 
 from app.models import Ta215Attnd, Tz305MonthlyRemark
 from app.utils.com_llm import THINK_EFFORTS, com_get_llm_client, com_think_effort
+from app.utils.com_llm_capability import (
+    com_capability_view, com_restore_params, com_save_capability,
+)
 from app.utils.com_llm_preset import com_get_llm_presets
 from app.utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_events, com_dump_events, com_get_remark,
@@ -23,6 +26,10 @@ from app.utils.report_engines import com_engine_for_mode, com_resolve_llm_params
 
 # 所見の操作。バッチ実行と同じPOSTの入口を使うため、getMode で振り分ける。
 REMARK_MODES = ('remark_get', 'remark_save', 'remark_parse', 'remark_events')
+
+# 測定が成立しなかったことを画面へ伝える印。ストリームは文字を流すだけなので、
+# JS はログの中からこの印を探してダイアログを出す（[think-fallback] と同じ流儀）
+PROBE_UNMEASURED_MARK = '[probe-unmeasured]'
 
 def get490_main(ctx):
     # settings.py の制御フラグを取得
@@ -39,14 +46,6 @@ def get490_main(ctx):
     ctx['llm_think_efforts_json'] = json.dumps(list(THINK_EFFORTS))
     ctx['llm_presets_json'] = json.dumps(com_get_llm_presets(), ensure_ascii=False)
 
-    # モードごとの実行パラメータの既定。エンジンが自分の既定を持つ（多段版は
-    # 思考オン・広い文脈）ので、モードを切り替えたら表示もそれに追従させる。
-    # 判断は司令塔と同じ関数で行い、画面に見えた値がそのまま実行される
-    ctx['llm_mode_defaults_json'] = json.dumps({
-        mode: com_resolve_llm_params(com_engine_for_mode(mode)[0])
-        for mode in ('review', 'forecast_1m', 'forecast_3m')
-    })
-
     # 推論エンジンによって指定できる項目が違う。OpenAI互換ではコンテキスト長も
     # 思考の切り替えもリクエストで指定できず、サーバ側の設定に従う。
     # 送っても効かない欄は無効化する。値が反映されない理由は画面からは
@@ -55,6 +54,27 @@ def get490_main(ctx):
     ctx['llm_engine_name'] = client.name
     ctx['llm_supports_num_ctx'] = client.supports_num_ctx
     ctx['llm_supports_think'] = client.supports_think
+
+    # thinking の強さの測定結果(tz391)。効かないと分かっている構成では
+    # 強さの欄を畳む。送っても無視されるため、選べるほうが混乱を招く。
+    # ここでは保存済みの記録を読むだけで、測定はボタンを押したときだけ行う
+    capability = com_capability_view(client, getattr(settings, 'OLLAMA_MODEL', ''))
+    ctx['llm_capability_json'] = json.dumps(capability, ensure_ascii=False)
+
+    # モードごとの実行パラメータの既定。エンジンが自分の既定を持つ（多段版は
+    # 思考オン・広い文脈）ので、モードを切り替えたら表示もそれに追従させる。
+    # 判断は司令塔と同じ関数で行い、画面に見えた値がそのまま実行される。
+    #
+    # 前回の測定時に使っていた値が残っていれば、そちらを先に当てる。毎月同じ
+    # 銘柄・同じ設定で回すため、都度入れ直すと取り違えの元になる。
+    # エンジンが違うモードには当てない（num_ctx の既定の意味が違う）
+    mode_defaults = {}
+    for mode in ('review', 'forecast_1m', 'forecast_3m'):
+        engine, _warning = com_engine_for_mode(mode)
+        mode_defaults[mode] = com_restore_params(
+            com_resolve_llm_params(engine),
+            getattr(engine, 'ENGINE_NAME', ''), capability)
+    ctx['llm_mode_defaults_json'] = json.dumps(mode_defaults, ensure_ascii=False)
     
     # 🌟 修正: 来場者数データが入っている最終日付の年月（YYYY-MM）を自動計算してセット
     try:
@@ -262,6 +282,97 @@ def sub490_data_status(pDic):
     }
 
 
+def sub490_capability(pDic):
+    """
+    指定モデルの測定結果（tz391）を返す。画面のロードとモデル変更で引く。
+
+    測定はしない。ここで測ると生成が走り、画面が数分固まる
+    """
+    client = com_get_llm_client()
+    model = (pDic.get('model') or getattr(settings, 'OLLAMA_MODEL', '')).strip()
+    view = com_capability_view(client, model)
+    view['success'] = True
+    view['model'] = model
+    return view
+
+
+def sub490_probe_stream(pDic):
+    """
+    thinking の強さの効きを実測し、結果を tz391 に保存する。
+
+    生成を伴うため数分かかる。実行ログと同じ形でストリームに流す。
+    保存はこの操作のときだけ。測定に使うのは画面にいま入っている値で、
+    「これから使う構成を測る」ことに意味があるため既定値に置き換えない。
+    """
+    client = com_get_llm_client()
+    model = (pDic.get('model') or getattr(settings, 'OLLAMA_MODEL', '')).strip()
+
+    def sub_int(pKey, pDefault):
+        try:
+            value = int(pDic.get(pKey) or 0)
+        except (TypeError, ValueError):
+            return pDefault
+        return value if value > 0 else pDefault
+
+    num_ctx = sub_int('num_ctx', getattr(settings, 'OLLAMA_NUM_CTX', 4096))
+    timeout = sub_int('timeout', getattr(settings, 'OLLAMA_TIMEOUT', 300))
+    # 復元の判定に使うエンジン名。画面はモードしか持たないので、司令塔と同じ
+    # 関数で解決する。エンジンが違えば num_ctx の既定の意味も違うため、
+    # 復元は同じエンジンのときだけに限る
+    engine, _warning = com_engine_for_mode(pDic.get('mode') or 'review')
+    raw_effort = pDic.get('think_effort')
+    params = {
+        'engine': getattr(engine, 'ENGINE_NAME', ''),
+        'num_ctx': num_ctx,
+        'think': pDic.get('think') == 'true' if pDic.get('think') in ('true', 'false') else None,
+        'effort': raw_effort if raw_effort in THINK_EFFORTS else '',
+    }
+
+    q = queue.Queue()
+    q.put(f'{client.name} (モデル: {model}) の thinking の強さを測定します\n')
+    q.put(f'コンテキスト長 {num_ctx:,} / タイムアウト {timeout}秒\n')
+
+    def sub_worker():
+        try:
+            probe = client.probe_think(model, num_ctx, timeout, lambda m: q.put(m))
+            # 測定として成立しなかったときは保存しない。保存すると実測の日時が
+            # 付いた行ができ、何も測っていないのに測定済みに見える
+            if not probe.get('probed'):
+                # 画面にダイアログを出すための印。ログだけに書くと、接続先の
+                # 問題に気づかないまま「測定できた」と思われる
+                q.put(f'\n{PROBE_UNMEASURED_MARK} {probe.get("probe_note") or ""}\n')
+                q.put('測定できなかったため、記録は残しません\n')
+            else:
+                com_save_capability(client, model, probe, params)
+                q.put('測定結果と現在の設定を保存しました\n')
+        except Exception:
+            q.put(f'\n[重大な内部エラー]\n{traceback.format_exc()}\n')
+        finally:
+            close_old_connections()
+            q.put(None)
+
+    threading.Thread(target=sub_worker).start()
+
+    def sub_stream():
+        # 末尾の1行は結果に合わせる。成立しなかったのに「完了」と書くと、
+        # ログの終わりだけを見た人が測れたと受け取る
+        measured = True
+        while True:
+            data = q.get()
+            if data is None:
+                break
+            if PROBE_UNMEASURED_MARK in data:
+                measured = False
+            yield data
+        yield ('\n=== 測定が完了しました ===' if measured
+               else '\n=== 測定できませんでした ===')
+
+    response = StreamingHttpResponse(sub_stream(), content_type='text/plain; charset=utf-8')
+    response['X-Accel-Buffering'] = 'no'
+    response['Cache-Control'] = 'no-cache'
+    return response
+
+
 def post490_main(request):
     """
     ストリーミング形式でバッチの実行ログをリアルタイム返却する関数
@@ -282,6 +393,21 @@ def post490_main(request):
         return HttpResponse(
             json.dumps(sub490_data_status(dic), ensure_ascii=False),
             content_type='application/json')
+
+    # thinking の強さの測定結果を引く。測定はしない
+    if get_mode == 'capability':
+        return HttpResponse(
+            json.dumps(sub490_capability(dic), ensure_ascii=False),
+            content_type='application/json')
+
+    # 測定そのもの。生成を伴うので、実行禁止の環境では走らせない
+    if get_mode == 'probe_think':
+        if getattr(settings, 'DISABLE_BATCH_EXECUTION', False):
+            def sub_block():
+                yield 'デモモードのため測定できません。'
+            return StreamingHttpResponse(
+                sub_block(), content_type='text/plain; charset=utf-8')
+        return sub490_probe_stream(dic)
 
     batch_type = dic.get('batch_type')
 

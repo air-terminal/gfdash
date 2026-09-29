@@ -60,19 +60,149 @@ var LLM_CTX_MIN = 4096;
 var LLM_CTX_MAX = 65536;
 var LLM_CTX_STEP = 4096;
 
-// thinking の強さ。スライダーの 0 は「指定しない」で、1 以降が gLlmThinkEfforts の順
+// 測定で accepted になった強さだけを選ばせる。
+// not accepted の値を選べると、実行が 400 で落ちる
+function sub490_availableEfforts() {
+    var values = (gLlmCapability && gLlmCapability.effort_values) || [];
+    var out = [];
+    for (var i = 0; i < gLlmThinkEfforts.length; i++) {
+        if (values.indexOf(gLlmThinkEfforts[i]) >= 0) { out.push(gLlmThinkEfforts[i]); }
+    }
+    return out.length > 0 ? out : gLlmThinkEfforts;
+}
+
+// 銘柄が thinking を切り替えられないと測定で分かっているか。
+// 未測定のときは true を返さない（測っていないだけの構成で欄を消さない）
+function sub490_thinkUnsupported() {
+    return !!gLlmCapability && gLlmCapability.measured === true
+        && gLlmCapability.think_supported === false;
+}
+
+/* 強さ欄を出すか。**「効いた」と実測できた構成でだけ出す。**
+
+   9構成を測って、強さが効いたのは harmony 形式（gpt-oss 系）の1銘柄だけだった。
+   Qwen 系は4つのサーバすべてで効かず、gemma4 も効かない。既定で出していると、
+   ほとんどの構成で「動かすと何も起こらないスライダー」を見せることになる。
+
+   銘柄名で harmony 系を判定する方法は採らない。表記が揃わない（openai/gpt-oss-20b /
+   gpt-oss:20b / *.gguf）うえ、llama.cpp と LM Studio はモデル名を検証しないため、
+   .env に書いた名前と動いている銘柄が違っていても分からない。実測を根拠にすれば、
+   新しい銘柄が harmony 方式を採ったときも測るだけで使えるようになる。
+
+   未測定と判定できないも畳む。どちらも「効く」と確認できていない */
+function sub490_effortAvailable() {
+    return !!gLlmCapability && gLlmCapability.measured === true
+        && gLlmCapability.effort_status === 'effective';
+}
+
+// thinking の強さ。スライダーの 0 は「指定しない」で、1 以降が accepted な強さの順
 function sub490_effortToIndex(pValue) {
-    var i = gLlmThinkEfforts.indexOf(pValue || '');
+    var i = sub490_availableEfforts().indexOf(pValue || '');
     return i < 0 ? 0 : i + 1;
 }
 
 function sub490_indexToEffort(pIndex) {
     var i = parseInt(pIndex, 10);
-    return i > 0 ? (gLlmThinkEfforts[i - 1] || '') : '';
+    return i > 0 ? (sub490_availableEfforts()[i - 1] || '') : '';
 }
 
 function sub490_effortLabel(pValue) {
     return pValue || '指定しない';
+}
+
+// 測定結果の説明。利用者が次にどうすればよいか分かる文にする
+function sub490_capabilityText() {
+    var cap = gLlmCapability || {};
+    var when = cap.measured_at ? '（' + cap.measured_at + ' 実測）' : '';
+    var text;
+    if (!cap.measured) {
+        text = '未測定のため、強さは指定できません。'
+             + '強さが効くかは銘柄によって決まり、効かない銘柄では送っても'
+             + '無視されます（エラーにはなりません）。'
+             + '下のボタンで測ると、効く構成では強さを選べるようになります。';
+    } else if (sub490_thinkUnsupported()) {
+        // 判定（effort_status）より先に見る。切り替えられない銘柄では
+        // 強さの効きを測る段まで進んでおらず、判定は未測定のまま残る
+        text = 'この銘柄は thinking を切り替えられません' + when + '。'
+             + '強さの指定も使えません。';
+    } else if (cap.effort_status === 'effective') {
+        text = '強さが効きます' + when + '。';
+    } else if (cap.effort_status === 'ineffective') {
+        text = 'この構成では強さの指定が効きません' + when + '。送っても無視されます。';
+    } else if (cap.effort_status === 'indeterminate') {
+        // 効くかもしれないが確認できていない。強さは出さない。効いていると
+        // 決めて使わせると、ゆらぎを効果と読み違えたまま運用することになる
+        text = '判定できなかったため、強さは指定できません' + when + '。'
+             + 'サーバの出力が毎回変わるため、効いているかを測れません。';
+    } else {
+        // 測定はしたが判定まで進めなかった（accepted な強さが2つ未満など）。
+        // ここで「未測定」と出すと、測った事実が消えて同じ操作を繰り返させる
+        text = '測定しましたが、比較できる強さが足りず判定できませんでした' + when + '。';
+    }
+    if (cap.digest_changed) {
+        text += ' 測定したときとモデルの中身が違います。測り直してください。';
+    }
+    return text;
+}
+
+// 測定を走らせる。生成を伴うので実行ログへ流し、終わったら記録を読み直す
+function sub490_startProbe(pNumCtx, pTimeout) {
+    var $console = $('#batch_console');
+    $console.text('thinking の強さの効きを測定します...\n');
+    $console.append('※ バリデーション処理とエフェクト検証で計7回の生成を行うため、数分かかります。\n');
+    /* 同時に別の生成が走ると、temperature=0 でも出力が変わる。エフェクト検証は
+       同じ強さの2回が一致することを前提に判定するので、判定できなくなる。
+       実測で確認済み（単独なら一致するサーバで、横から短い要求を入れると分岐した） */
+    $console.append('※ 測定中は同じ推論エンジンへ他のリクエストを送らないでください。\n'
+                  + '   同時に別の生成が走ると出力が変わり、判定できなくなります。\n\n');
+
+    var postData = {
+        getMode: 'probe_think',
+        mode: $('#llm_mode').val(),
+        num_ctx: pNumCtx,
+        timeout: pTimeout,
+        // 測定は thinking を使う前提。記録する設定値は画面の現在値
+        think: gLlmParams.think ? 'true' : 'false',
+        think_effort: gLlmParams.think_effort || ''
+    };
+    if ($('#llm_model').length > 0) {
+        postData.model = $('#llm_model').val();
+    }
+    sub490_streamToConsole(postData, function(pLogText) {
+        // 成立しなかった場合も読み直す。記録は変わらないが、画面の表示を
+        // ログと突き合わせられる状態にしておく
+        sub490_reloadCapability();
+        sub490_afterProbe(pLogText);
+    });
+}
+
+// 測定結果を読み直して画面へ反映する。測定はしない
+function sub490_reloadCapability() {
+    var postData = { getMode: 'capability' };
+    if ($('#llm_model').length > 0) {
+        postData.model = $('#llm_model').val();
+    }
+    $.ajax({
+        type: 'POST',
+        url: location.pathname,
+        dataType: 'json',
+        data: postData,
+        beforeSend: function(xhr) { xhr.setRequestHeader('X-CSRFToken', csrftoken); }
+    }).done(function(res) {
+        if (!res || !res.success) { return; }
+        gLlmCapability = res;
+        // not accepted の強さが選ばれたままだと実行が落ちる。選択肢から外れたら捨てる
+        if (gLlmParams.think_effort
+            && sub490_availableEfforts().indexOf(gLlmParams.think_effort) < 0) {
+            gLlmParams.think_effort = '';
+        }
+        // 効くと確認できていない構成では強さを持ち回らない。欄を畳むので
+        // 画面から取り消せず、指定が残ったまま実行されることになる
+        if (!sub490_effortAvailable()) {
+            gLlmParams.think_effort = '';
+        }
+        updateLlmParamDisplay();
+    });
 }
 
 function sub490_ctxToSlider(pValue) {
@@ -106,6 +236,11 @@ function sub490_applyModeDefaults() {
         gLlmParams.num_ctx = d.num_ctx;
         gLlmParams.timeout = d.timeout;
         gLlmParams.think   = d.think;
+        // 前回の設定を復元したときは強さも戻す。num_ctx だけ戻して強さが
+        // 残る（あるいは消える）と、前回と同じ条件で回したつもりがずれる
+        if (d.restored) {
+            gLlmParams.think_effort = d.think_effort || '';
+        }
     }
     updateLlmParamDisplay();
 }
@@ -117,7 +252,10 @@ function updateLlmParamDisplay() {
                       && d.timeout === gLlmParams.timeout && d.think === gLlmParams.think;
     // プリセットに一致すればその名前。一致しなくてもモードの既定なら「既定」と出す。
     // 多段版の既定（thinking オン・広い num_ctx）はどのプリセットにも無いが、個別指定ではない
-    $('#llm_param_label').text(preset ? preset.name : (isDefault ? 'モードの既定' : LLM_MANUAL_NAME));
+    // 復元した値をそのまま使っているときは「モードの既定」ではなく、前回の設定だと出す。
+    // 同じ表示だと、.env でもエンジンでもない値が出ている理由が分からない
+    var defaultName = (d && d.restored) ? '前回の設定' : 'モードの既定';
+    $('#llm_param_label').text(preset ? preset.name : (isDefault ? defaultName : LLM_MANUAL_NAME));
     $('#llm_param_ctx').text(gLlmParams.num_ctx);
     $('#llm_param_timeout').text(gLlmParams.timeout);
     $('#llm_param_think').text(
@@ -159,6 +297,18 @@ function openLlmParamDialog() {
     // ダイアログのHTMLはここで組み立てる。隠し要素を複製する方式にすると
     // 同じidの要素が2つ存在し、$('#...') が画面側の複製を掴んでしまう。
     var html = '<div style="text-align: left;">';
+
+    // 前回の設定を復元しているときは、その旨と戻し方を最初に出す。
+    // .env でもエンジンの既定でもない値が入っている理由が、これが無いと分からない
+    var modeDefaults = sub490_modeDefaults();
+    if (modeDefaults && modeDefaults.restored) {
+        html += '<p class="text-muted" style="margin: 0 0 10px;">'
+              + '前回の設定を復元しています'
+              + (modeDefaults.restored_at ? '（' + modeDefaults.restored_at + ' 測定）' : '')
+              + '　<button type="button" id="dlg_llm_reset" class="btn btn-default btn-xs">'
+              + 'エンジンの既定に戻す</button></p>';
+    }
+
     html += '<label style="display:block;">実行プリセット</label>';
 
     // プルダウンではなくラジオにして、名前と説明を同時に読めるようにする。
@@ -221,16 +371,29 @@ function openLlmParamDialog() {
 
     // 強さ。thinking を使うときだけ意味を持つので、チェックに連動して出し入れする。
     // コンテキスト長と同じくスライダーで、左端は「指定しない」（従来どおり ON/OFF だけ送る）
+    //
+    // スライダーは「効いた」と実測できた構成でだけ出す（sub490_effortAvailable）。
+    // 選べること自体が「効いているはず」という誤解を生むため、確認できていない
+    // 構成では説明と測定ボタンだけを見せる
     html += '<div id="dlg_llm_effort_wrap" style="margin: 4px 0 0;">';
     html += '<label style="display:block; font-weight:normal;">thinking の強さ</label>';
-    html += '<div style="display:flex; align-items:center; gap:10px;">';
-    html += '<input type="range" id="dlg_llm_effort" style="flex:1; margin:0;"'
-          + ' min="0" max="' + gLlmThinkEfforts.length + '" step="1"'
-          + ' value="' + sub490_effortToIndex(gLlmParams.think_effort) + '">';
-    html += '<span id="dlg_llm_effort_label" class="text-muted" style="width:110px;"></span>';
-    html += '</div>';
-    html += '<p class="text-muted" style="margin: 4px 0 0;">'
-          + '強さを持たない銘柄では無視されます。指定しないと従来どおり ON/OFF だけを送ります。'
+    if (!sub490_effortAvailable()) {
+        html += '<p class="text-muted" style="margin: 0;">'
+              + sub490_capabilityText() + '</p>';
+    } else {
+        html += '<div style="display:flex; align-items:center; gap:10px;">';
+        html += '<input type="range" id="dlg_llm_effort" style="flex:1; margin:0;"'
+              + ' min="0" max="' + sub490_availableEfforts().length + '" step="1"'
+              + ' value="' + sub490_effortToIndex(gLlmParams.think_effort) + '">';
+        html += '<span id="dlg_llm_effort_label" class="text-muted" style="width:110px;"></span>';
+        html += '</div>';
+        html += '<p class="text-muted" style="margin: 4px 0 0;">'
+              + sub490_capabilityText() + '</p>';
+    }
+    // 測定はこのボタンを押したときだけ走る。生成を伴うため数分かかる
+    html += '<p style="margin: 6px 0 0;">'
+          + '<button type="button" id="dlg_llm_probe" class="btn btn-default btn-xs">'
+          + '<i class="fa-solid fa-stopwatch"></i> 強さの効きを測定して記録</button>'
           + '</p></div>';
     html += '<p class="text-muted" style="margin: 0;">'
           + (thinkOff
@@ -290,6 +453,28 @@ function openLlmParamDialog() {
             }
             $popup.on('input change', '#dlg_llm_effort, #dlg_llm_think', subEffortSync);
             subEffortSync();
+
+            // 測定はダイアログを閉じてから走らせる。数分かかるうえ、進捗は
+            // 実行ログに出るので、ダイアログを開いたままにする意味がない。
+            // 測るのは今ダイアログに入っている値（これから使う構成）
+            // 復元をやめてエンジンの既定へ戻す。値だけ入れ替えて、決定は
+            // 利用者に任せる（押した瞬間に確定させない）
+            $popup.on('click', '#dlg_llm_reset', function() {
+                var base = (modeDefaults && modeDefaults.base) || {};
+                if (base.num_ctx) {
+                    $popup.find('#dlg_llm_ctx').val(base.num_ctx).trigger('change');
+                }
+                if (base.timeout) { $popup.find('#dlg_llm_timeout').val(base.timeout); }
+                $popup.find('#dlg_llm_think').prop('checked', !!base.think).trigger('change');
+                $popup.find('#dlg_llm_effort').val(0).trigger('change');
+            });
+
+            $popup.on('click', '#dlg_llm_probe', function() {
+                var numCtx = parseInt($popup.find('#dlg_llm_ctx').val(), 10) || gLlmParams.num_ctx;
+                var timeout = parseInt($popup.find('#dlg_llm_timeout').val(), 10) || gLlmParams.timeout;
+                Swal.close();
+                sub490_startProbe(numCtx, timeout);
+            });
 
             // 詳細欄を触ったらプリセットの選択を実態に合わせ直す。
             // 選択と値がずれたまま表示されると、どちらが効くのか分からなくなる。
@@ -509,6 +694,14 @@ function sub490_startBatch(batchType, postData) {
         $console.append("※AIの応答が完了するまでしばらくお待ちください。\n\n");
     }
 
+    sub490_streamToConsole(postData, function(pLogText) { sub490_afterRun(pLogText); });
+}
+
+function sub490_streamToConsole(postData, pOnDone) {
+    /* POST の応答を実行ログへ流し込む。バッチの実行と強さの測定で共用する。
+       どちらも数分かかり、届いた分から読ませたいので同じ仕組みでよい */
+    var $console = $('#batch_console');
+
     $('button').prop('disabled', true);
     if (typeof NProgress != 'undefined') { NProgress.start(); }
 
@@ -523,7 +716,7 @@ function sub490_startBatch(batchType, postData) {
     })
     .then(response => {
         if (!response.ok) throw new Error('ネットワークレスポンスに問題があります。');
-        
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
 
@@ -532,22 +725,22 @@ function sub490_startBatch(batchType, postData) {
                 if (done) {
                     $('button').prop('disabled', false);
                     if (typeof NProgress != 'undefined') { NProgress.done(); }
-                    sub490_afterRun($console.text());
+                    if (pOnDone) { pOnDone($console.text()); }
                     return;
                 }
-                
+
                 // 🌟 修正: 複雑なJSONパースを撤廃し、届いた文字をそのまま追加するだけ！
                 const chunkText = decoder.decode(value, { stream: true });
                 sub490_appendLog($console, chunkText);
                 $console.scrollTop($console[0].scrollHeight);
-                
+
                 return readChunks();
             });
         }
         return readChunks();
     })
     .catch(error => {
-        $console.append("\n[通信エラー] バッチの実行中にエラーが発生しました。\nError: " + error.message + "\n");
+        $console.append("\n[通信エラー] 処理中にエラーが発生しました。\nError: " + error.message + "\n");
         $('button').prop('disabled', false);
         if (typeof NProgress != 'undefined') { NProgress.done(); }
     });
@@ -556,6 +749,50 @@ function sub490_startBatch(batchType, postData) {
 // ログに流れる印。まとめを思考なしでやり直したときにバッチが出す
 // （report_review_staged.THINK_FALLBACK_MARK と同じ文字列）
 var LLM_THINK_FALLBACK_MARK = '[think-fallback]';
+
+// 測定が成立しなかったときに出る印（view_490ai_batch_run.PROBE_UNMEASURED_MARK）
+var LLM_PROBE_UNMEASURED_MARK = '[probe-unmeasured]';
+
+function sub490_afterProbe(pLogText) {
+    /* 測定が成立しなかったことをダイアログで知らせる。
+
+       ログに1行出すだけでは足りない。測定は数分かかるので、利用者は流れ終わった
+       ログの末尾だけを見る。そこに「記録は残しません」とあっても、接続先や
+       モデル名に問題があると気づかないまま「測定できた」と受け取ってしまう。
+       記録が残らないので画面の表示も変わらず、失敗が見た目に現れない */
+    var at = pLogText.indexOf(LLM_PROBE_UNMEASURED_MARK);
+    if (at < 0) { return false; }
+
+    // 印の後ろ、その行の終わりまでが理由
+    var rest = pLogText.slice(at + LLM_PROBE_UNMEASURED_MARK.length);
+    var end = rest.indexOf('\n');
+    var reason = $.trim(end < 0 ? rest : rest.slice(0, end));
+    // 強さごとの理由が並ぶと長くなる。全文は実行ログに残っている
+    if (reason.length > 200) { reason = reason.slice(0, 200) + '…'; }
+
+    Swal.fire({
+        title: '測定できませんでした',
+        html: '<div class="gf_confirm_body">'
+            + '推論エンジンに問い合わせられなかったため、測定していません。'
+            + '<strong>記録は残していません</strong>ので、前回までの内容がそのまま残ります。<br><br>'
+            + (reason ? '理由: ' + sub490_escapeHtml(reason) + '<br><br>' : '')
+            + '次のどれかを確かめてください。<br>'
+            + '・モデル名が推論エンジンにある名前と一致しているか<br>'
+            + '・接続先（エンドポイント）が合っているか<br>'
+            + '・推論エンジンが起動しているか（起動直後はモデルの読み込み中のことがあります）'
+            + '</div>',
+        icon: 'error',
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        confirmButtonText: '閉じる'
+    });
+    return true;
+}
+
+// ダイアログへ埋める前の無害化。理由にはサーバの応答がそのまま入る
+function sub490_escapeHtml(pText) {
+    return $('<div>').text(pText).html();
+}
 
 function sub490_afterRun(pLogText) {
     /* 処理の終了後に、ログの中では流れて見落とす事柄をダイアログで知らせる。

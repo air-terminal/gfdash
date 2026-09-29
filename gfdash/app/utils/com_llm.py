@@ -50,6 +50,65 @@ def sub_think_level(pThink):
     return bool(pThink), ''
 
 
+# 思考の本文が入る項目名。OpenAI互換を名乗るエンジンでも揃っていない。
+# vLLM(0.30) は reasoning、FreeToken 等は reasoning_content で返す。
+# 先に書いた名前を優先する
+REASONING_KEYS = ('reasoning_content', 'reasoning')
+
+
+def sub_reasoning_text(pPart):
+    """応答（message / delta）から思考の本文を取り出す"""
+    for key in REASONING_KEYS:
+        text = pPart.get(key)
+        if text:
+            return text
+    return ''
+
+
+# ----------------------------------------------------------------------
+# thinking の強さが効くかの測定
+# ----------------------------------------------------------------------
+
+# 測定に使う固定の問題。
+#
+# 施設プロファイル(custom_prompts/review.txt)は差し込まない。差し込むと施設ごとに
+# 結果が変わり、測定どうしを比べられなくなる。答えが一意に決まり、かつ思考の手数が
+# いくらか要る問題にする
+PROBE_PROMPT = (
+    '次の計算を、途中の考えを示しながら解いてください。'
+    '1日あたり100人の日が22日、180人の日が8日あるとき、'
+    '30日間の合計と1日平均はそれぞれ何人ですか。'
+)
+
+# バリデーション処理は生成を1トークンで打ち切る。400 か 200 かだけを見たいため
+PROBE_ACCEPT_TOKENS = 1
+# エフェクト検証は思考が入る余地を残す。長くすると測定そのものが長くなる
+PROBE_EFFECT_TOKENS = 2048
+
+# 強さが効くかの状態。models.Tz391LlmCapability と同じ値を使う
+EFFORT_UNKNOWN = 'unknown'
+EFFORT_EFFECTIVE = 'effective'
+EFFORT_INEFFECTIVE = 'ineffective'
+EFFORT_INDETERMINATE = 'indeterminate'
+
+# 判定の表示名。com_finish_label と同じく、日本語の判定に生の値を添える。
+#
+# 成功・失敗の軸にしない。測定そのものは成功していて、結果が「強さは効かない」
+# なので、失敗と書くと測定が失敗したように読める
+EFFORT_STATUS_LABELS = {
+    EFFORT_UNKNOWN: '未測定',
+    EFFORT_EFFECTIVE: '効いた',
+    EFFORT_INEFFECTIVE: '効かない',
+    EFFORT_INDETERMINATE: '判定できない',
+}
+
+
+def com_effort_label(pStatus):
+    """判定を読める形にする。未知の値はそのまま出す"""
+    label = EFFORT_STATUS_LABELS.get(pStatus)
+    return f'{label} ({pStatus})' if label else (pStatus or 'unknown')
+
+
 # 終了ステータス(finish_reason)の表示名。推論エンジンが返す生の値は
 # stop / length などで、「stop」は正常完了なのに異常終了と読まれる。
 # 生の値も括弧で残し、調査のときに引けるようにする
@@ -101,6 +160,15 @@ class LlmClientBase:
 
     name = ''
 
+    def endpoint(self):
+        """
+        接続先。測定結果をどのサーバで測ったかの記録に使う。
+
+        同じ銘柄でもサーバが違えば挙動が違う（強さを解釈するサーバと、
+        銘柄のテンプレート任せのサーバがある）ため、銘柄名だけでは足りない
+        """
+        return ''
+
     def list_models(self):
         """利用可能なモデル名の一覧。取得できなければ空リスト"""
         raise NotImplementedError
@@ -149,6 +217,162 @@ class LlmClientBase:
         """
         raise NotImplementedError
 
+    # ------------------------------------------------------------------
+    # thinking の強さの測定
+    # ------------------------------------------------------------------
+
+    def sub_think_available(self, pModel):
+        """
+        このモデルで thinking を切り替えられるか。
+
+        戻りは3値。**「非対応」と「確認できなかった」を同じ値にしない。**
+        モデル名の打ち間違いや接続断を「この銘柄は非対応」と記録すると、
+        測っていない結果が測定済みとして残る
+
+        True … 切り替えられる / False … 銘柄が非対応 / None … 確認できなかった
+        """
+        return self.supports_think
+
+    def sub_probe_call(self, pModel, pEffort, pNumCtx, pTimeout, pMaxTokens):
+        """
+        測定用の1回の呼び出し。temperature=0・同じ seed で決定的に投げる。
+
+        強さは丸めずそのまま送る。サーバが実際に accepted にする値を知るための
+        測定なので、送る前に読み替えると何を測ったのか分からなくなる。
+
+        戻りは {'ok': accepted か, 'reason': 断られた理由, 'text': 思考+本文}
+        """
+        raise NotImplementedError
+
+    def sub_probe_post(self, pUrl, pPayload, pTimeout, pHeaders=None):
+        """
+        測定用の POST。400 を例外にせず not accepted として返す。
+
+        accepted になるかを知るのが目的なので、断られること自体が結果である。
+
+        `transport` は「サーバに届かなかった・サーバ側の事情で答えが得られない」。
+        4xx の拒否は測定の結果だが、接続断や 5xx（起動中・ロード中など）は
+        結果ではない。両者を同じ扱いにすると、一時的な状態が能力として残る
+        """
+        try:
+            res = requests.post(pUrl, json=pPayload, headers=pHeaders, timeout=pTimeout)
+        except Exception as e:
+            return {'ok': False, 'transport': True, 'data': None,
+                    'reason': f'接続できない ({e.__class__.__name__})'}
+        if res.status_code >= 400:
+            detail = (res.text or '')[:120].replace('\n', ' ')
+            return {'ok': False, 'transport': res.status_code >= 500, 'data': None,
+                    'reason': f'HTTP {res.status_code} {detail}'.strip()}
+        try:
+            return {'ok': True, 'transport': False, 'reason': '', 'data': res.json()}
+        except ValueError:
+            return {'ok': False, 'transport': True, 'data': None,
+                    'reason': '応答がJSONではない'}
+
+    def probe_think(self, pModel, pNumCtx, pTimeout, pOnLog=None):
+        """
+        thinking の強さが効くかを実測する。戻りは tz391 に保存する dict。
+
+        Step A バリデーション処理 … 各強さを1トークンだけ生成させ、400 か 200 かを見る。
+            計算のゆらぎに影響されないため、効果が判定できないサーバでも確定する。
+
+        Step B エフェクト検証 … temperature=0・同じ seed で、弱い方を2回と強い方を
+            1回投げる。弱い方どうしが一致しなければ、サーバが決定的でないので
+            判定しない（連続バッチ処理やプレフィックスキャッシュで浮動小数点の
+            計算順序が変わると、temperature=0 でも出力が変わる）。一致していれば、
+            強い方との差の有無がそのまま強さの効果になる。
+
+        `probed` は「測定として成立したか」。モデル名の打ち間違いや接続断で
+        何も測れなかったときは False で、呼び出し側は保存しない。
+        銘柄が非対応だと**分かった**場合は True（それは測定の結果である）。
+        """
+        def sub_log(pMessage):
+            if pOnLog:
+                pOnLog(pMessage)
+
+        out = {
+            'probed': True,
+            'think_supported': False,
+            'effort_status': EFFORT_UNKNOWN,
+            'effort_values': [],
+            'probe_note': '',
+        }
+        available = self.sub_think_available(pModel)
+        if available is None:
+            # 確認できなかった。非対応と決めつけると、打ち間違いが「この銘柄は
+            # 非対応」として残り、原因を追えなくなる
+            out['probed'] = False
+            out['probe_note'] = f'thinking に対応しているかを確認できなかった（{pModel}）'
+            sub_log(f'{out["probe_note"]}ため測定しません。'
+                    'モデル名と接続先を確かめてください\n')
+            return out
+        if not available:
+            out['probe_note'] = 'この構成では thinking を切り替えられない'
+            sub_log('thinking を切り替えられないため測定しません\n')
+            return out
+        out['think_supported'] = True
+
+        sub_log('Step A バリデーション処理（各1トークン）\n')
+        accepted = []
+        notes = []
+        rejected = 0
+        for level in THINK_EFFORTS:
+            res = self.sub_probe_call(pModel, level, pNumCtx, pTimeout, PROBE_ACCEPT_TOKENS)
+            if res['ok']:
+                accepted.append(level)
+                sub_log(f'  {level}: accepted\n')
+            else:
+                if not res.get('transport'):
+                    rejected += 1
+                notes.append(f'{level} は not accepted ({res["reason"]})')
+                sub_log(f'  {level}: not accepted … {res["reason"]}\n')
+        out['effort_values'] = accepted
+
+        if not accepted and not rejected:
+            # どれも届かなかった。サーバが起動中・ロード中のときに起こる。
+            # 「全部 not accepted」として残すと、サーバが落ちていた事実が
+            # 「この構成はどの強さも受け付けない」という能力として記録される
+            out['probed'] = False
+            out['probe_note'] = ' / '.join(notes + ['サーバに届かないため測定できず'])
+            sub_log('どの強さもサーバに届きませんでした。'
+                    'エンジンが起動しているか確かめてください\n')
+            return out
+
+        if len(accepted) < 2:
+            out['probe_note'] = ' / '.join(
+                notes + ['比較できる強さが2つ未満のためエフェクト検証は行わず'])
+            sub_log('比較できる強さが2つ未満のため、エフェクト検証は行いません\n')
+            return out
+
+        weak, strong = accepted[0], accepted[-1]
+        sub_log(f'Step B エフェクト検証'
+                f'（temperature=0 / seed=0 固定 / {weak} を2回, {strong} を1回）\n')
+        runs = []
+        for label, level in ((f'{weak} 1回目', weak), (f'{weak} 2回目', weak),
+                             (f'{strong}', strong)):
+            res = self.sub_probe_call(pModel, level, pNumCtx, pTimeout, PROBE_EFFECT_TOKENS)
+            if not res['ok']:
+                out['probe_note'] = ' / '.join(notes + [f'{label} が失敗 ({res["reason"]})'])
+                sub_log(f'  {label}: 失敗 … {res["reason"]}\n')
+                return out
+            runs.append(res['text'])
+            sub_log(f'  {label}: {len(res["text"]):,}文字\n')
+
+        notes.append(f'{weak} {len(runs[0]):,}/{len(runs[1]):,}文字, '
+                     f'{strong} {len(runs[2]):,}文字')
+        if runs[0] != runs[1]:
+            out['effort_status'] = EFFORT_INDETERMINATE
+            notes.append(f'{weak} を2回投げて出力が違うため判定不能（サーバが決定的でない）')
+        elif runs[0] == runs[2]:
+            out['effort_status'] = EFFORT_INEFFECTIVE
+            notes.append(f'{weak} と {strong} の出力が完全に一致するため効いていない')
+        else:
+            out['effort_status'] = EFFORT_EFFECTIVE
+            notes.append(f'{weak} と {strong} で出力が変わるため効いている')
+        out['probe_note'] = ' / '.join(notes)
+        sub_log(f'判定: {com_effort_label(out["effort_status"])}\n')
+        return out
+
 
 class OllamaClient(LlmClientBase):
     supports_num_ctx = True
@@ -162,6 +386,9 @@ class OllamaClient(LlmClientBase):
 
     def sub_url(self, pPath):
         return self.api_url.replace('/api/generate', pPath)
+
+    def endpoint(self):
+        return self.api_url
 
     def list_models(self):
         try:
@@ -193,15 +420,23 @@ class OllamaClient(LlmClientBase):
         バージョン番号では判定しない。新しいバージョンでも非対応モデルへ
         think を送れば弾かれるため、モデル単位で見る必要がある。
         capabilities を返さない古いバージョンでは空になり、think を送らない。
+
+        **答えられないときは None を返す。** モデル名が実在しなければ 404、
+        Ollama が止まっていれば接続エラーになる。これを False にすると
+        「この銘柄は思考に対応していない」と読めてしまい、原因が消える
         """
         try:
             res = requests.post(
                 self.sub_url('/api/show'), json={'model': pModel}, timeout=10
             )
-            res.raise_for_status()
-            return 'thinking' in (res.json().get('capabilities') or [])
         except Exception:
-            return False
+            return None
+        if res.status_code >= 400:
+            return None
+        try:
+            return 'thinking' in (res.json().get('capabilities') or [])
+        except ValueError:
+            return None
 
     def preload(self, pModel, pTimeout=600):
         # プロンプトを空にすると、Ollama は生成せずモデルの読み込みだけを行う
@@ -257,7 +492,8 @@ class OllamaClient(LlmClientBase):
         }
         # 思考は対応モデルにのみ指定する。非対応モデルに送るとエラーになる。
         # 有効なときは強さ（low/medium/high/max）も指定できる。強さを持たない
-        # 銘柄では無視される
+        # 銘柄では無視される。対応を確認できなかった（None）ときも送らない。
+        # 生成を止めるほどの事ではなく、思考なしで進めるほうが害が小さい
         if pThink is not None and self.sub_supports_thinking(pModel):
             on, effort = sub_think_level(pThink)
             payload['think'] = (effort or True) if on else False
@@ -292,6 +528,36 @@ class OllamaClient(LlmClientBase):
             text = raw.get('response', '')
 
         return LlmResult(text, think_text, self.sub_stats(raw, started))
+
+    def sub_think_available(self, pModel):
+        # 思考の可否はモデル単位。非対応モデルに think を送れば弾かれる。
+        # 確認できなかった場合（None）はそのまま返す。測定を諦める理由が
+        # 「非対応」なのか「確かめられなかった」のかを呼び出し側に伝える
+        if not self.supports_think:
+            return False
+        return self.sub_supports_thinking(pModel)
+
+    def sub_probe_call(self, pModel, pEffort, pNumCtx, pTimeout, pMaxTokens):
+        payload = {
+            'model': pModel,
+            'prompt': PROBE_PROMPT,
+            'stream': False,
+            'think': pEffort,
+            'options': {
+                'num_ctx': pNumCtx,
+                'num_predict': pMaxTokens,
+                # 決定的に投げる。temperature を既定のままにすると、強さの効果と
+                # サンプリングのばらつきを区別できない
+                'temperature': 0,
+                'seed': 0,
+            },
+        }
+        res = self.sub_probe_post(self.api_url, payload, pTimeout)
+        if not res['ok']:
+            return res
+        raw = res['data'] or {}
+        res['text'] = (raw.get('thinking') or '') + (raw.get('response') or '')
+        return res
 
     def sub_stats(self, pRaw, pStarted):
         """Ollama の項目名を OpenAI の名称へそろえる"""
@@ -328,6 +594,15 @@ class OpenAiClient(LlmClientBase):
     THINK_PARAM_OFF = 'off'
     THINK_PARAM_DEFAULT = 'chat_template_kwargs'
 
+    # 送れる強さの読み替え。harmony 形式(gpt-oss 系)を扱うサーバは
+    # low/medium/high しか受け付けず、それ以外は 400 で弾く。Ollama は max を
+    # 受けるため値自体は残し、OpenAI互換で送る直前にここで丸める
+    EFFORT_ALIASES = {'max': 'high'}
+
+    def sub_effort(self, pEffort):
+        """OpenAI互換で送れる強さに丸める"""
+        return self.EFFORT_ALIASES.get(pEffort, pEffort)
+
     def __init__(self):
         base = getattr(settings, 'OPENAI_API_BASE', 'http://localhost:8080/v1')
         self.base_url = base.rstrip('/')
@@ -344,6 +619,9 @@ class OpenAiClient(LlmClientBase):
     def supports_think(self):
         """思考を切り替えられるか。off のときだけ画面・コマンドから隠す"""
         return self.think_param != self.THINK_PARAM_OFF
+
+    def endpoint(self):
+        return self.base_url
 
     def sub_headers(self):
         headers = {'Content-Type': 'application/json'}
@@ -371,17 +649,19 @@ class OpenAiClient(LlmClientBase):
             'messages': [{'role': 'user', 'content': pPrompt}],
             'stream': pStream,
         }
-        # 思考は明示されたときだけ送る。送らなければエンジン側の既定に従う。
-        # 強さを指定したときは reasoning_effort で送る。chat_template_kwargs の
-        # enable_thinking は真偽しか載せられず、強さを渡す先が無いため
+        # 思考は明示されたときだけ送る。送らなければエンジン側の既定に従う
         if pThink is not None and self.supports_think:
             on, effort = sub_think_level(pThink)
+            effort = self.sub_effort(effort)
             param = self.think_param
-            # enable_thinking は真偽しか載せられない。強さを指定したときだけ
-            # reasoning_effort へ切り替える
-            if on and effort and param == 'chat_template_kwargs':
-                param = 'reasoning_effort'
             payload.update(self.THINK_DIALECTS[param](on, effort))
+            # enable_thinking は真偽しか載せられないので、強さは
+            # reasoning_effort を添えて送る。強さのために enable_thinking を
+            # やめることはしない。reasoning_effort はチャットテンプレートが
+            # 参照しなければ黙って無視されるため、載せ替えると ON/OFF の指示
+            # まで届かなくなる
+            if on and effort and param == 'chat_template_kwargs':
+                payload['reasoning_effort'] = effort
 
         if pStream:
             # 使用トークン数は既定では返らない。明示して受け取る
@@ -401,12 +681,14 @@ class OpenAiClient(LlmClientBase):
             choice = (data.get('choices') or [{}])[0]
             message = choice.get('message') or {}
             text = message.get('content') or ''
-            # 推論内容を返すエンジンがある。項目名は標準化されていない
-            think_text = message.get('reasoning_content') or ''
+            # 推論内容を返すエンジンがある。項目名は標準化されていない。
+            # vLLM は reasoning、FreeToken 等は reasoning_content で返す
+            think_text = sub_reasoning_text(message)
             usage = data.get('usage') or {}
             finish = choice.get('finish_reason')
-            if text and pOnText:
-                pOnText(text)
+            # pOnText はストリーム時だけ呼ぶ（generate の取り決め）。ここで
+            # 本文を渡すと、非ストリームでも経過を見せる呼び出し側と重なって
+            # 同じ本文が2回出る。Ollama 側も非ストリームでは呼んでいない
 
         return LlmResult(text, think_text, {
             'finish_reason': finish,
@@ -414,6 +696,34 @@ class OpenAiClient(LlmClientBase):
             'completion_tokens': usage.get('completion_tokens') or 0,
             'output_seconds': time.time() - started,
         })
+
+    def sub_probe_call(self, pModel, pEffort, pNumCtx, pTimeout, pMaxTokens):
+        # num_ctx はリクエストで指定できない（サーバ起動時の設定に従う）
+        payload = {
+            'model': pModel,
+            'messages': [{'role': 'user', 'content': PROBE_PROMPT}],
+            'stream': False,
+            'max_tokens': pMaxTokens,
+            # 決定的に投げる。seed を無視するサーバでは弱い方の2回が一致せず、
+            # 判定不能として記録される
+            'temperature': 0,
+            'seed': 0,
+        }
+        # 強さは丸めずそのまま送る。sub_effort を通すと max が high になり、
+        # サーバが max を accepted にするかどうかを測れない
+        payload.update(self.THINK_DIALECTS[self.think_param](True, pEffort))
+        if self.think_param == 'chat_template_kwargs':
+            # 実行時と同じ組み合わせで測る（generate と同じ併送）
+            payload['reasoning_effort'] = pEffort
+
+        res = self.sub_probe_post(
+            f'{self.base_url}/chat/completions', payload, pTimeout, self.sub_headers())
+        if not res['ok']:
+            return res
+        choice = ((res['data'] or {}).get('choices') or [{}])[0]
+        message = choice.get('message') or {}
+        res['text'] = sub_reasoning_text(message) + (message.get('content') or '')
+        return res
 
     def sub_read_stream(self, pResponse, pOnText, pOnThink):
         """SSE を読む。Ollama の NDJSON とは形式が違う"""
@@ -442,7 +752,7 @@ class OpenAiClient(LlmClientBase):
 
             for choice in chunk.get('choices') or []:
                 delta = choice.get('delta') or {}
-                part = delta.get('reasoning_content') or ''
+                part = sub_reasoning_text(delta)
                 if part:
                     think_text += part
                     if pOnThink:

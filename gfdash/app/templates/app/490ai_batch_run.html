@@ -292,6 +292,9 @@
     var gLlmThinkEfforts = {{ llm_think_efforts_json|safe }};
     // モードごとの既定。エンジン（多段版など）が自分の既定を持つため、モードで変わる
     var gLlmModeDefaults = {{ llm_mode_defaults_json|safe }};
+    // thinking の強さの測定結果(tz391)。効かないと分かっている構成では強さの欄を畳む。
+    // 測定は「強さの効きを測定して記録」を押したときだけ走る
+    var gLlmCapability = {{ llm_capability_json|safe }};
     // 推論エンジンが受け付けない項目は入力させない。
     // 送っても効かない値を入力できると、反映されない理由が画面から分からない。
     var gLlmEngine  = {

@@ -10,7 +10,7 @@ import threading
 import traceback
 
 from ..models import Ta215Attnd, Tz305MonthlyRemark
-from ..utils.com_llm import com_get_llm_client
+from ..utils.com_llm import com_finish_label, com_get_llm_client
 from ..utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
     com_check_grounding, com_check_month_span, com_dump_events,
