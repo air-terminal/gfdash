@@ -20,6 +20,11 @@ $(document).ready(function() {
     sub490_applyModeDefaults();
     $('#llm_mode').on('change', sub490_applyModeDefaults);
 
+    /* モデルを変えたら測定結果を読み直す。強さが効くかは銘柄ごとに違うので、
+       前の銘柄の判定を持ち回ると、効かない銘柄に強さを送ることになる。
+       読み直しの中で、選べなくなった強さは捨てられる */
+    $('#llm_model').on('change', function() { sub490_reloadCapability(); });
+
     // 月次所見の状態。対象年月を変えたら読み直す。
     //
     // イベントは component 要素(.input-group.date)側で拾う。
@@ -29,6 +34,15 @@ $(document).ready(function() {
     // バブルするので、component 要素で見れば全ての経路を拾える。
     $('.input-group.date').on('change changeDate', sub490_onYmChanged);
     sub490_remarkStateLoad();
+
+    /* 読み込み中の表示を終える。custom.js が document.ready で start() するので、
+       画面側で done() を呼ばないと出たままになる。
+
+       この画面は他と違い、ロード時にグラフや一覧を読む ajax を持たない。
+       他の画面はその ajax の前後で start/done を呼んでおり、その done が
+       custom.js 側の start も一緒に終わらせていた。490 には対になる呼び出しが
+       無かったため、緑のバーとスピナーが残り続けていた */
+    if (typeof NProgress != 'undefined') { NProgress.done(); }
 });
 
 // 直近に読み込んだ対象月。changeDate と change が両方飛ぶ場合に二重で
@@ -116,10 +130,11 @@ function sub490_capabilityText() {
     var when = cap.measured_at ? '（' + cap.measured_at + ' 実測）' : '';
     var text;
     if (!cap.measured) {
+        // 強さが銘柄で決まることや、効かない銘柄では無視されることは
+        // ここに書かない。この場面で必要なのは「いま指定できない」ことと
+        // 「どうすれば指定できるか」の2つだけ
         text = '未測定のため、強さは指定できません。'
-             + '強さが効くかは銘柄によって決まり、効かない銘柄では送っても'
-             + '無視されます（エラーにはなりません）。'
-             + '下のボタンで測ると、効く構成では強さを選べるようになります。';
+             + '強さを指定するにはモデルを測定してください。';
     } else if (sub490_thinkUnsupported()) {
         // 判定（effort_status）より先に見る。切り替えられない銘柄では
         // 強さの効きを測る段まで進んでおらず、判定は未測定のまま残る
@@ -128,12 +143,16 @@ function sub490_capabilityText() {
     } else if (cap.effort_status === 'effective') {
         text = '強さが効きます' + when + '。';
     } else if (cap.effort_status === 'ineffective') {
-        text = 'この構成では強さの指定が効きません' + when + '。送っても無視されます。';
+        // 「送っても無視される」は書かない。欄が無くて指定できない状態なので、
+        // 送る話をされても操作する人には意味が通らない
+        text = 'この構成では強さの指定が効きません' + when + '。';
     } else if (cap.effort_status === 'indeterminate') {
         // 効くかもしれないが確認できていない。強さは出さない。効いていると
         // 決めて使わせると、ゆらぎを効果と読み違えたまま運用することになる
-        text = '判定できなかったため、強さは指定できません' + when + '。'
-             + 'サーバの出力が毎回変わるため、効いているかを測れません。';
+        // 判定できなかった理由（サーバの出力が毎回変わる）はここに書かない。
+        // 測定したときの実行ログと probe_note に残っており、設定を選ぶ場面で
+        // 必要な情報ではない
+        text = '判定できなかったため、強さは指定できません' + when + '。';
     } else {
         // 測定はしたが判定まで進めなかった（accepted な強さが2つ未満など）。
         // ここで「未測定」と出すと、測った事実が消えて同じ操作を繰り返させる
@@ -145,8 +164,13 @@ function sub490_capabilityText() {
     return text;
 }
 
-// 測定を走らせる。生成を伴うので実行ログへ流し、終わったら記録を読み直す
-function sub490_startProbe(pNumCtx, pTimeout) {
+/* 測定を走らせる。生成を伴うので実行ログへ流し、終わったら記録を読み直す。
+
+   4つの値はすべて呼び出し側（ダイアログ）から受け取る。測定は thinking を必ず
+   使うが、**記録するのはダイアログにいま入っている値**で、これが「最後に使った
+   設定」として保存される。gLlmParams を見ると、ダイアログで変更した内容を
+   捨てて古い値を保存してしまう */
+function sub490_startProbe(pNumCtx, pTimeout, pThink, pEffort) {
     var $console = $('#batch_console');
     $console.text('thinking の強さの効きを測定します...\n');
     $console.append('※ バリデーション処理とエフェクト検証で計7回の生成を行うため、数分かかります。\n');
@@ -161,9 +185,8 @@ function sub490_startProbe(pNumCtx, pTimeout) {
         mode: $('#llm_mode').val(),
         num_ctx: pNumCtx,
         timeout: pTimeout,
-        // 測定は thinking を使う前提。記録する設定値は画面の現在値
-        think: gLlmParams.think ? 'true' : 'false',
-        think_effort: gLlmParams.think_effort || ''
+        think: pThink ? 'true' : 'false',
+        think_effort: pEffort || ''
     };
     if ($('#llm_model').length > 0) {
         postData.model = $('#llm_model').val();
@@ -171,13 +194,52 @@ function sub490_startProbe(pNumCtx, pTimeout) {
     sub490_streamToConsole(postData, function(pLogText) {
         // 成立しなかった場合も読み直す。記録は変わらないが、画面の表示を
         // ログと突き合わせられる状態にしておく
-        sub490_reloadCapability();
-        sub490_afterProbe(pLogText);
+        sub490_reloadCapability(function() {
+            /* 測定できなかったときは、その旨のダイアログだけを出す。
+               反映するものが無いうえ、SweetAlert2 は重ねられないので、
+               完了ダイアログを出すとエラーの表示が差し替わって消える */
+            if (sub490_afterProbe(pLogText)) { return; }
+            sub490_noticeProbeDone();
+        });
     });
 }
 
-// 測定結果を読み直して画面へ反映する。測定はしない
-function sub490_reloadCapability() {
+/* 測定の完了を伝え、OK で実行パラメータを開き直す。
+
+   測定はダイアログを閉じてから走るため、終わったときには設定を変える画面が
+   無い。とくに「効いた」と判定された直後は、そこで初めて強さを選べるように
+   なる瞬間なので、自分で開き直さないとその状態に辿り着けない。
+
+   自動で開かないのは、測定に数分かかるため。別の作業をしている最中に
+   ダイアログが突然開くより、OK を挟むほうが驚きが小さい */
+function sub490_noticeProbeDone() {
+    var cap = gLlmCapability || {};
+    var verdict = cap.status_label
+        ? '<div style="margin: 6px 0;"><strong>判定: ' + sub490_escapeHtml(cap.status_label)
+          + '</strong></div>'
+        : '';
+    Swal.fire({
+        title: '測定が終了しました',
+        html: '<div class="gf_confirm_body">' + verdict
+            + '測定結果を反映した実行パラメータを開きます。</div>',
+        icon: 'success',
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        confirmButtonText: 'OK'
+    }).then(function(result) {
+        // ESC や背景クリックで閉じたときは開かない。閉じる操作をした人に
+        // 別のダイアログを出すのは、意図と逆になる
+        if (result.isConfirmed) {
+            openLlmParamDialog();
+        }
+    });
+}
+
+/* 測定結果を読み直して画面へ反映する。測定はしない。
+
+   pOnDone は読み直しが終わってから呼ぶ。ajax なので、待たずにダイアログを
+   組むと測定前の古い記録が表示される */
+function sub490_reloadCapability(pOnDone) {
     var postData = { getMode: 'capability' };
     if ($('#llm_model').length > 0) {
         postData.model = $('#llm_model').val();
@@ -202,6 +264,11 @@ function sub490_reloadCapability() {
             gLlmParams.think_effort = '';
         }
         updateLlmParamDisplay();
+    }).always(function() {
+        /* 読み直しに失敗しても呼ぶ。呼ばないと再表示の導線が途切れる。
+           done より後に登録すること。jQuery は登録順に呼ぶので、先に書くと
+           記録を取り込む前に呼ばれ、古い内容でダイアログが組まれる */
+        if (pOnDone) { pOnDone(); }
     });
 }
 
@@ -378,7 +445,9 @@ function openLlmParamDialog() {
     html += '<div id="dlg_llm_effort_wrap" style="margin: 4px 0 0;">';
     html += '<label style="display:block; font-weight:normal;">thinking の強さ</label>';
     if (!sub490_effortAvailable()) {
-        html += '<p class="text-muted" style="margin: 0;">'
+        // スライダーが無いので、説明と測定ボタンだけが残る。左寄せのままだと
+        // 行の途中で終わって読みにくいため、ボタンとそろえて中央に置く
+        html += '<p class="text-muted" style="margin: 0; text-align: center;">'
               + sub490_capabilityText() + '</p>';
     } else {
         html += '<div style="display:flex; align-items:center; gap:10px;">';
@@ -390,10 +459,12 @@ function openLlmParamDialog() {
         html += '<p class="text-muted" style="margin: 4px 0 0;">'
               + sub490_capabilityText() + '</p>';
     }
-    // 測定はこのボタンを押したときだけ走る。生成を伴うため数分かかる
-    html += '<p style="margin: 6px 0 0;">'
-          + '<button type="button" id="dlg_llm_probe" class="btn btn-default btn-xs">'
-          + '<i class="fa-solid fa-stopwatch"></i> 強さの効きを測定して記録</button>'
+    // 測定はこのボタンを押したときだけ走る。生成を伴うため数分かかる。
+    // 決定ボタンと同じ btn-primary は使わない。主動作と誤解して押されると、
+    // 数分の生成が始まってしまう
+    html += '<p style="margin: 6px 0 0; text-align: center;">'
+          + '<button type="button" id="dlg_llm_probe" class="btn btn-info btn-sm">'
+          + '<i class="fa-solid fa-stopwatch"></i> モデルを測定</button>'
           + '</p></div>';
     html += '<p class="text-muted" style="margin: 0;">'
           + (thinkOff
@@ -472,8 +543,34 @@ function openLlmParamDialog() {
             $popup.on('click', '#dlg_llm_probe', function() {
                 var numCtx = parseInt($popup.find('#dlg_llm_ctx').val(), 10) || gLlmParams.num_ctx;
                 var timeout = parseInt($popup.find('#dlg_llm_timeout').val(), 10) || gLlmParams.timeout;
+                // thinking と強さもダイアログから読む。gLlmParams（開く前の値）を
+                // 使うと、ここで ON にしても false が保存され、次回の復元で
+                // thinking が切られる
+                var think = $popup.find('#dlg_llm_think').is(':checked');
+                var effort = sub490_indexToEffort($popup.find('#dlg_llm_effort').val());
+
+                // 決定ボタンと同じ条件で弾く。測定は保存を伴うので、決定を
+                // 通らない値がそのまま「最後に使った設定」になってはいけない
+                if (!numCtx || numCtx < 256) {
+                    Swal.showValidationMessage('コンテキスト長は256以上で指定してください。');
+                    return;
+                }
+                if (!timeout || timeout < 30) {
+                    Swal.showValidationMessage('タイムアウトは30秒以上で指定してください。');
+                    return;
+                }
+
+                // 測定に使う値を画面にも反映する。保存される値と画面表示が
+                // 食い違うと、再読み込みで初めて一致するという動きになる
+                gLlmParams.num_ctx = numCtx;
+                gLlmParams.timeout = timeout;
+                gLlmParams.think = think;
+                gLlmParams.think_effort = effort;
+                gLlmCustomized = true;
+                updateLlmParamDisplay();
+
                 Swal.close();
-                sub490_startProbe(numCtx, timeout);
+                sub490_startProbe(numCtx, timeout, think, effort);
             });
 
             // 詳細欄を触ったらプリセットの選択を実態に合わせ直す。
@@ -794,10 +891,63 @@ function sub490_escapeHtml(pText) {
     return $('<div>').text(pText).html();
 }
 
+// バッチが失敗を報告する印。run_llm_analysis が ❌ 付きで stderr へ書く。
+// [重大な内部エラー] は view が例外を捕まえたとき
+var LLM_RUN_ERROR_MARKS = ['❌', '[重大な内部エラー]'];
+
+/* 実行ログから失敗の説明を取り出す。見つからなければ空文字。
+
+   ❌ の行には対処の案内が続くことがある（タイムアウトの候補、本文が空の
+   ときのヒント）ので、空行までをひとまとまりとして扱う */
+function sub490_runErrorText(pLogText) {
+    var at = -1;
+    for (var i = 0; i < LLM_RUN_ERROR_MARKS.length; i++) {
+        var found = pLogText.indexOf(LLM_RUN_ERROR_MARKS[i]);
+        if (found >= 0 && (at < 0 || found < at)) { at = found; }
+    }
+    if (at < 0) { return ''; }
+
+    var rest = pLogText.slice(at);
+    // 「=== 処理が完了しました ===」は失敗の説明ではないので落とす
+    var tail = rest.indexOf('\n=== ');
+    if (tail >= 0) { rest = rest.slice(0, tail); }
+    var blank = rest.indexOf('\n\n');
+    if (blank >= 0) { rest = rest.slice(0, blank); }
+    return $.trim(rest);
+}
+
+/* 失敗をダイアログで知らせる。
+
+   ログに出るだけだと気づけない。バッチは数分かかるので、利用者は流れ終わった
+   末尾だけを見る。そこに ❌ があっても「=== 処理が完了しました ===」で終わって
+   いるため、完了したと受け取ってしまう。対応していないモデルを選んだときの
+   500 などは、指定を直せば済む話なので、その場で伝えるほうが早い */
+function sub490_noticeRunError(pText) {
+    Swal.fire({
+        title: '処理が失敗しました',
+        html: '<div class="gf_confirm_body" style="text-align: left;">'
+            + sub490_escapeHtml(pText).replace(/\n/g, '<br>')
+            + '</div>',
+        icon: 'error',
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        confirmButtonText: '閉じる'
+    });
+}
+
 function sub490_afterRun(pLogText) {
     /* 処理の終了後に、ログの中では流れて見落とす事柄をダイアログで知らせる。
        thinking なしでのやり直しは、履歴の実行パラメータ（thinking ON）と実際が
        食い違うので、その場で伝える */
+
+    // 失敗は他の知らせより先に出す。SweetAlert2 は重ねられないため、
+    // 後から出すと差し替わって消える
+    var error = sub490_runErrorText(pLogText);
+    if (error) {
+        sub490_noticeRunError(error);
+        return;
+    }
+
     if (pLogText.indexOf(LLM_THINK_FALLBACK_MARK) < 0) { return; }
     // やり直しても本文が出なかったときはバッチの ❌ の説明で足りる
     if (pLogText.indexOf('DBに保存しました') < 0) { return; }

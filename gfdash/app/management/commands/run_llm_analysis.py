@@ -266,6 +266,16 @@ class Command(BaseCommand):
         self.stdout.write(
             f"実行パラメータ[{client.name}]: " + " / ".join(parts) + "\n", ending=''
         )
+        # CPU使用率が上がることを先に伝える。モデルが全部GPUに載っていても、
+        # 推論エンジンは計算の待ち時間にスレッドを回し続けるため、全コアに
+        # 負荷が出る（llama.cpp の --poll が既定で有効。ollama ps の
+        # 「100% GPU」は重みの配置を指し、CPUを使わない意味ではない）。
+        # 実測では 20論理コアのうち 10.5コア相当を使っていた。異常ではないが、
+        # 知らずにタスクマネージャを見ると不具合を疑う
+        self.stdout.write(
+            "※ 生成中は推論エンジン側で CPU も使われます"
+            "（GPU に載っていても、待機のため全コアに負荷が出ます）\n", ending=''
+        )
 
         if not is_stream:
             self.stdout.write(f"{client.name} (モデル: {target_model}) にリクエストを送信中...\n", ending='')

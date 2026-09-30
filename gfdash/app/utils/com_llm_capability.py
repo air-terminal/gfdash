@@ -13,7 +13,9 @@ from django.conf import settings
 from django.utils import timezone
 
 from ..models import Tz391LlmCapability
-from .com_llm import EFFORT_UNKNOWN, THINK_EFFORTS, com_effort_label
+from .com_llm import (
+    EFFORT_EFFECTIVE, EFFORT_UNKNOWN, THINK_EFFORTS, com_effort_label,
+)
 
 # 判定の表示は com_effort_label（「効かない (ineffective)」の形）を使う。
 # 画面に出す説明文は customjs_490.js 側で組み立てる。ここで文を持つと
@@ -145,11 +147,15 @@ def com_restore_params(pParams, pEngineName, pCapability):
     if last.get('think') is not None:
         out['think'] = last['think']
 
-    # 強さは、効かないと分かっている構成では戻さない。accepted でなくなった値も
-    # 戻さない（選択肢から外れているので、実行が 400 で落ちる）
+    # 強さは「効いた」と分かっている構成にだけ戻す。accepted でなくなった値も
+    # 戻さない（選択肢から外れているので、実行が 400 で落ちる）。
+    #
+    # 画面は effective のときだけ強さ欄を出す（sub490_effortAvailable）。ここを
+    # それより緩くすると、欄が無いのに値が入った状態で実行されることになり、
+    # 画面から取り消せない。判定できない構成も戻さないのは同じ理由
     effort = last.get('effort') or ''
     if effort and effort in (pCapability.get('effort_values') or []) \
-            and pCapability.get('effort_status') != 'ineffective':
+            and pCapability.get('effort_status') == EFFORT_EFFECTIVE:
         out['think_effort'] = effort
 
     out['restored'] = True

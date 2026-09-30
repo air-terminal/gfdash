@@ -12,7 +12,9 @@ import threading
 from datetime import datetime
 
 from app.models import Ta215Attnd, Tz305MonthlyRemark
-from app.utils.com_llm import THINK_EFFORTS, com_get_llm_client, com_think_effort
+from app.utils.com_llm import (
+    EFFORT_EFFECTIVE, THINK_EFFORTS, com_get_llm_client, com_think_effort,
+)
 from app.utils.com_llm_capability import (
     com_capability_view, com_restore_params, com_save_capability,
 )
@@ -324,6 +326,9 @@ def sub490_probe_stream(pDic):
     params = {
         'engine': getattr(engine, 'ENGINE_NAME', ''),
         'num_ctx': num_ctx,
+        # timeout も残す。抜けていると last_timeout が NULL のまま保存され、
+        # 復元のときにエンジンの既定へ戻る。画面で伸ばした値が消える
+        'timeout': timeout,
         'think': pDic.get('think') == 'true' if pDic.get('think') in ('true', 'false') else None,
         'effort': raw_effort if raw_effort in THINK_EFFORTS else '',
     }
@@ -475,7 +480,23 @@ def post490_main(request):
         # 止めるより、指定なしで動いたうえで設定を見直せるほうがよい）
         raw_effort = dic.get('think_effort')
         if raw_effort in THINK_EFFORTS:
-            call_kwargs['think_effort'] = raw_effort
+            # 選択中の銘柄で効くと実測できていなければ送らない。
+            #
+            # 画面はモデルを変えたときに測定結果を読み直し、効かない構成では
+            # 強さを捨てるが、それは画面の状態に依存する。戻る操作や通信失敗で
+            # 古い判定が残ると、前の銘柄の強さがそのまま実行に渡る。
+            # 効かない銘柄では黙って無視されるだけだが、harmony 形式のように
+            # 値そのものを拒む銘柄では生成前に 400 で落ちる。
+            #
+            # コマンドライン（--think-effort）には同じ制限をかけない。測定前の
+            # 銘柄で試すのは検証の手段として要る
+            effort_model = (target_model or getattr(settings, 'OLLAMA_MODEL', '')).strip()
+            capability = com_capability_view(com_get_llm_client(), effort_model)
+            if capability.get('effort_status') == EFFORT_EFFECTIVE:
+                call_kwargs['think_effort'] = raw_effort
+            else:
+                q.put(f"※ 強さ ({raw_effort}) は指定できない構成のため送りません"
+                      f"（判定: {capability.get('status_label')}）\n")
 
         # 実行パラメータ。未指定なら settings の既定値が使われる。
         # 画面からの入力なので、数値にならない値は無視して既定値に委ねる。

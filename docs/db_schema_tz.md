@@ -18,6 +18,7 @@
 | `tz310_ai_run` | AIバッチ実行ヘッダ | 予測・レポート生成の1回の実行と、その実行条件 |
 | `tz311_forecast_history` | 来場者予測履歴 | 実行ごとの日別予測値。`tz301` + `run_id` |
 | `tz312_report_history` | AI月次分析レポート履歴 | 実行ごとのレポート本文。`tz302` + `run_id` |
+| `tz391_llm_capability` | 推論エンジン能力 | 推論エンジンと銘柄の組み合わせごとの thinking の能力と、最後に使った実行パラメータ |
 | `tz810_holiday2` | 第2休日カレンダー | 祝日とは異なる休日体系を持つ顧客層の操業カレンダー |
 | `tz901_com_name` | 名前マスタ | コード値と名称（スクール名やアメダス地点など）の対応表 |
 | `tz910_permission` | 画面表示パーミッション | Djangoテンプレートごとのアクセス権限レベルを管理 |
@@ -154,6 +155,10 @@ erDiagram
 
 `tz301` に `run_id` を足して履歴化しなかったのは、ラズパイ同期が `tz301` を
 そのままの形で読み書きしているためです。キーを変えると同期の両端に改修が必要になります。
+
+`tz391` はこの組とは別で、予測やレポートの中身を持ちません。**推論エンジンと銘柄の
+組み合わせごとの能力**（thinking の強さが効くか）を記録し、画面の出し分けに使います。
+他の表との外部キーはありません。
 
 #### tz301_forecast (来場者予測情報テーブル)
 | カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | 備考 |
@@ -306,6 +311,50 @@ erDiagram
 | `report_cls` | レポート区分 | VARCHAR(20) | **UQ** | - | `tz302` と同じ |
 | `report_text` | AI分析レポート | TEXT | NOT NULL | - | |
 | `input_date` | データ入力日 | DATE | NOT NULL | `CURRENT_DATE` | |
+
+#### tz391_llm_capability (推論エンジン能力)
+
+thinking の強さ（`low` / `medium` / `high` / `max`）は、**推論エンジンと銘柄の
+組み合わせによって黙って無視されます。** エラーにならず 200 が返るので、
+リクエストの成否からは判定できません。確実なのは実測だけで、`temperature=0`・
+同じ seed で強さを変えて投げ、出力が変わるかを見ます。
+
+生成を伴うため画面のロードでは測れません。**490画面のボタンを押したときだけ測り**、
+結果をこの表に残して次回以降の画面の出し分けに使います。あわせて、そのとき使って
+いた実行パラメータ（`last_*`）も保存します。毎月同じ銘柄・同じ設定で運用するため、
+次回の画面で復元できると入力の手間と取り違えが減ります。
+
+**キーは「プロバイダ・接続先・モデル名」の3つです。** 銘柄名だけにしないのは、
+同じ銘柄でもサーバが違えば挙動が違うためです（harmony 形式を解釈するサーバでは
+強さが効き、テンプレート任せのサーバでは無視されます）。
+
+| カラム名 (物理名) | 項目名 (論理名) | データ型 | 制約 | デフォルト値 | 備考 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `id` | ID | SERIAL | **PK** | - | Django用の単独主キー |
+| `provider` | プロバイダ | VARCHAR(20) | NOT NULL / **UQ** | - | `ollama` / `openai` |
+| `endpoint` | 接続先 | VARCHAR(200) | NOT NULL / **UQ** | - | `OLLAMA_API_URL` / `OPENAI_API_BASE` |
+| `model_name` | モデル名 | VARCHAR(200) | NOT NULL / **UQ** | - | |
+| `model_digest` | モデルのダイジェスト | VARCHAR(80) | NOT NULL | `''` | Ollama のみ。同名タグの入れ替わりを検知して再測定を促す |
+| `think_supported` | thinking の可否 | BOOLEAN | NOT NULL | `false` | thinking 自体を切り替えられるか |
+| `effort_status` | 強さの判定 | VARCHAR(20) | NOT NULL | `'unknown'` | `unknown` 未測定 / `effective` 効く / `ineffective` 効かない / `indeterminate` 判定不能 |
+| `effort_values` | 送れる強さ | JSONB | NOT NULL | `'[]'` | 400 にならなかった値の配列（例 `["low","medium","high"]`） |
+| `probe_note` | 判定の根拠 | TEXT | NOT NULL | `''` | 比較した文字数など。後から結果を疑えるように残す |
+| `last_engine` | 最後のエンジン | VARCHAR(20) | NOT NULL | `''` | `staged` / `single` / `forecast`。**違うときは復元しない** |
+| `last_num_ctx` | 最後のnum_ctx | INT | | - | |
+| `last_timeout` | 最後のタイムアウト | INT | | - | 秒 |
+| `last_think` | 最後のthinking | BOOLEAN | | - | |
+| `last_effort` | 最後の強さ | VARCHAR(10) | NOT NULL | `''` | |
+| `measured_at` | 実測日時 | TIMESTAMPTZ | | - | |
+| `input_date` | データ入力日 | DATE | NOT NULL | `CURRENT_DATE` | |
+
+`effort_status` を真偽値にしていないのは、**「未測定」と「測ったが分からなかった」を
+区別するため**です。区別できないと、判定できないサーバで測定を繰り返させることに
+なります。`indeterminate` は `temperature=0` でも出力が毎回変わるサーバで起きます
+（連続バッチ処理やプレフィックスキャッシュで浮動小数点の計算順序が変わる）。
+サーバ側の起動条件でしか改善できないため、状態として記録するだけにしています。
+
+`effort_values` は判定とは独立に決まります。400 か 200 かは計算のゆらぎに影響され
+ないので、判定できないサーバでも「この値は送れない」は確定します。
 
 ---
 
