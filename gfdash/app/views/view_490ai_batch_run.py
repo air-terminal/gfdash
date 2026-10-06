@@ -4,14 +4,13 @@ from django.http import HttpResponse, StreamingHttpResponse  # 👈 StreamingHtt
 from django.core.management import call_command
 from django.conf import settings
 from django.db import close_old_connections
-from django.utils import timezone
 import json
 import traceback
 import queue      
 import threading  
 from datetime import datetime
 
-from app.models import Ta215Attnd, Tz305MonthlyRemark
+from app.models import Ta215Attnd
 from app.utils.com_llm import (
     EFFORT_EFFECTIVE, THINK_EFFORTS, com_get_llm_client, com_think_effort,
 )
@@ -19,15 +18,12 @@ from app.utils.com_llm_capability import (
     com_capability_view, com_restore_params, com_save_capability,
 )
 from app.utils.com_llm_preset import com_get_llm_presets
-from app.utils.com_remark import (
-    EVENT_TYPE_NAMES, com_check_events, com_dump_events, com_get_remark,
-    com_load_events, com_normalize_events, com_save_remark_text,
-)
-from app.utils.com_remark_ai import RemarkParseError, com_parse_remark_with_ai
 from app.utils.report_engines import com_engine_for_mode, com_resolve_llm_params
 
-# 所見の操作。バッチ実行と同じPOSTの入口を使うため、getMode で振り分ける。
-REMARK_MODES = ('remark_get', 'remark_save', 'remark_parse', 'remark_events')
+# 月次所見の読み書きはこの画面に置かない。入力と編集は 480 で行い、この画面は
+# 状態を表示するだけ（480 の status を呼ぶ）。以前はここにも所見の読み書きの口が
+# あったが、画面から呼ばれなくなっていたうえ、解析の結果で確定版(tz305)を
+# 直接上書きし、確定済みの補正を予測から外していたので削除した
 
 # 測定が成立しなかったことを画面へ伝える印。ストリームは文字を流すだけなので、
 # JS はログの中からこの印を探してダイアログを出す（[think-fallback] と同じ流儀）
@@ -57,10 +53,28 @@ def get490_main(ctx):
     ctx['llm_supports_num_ctx'] = client.supports_num_ctx
     ctx['llm_supports_think'] = client.supports_think
 
+    # 実際に使われるモデル。測定もバッチもプルダウンの値で動くので、記録の
+    # 読み出しも同じ名前で行う。.env の名前で探すと、サーバの一覧に無い名前
+    # （vLLM が別名で名乗る場合など）のとき、保存した記録が見つからず
+    # 再読み込みで「未測定」に戻り、前回の設定の復元も効かない
+    env_model = getattr(settings, 'OLLAMA_MODEL', '')
+    selected_model = env_model
+    if ctx['allow_model_select']:
+        models = client.list_models()
+        ctx['ollama_models'] = models
+        # .env の名前が一覧に無ければ先頭を使う。ブラウザが selected の無い
+        # select で先頭を選ぶのと同じ規則で、ここで決めて明示的に選ぶ
+        if models and env_model not in models:
+            selected_model = models[0]
+            # 気づかずに .env と違う銘柄で動いている状態を見えるようにする。
+            # 測定だけでなくバッチ実行も同じ名前で動く
+            ctx['model_mismatch'] = {'env': env_model, 'used': selected_model}
+        ctx['default_model'] = selected_model
+
     # thinking の強さの測定結果(tz391)。効かないと分かっている構成では
     # 強さの欄を畳む。送っても無視されるため、選べるほうが混乱を招く。
     # ここでは保存済みの記録を読むだけで、測定はボタンを押したときだけ行う
-    capability = com_capability_view(client, getattr(settings, 'OLLAMA_MODEL', ''))
+    capability = com_capability_view(client, selected_model)
     ctx['llm_capability_json'] = json.dumps(capability, ensure_ascii=False)
 
     # モードごとの実行パラメータの既定。エンジンが自分の既定を持つ（多段版は
@@ -87,13 +101,7 @@ def get490_main(ctx):
         from datetime import datetime
         ctx['latest_ym'] = datetime.now().strftime('%Y-%m')
 
-    # モデル選択が有効な場合、推論エンジンに問い合わせてリストを取得する。
-    # 以前はコマンドを呼び出して標準出力のJSONを読み戻していたが、
-    # クライアントが同じ一覧を返すため直接使う。
-    if ctx['allow_model_select']:
-        ctx['ollama_models'] = client.list_models()
-        ctx['default_model'] = getattr(settings, 'OLLAMA_MODEL', '')
-        
+    # モデルの一覧は上で取得済み（記録の読み出しに選ばれる名前が要るため）
     return ctx
 
 # ▼ コマンドの標準出力をリアルタイムにキューへ詰め込むためのカスタムクラス
@@ -105,146 +113,6 @@ class QueueIO:
             self.q.put(data)
     def flush(self):
         pass
-
-def sub490_remark(request, pDic, pMode):
-    """月次所見の読み書き。戻り値はそのままJSONにする辞書"""
-    target_month = sub490_parse_month(pDic.get('ym'))
-    if target_month is None:
-        return {'remark_success': False, 'err_message': '対象月の指定が不正です。'}
-
-    remark_cls = pDic.get('cls')
-    if remark_cls not in (Tz305MonthlyRemark.REMARK_CLS_FORECAST,
-                          Tz305MonthlyRemark.REMARK_CLS_REVIEW):
-        return {'remark_success': False, 'err_message': '所見の区分が不正です。'}
-
-    if pMode == 'remark_get':
-        return sub490_remark_view(com_get_remark(target_month, remark_cls))
-
-    if pMode == 'remark_save':
-        remark = com_save_remark_text(
-            target_month, remark_cls, pDic.get('text') or '',
-            getattr(request.user, 'username', '') or '')
-        ret = sub490_remark_view(remark)
-        ret['message'] = '所見を保存しました。'
-        return ret
-
-    if pMode == 'remark_parse':
-        return sub490_remark_parse(target_month, remark_cls, pDic)
-
-    return sub490_remark_events(request, target_month, remark_cls, pDic)
-
-
-def sub490_remark_parse(pTargetMonth, pRemarkCls, pDic):
-    """所見をAIに解析させ、結果を parsed として保存する"""
-    remark = com_get_remark(pTargetMonth, pRemarkCls)
-
-    if remark is None or not (remark.remark_text or '').strip():
-        return {'remark_success': False,
-                'err_message': '所見が入力されていません。先に保存してください。'}
-
-    try:
-        raw_events, info = com_parse_remark_with_ai(
-            remark.remark_text, pTargetMonth, pDic.get('model') or None)
-    except RemarkParseError as e:
-        return {'remark_success': False, 'err_message': str(e)}
-
-    # AIの出力も手入力と同じ検証を通す。ここを素通しにすると、画面から
-    # 入力したときだけ弾かれる値がAI経由では通ってしまう。
-    events, errors = com_normalize_events(raw_events)
-
-    remark.parsed_json = com_dump_events(events)
-    remark.parsed_at = timezone.now()
-    remark.parsed_model = info['model']
-    remark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_PARSED
-    remark.save(update_fields=['parsed_json', 'parsed_at', 'parsed_model', 'parse_status'])
-
-    ret = sub490_remark_view(remark)
-    ret['message'] = f"{info['engine']}（{info['model']}）が {len(events)}件を読み取りました。"
-    # 解析で落とした項目は伝える。黙って減らすと、書いたはずの内容が
-    # 反映されていないことに気づけない。
-    ret['parse_errors'] = errors
-    return ret
-
-
-def sub490_remark_events(request, pTargetMonth, pRemarkCls, pDic):
-    """画面で編集したイベントを保存する。confirm が真なら確定まで行う"""
-    remark = com_get_remark(pTargetMonth, pRemarkCls)
-    if remark is None:
-        return {'remark_success': False,
-                'err_message': '所見が保存されていません。先に本文を保存してください。'}
-
-    events, errors = com_normalize_events(pDic.get('events') or '[]')
-    if errors:
-        return {'remark_success': False,
-                'err_message': '入力に誤りがあります。', 'parse_errors': errors}
-
-    is_confirm = (pDic.get('confirm') == 'true')
-    warnings = []
-
-    if is_confirm:
-        # 確定は補正を有効にする操作なので、ここだけ追加の確認を通す。
-        check_errors, warnings = com_check_events(events)
-        if check_errors:
-            return {'remark_success': False,
-                    'err_message': '確定できません。', 'parse_errors': check_errors}
-
-        # 所見は書かれているのにイベントが無い状態は、解析し忘れか
-        # 取りこぼしの可能性がある。確定自体は認める（影響が読めない所見も
-        # あるため）が、そのまま気づかず進むのは防ぐ。
-        if not events and (remark.remark_text or '').strip():
-            warnings.append('所見は入力されていますが、補正するイベントが0件です。')
-
-    remark.parsed_json = com_dump_events(events)
-    remark.parse_status = (Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED if is_confirm
-                           else Tz305MonthlyRemark.PARSE_STATUS_PARSED)
-    remark.updated_by = getattr(request.user, 'username', '') or ''
-    remark.updated_at = timezone.now()
-    remark.save(update_fields=['parsed_json', 'parse_status', 'updated_by', 'updated_at'])
-
-    ret = sub490_remark_view(remark)
-
-    # 件数を添える。0件で「反映されます」とだけ出すと、何も効かないのに
-    # 補正が入ったと受け取れる。
-    if not is_confirm:
-        ret['message'] = f'{len(events)}件を保存しました。確定するまで補正には使われません。'
-    elif events:
-        ret['message'] = f'確定しました。{len(events)}件が予測とレポートに反映されます。'
-    else:
-        ret['message'] = '確定しました。補正するイベントはありません。'
-
-    ret['warnings'] = warnings
-    return ret
-
-
-def sub490_remark_view(pRemark):
-    """所見を画面へ返す形に整える"""
-    if pRemark is None:
-        return {
-            'remark_success': True,
-            'remark_text': '',
-            'parse_status': Tz305MonthlyRemark.PARSE_STATUS_NONE,
-            'parsed_at': '',
-            'parsed_model': '',
-            'updated_at': '',
-            'updated_by': '',
-            'events': [],
-            'type_names': EVENT_TYPE_NAMES,
-        }
-
-    return {
-        'remark_success': True,
-        'remark_text': pRemark.remark_text or '',
-        'parse_status': pRemark.parse_status,
-        'parsed_at': (timezone.localtime(pRemark.parsed_at).strftime('%Y/%m/%d %H:%M')
-                      if pRemark.parsed_at else ''),
-        'parsed_model': pRemark.parsed_model or '',
-        'updated_at': (timezone.localtime(pRemark.updated_at).strftime('%Y/%m/%d %H:%M')
-                       if pRemark.updated_at else ''),
-        'updated_by': pRemark.updated_by or '',
-        'events': com_load_events(pRemark),
-        'type_names': EVENT_TYPE_NAMES,
-    }
-
 
 def sub490_parse_month(pYm):
     """'YYYY-MM' を月初の日付にする。読み取れなければ None"""
@@ -385,13 +253,7 @@ def post490_main(request):
     from django.http import QueryDict
     dic = QueryDict(request.body, encoding='utf-8')
 
-    # 所見の読み書きはストリームではなくJSONで返す。バッチと入口を分けないのは
-    # 画面のPOST先が1つで済み、ルーティングを増やさずに済むため。
     get_mode = dic.get('getMode')
-    if get_mode in REMARK_MODES:
-        return HttpResponse(
-            json.dumps(sub490_remark(request, dic, get_mode), ensure_ascii=False),
-            content_type='application/json')
 
     # 実行前の確認用。対象月のデータが揃っているかを画面へ返す
     if get_mode == 'data_status':

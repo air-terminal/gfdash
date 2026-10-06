@@ -22,6 +22,8 @@
     .gf_mnt_none      { background-color: #95A5A6; }
     .gf_mnt_parsed    { background-color: #E67E22; }
     .gf_mnt_confirmed { background-color: #1ABB9C; }
+    /* 未確定の下書きがある印。確定版の状態とは別に、確定待ちの内容があることを示す */
+    .gf_mnt_draft     { background-color: #E67E22; margin-left: 4px; }
 
     /* 直接編集する JSON。等幅でないと括弧の対応を追えない */
     #detail_json {
@@ -112,7 +114,8 @@
               </div>
 
               <div class="col-md-7 col-sm-12 col-xs-12">
-                <label>補正の内容（JSON）</label>
+                <label>補正の内容（JSON）<span id="detail_json_kind" class="text-muted"
+                       style="font-weight: normal; margin-left: 6px;"></span></label>
                 <textarea id="detail_json" spellcheck="false"></textarea>
                 <p class="text-muted" style="margin-top: 4px;">
                   保存すると「月次所見入力」画面と同じ検証を通します。保存後は<b>未確認</b>に戻るので、

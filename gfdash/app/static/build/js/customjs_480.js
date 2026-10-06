@@ -228,6 +228,14 @@ var gParseStatus = 'none';
 // この月・区分の所見が登録されているか。本文が空かどうかでは判断しない
 var gExists = false;
 
+/* 確定版(tz305)と下書き(tz306)の状態。サーバの view_state をそのまま持つ。
+     none / draft / confirmed / confirmed_draft
+   表に出しているのは、下書きがあれば下書き、無ければ確定版。確定版は
+   「予測に何が使われているか」を見せるために別に持つ */
+var gViewState = 'none';
+var gHasDraft = false;
+var gConfirmedEvents = [];
+
 function sub480_syncButtons() {
     var text = $('#remark_text').val();
     var saved = (gSavedText !== null);
@@ -240,9 +248,10 @@ function sub480_syncButtons() {
     var ready = saved && !dirty && (gSavedText || '').trim() !== '';
     var isReview = (sub480_cls() === 'review');
     // レビュー所見は本文だけなので、保存できていれば確定できる。
-    // 予測所見は補正の内容が要る
+    // 予測所見は補正の内容が要る。下書きがあれば0件でも確定できる
+    // （解析した結果「補正するものは無い」と確定する場合がある）
     var canConfirm = isReview ? ready
-                              : ready && (eventCount > 0 || gParseStatus === 'parsed');
+                              : ready && (eventCount > 0 || gHasDraft);
 
     $('#btn_remark_save').prop('disabled', !canSave);
     // AIが使えない環境では、順序に関わらず解析は押させない
@@ -257,6 +266,16 @@ function sub480_syncButtons() {
             : '日次備考の要約はレビュー所見でのみ使えます');
     $('#btn_remark_add').prop('disabled', !ready);
     $('#btn_remark_confirm, #btn_remark_confirm_text').prop('disabled', !canConfirm);
+
+    // 確定版と下書きの両方があるときの確定は、確定版を置き換える操作になる。
+    // 「確定」のままだと、何を何で置き換えるのかが読み取れない
+    $('#btn_remark_confirm_label').text(
+        gViewState === 'confirmed_draft' ? '下書きで確定する' : '確定');
+
+    // 破棄は下書きがあるときだけ。予測所見だけの操作（レビュー所見は解析しない）
+    $('#btn_remark_discard').toggle(gHasDraft && !isReview);
+    $('#btn_remark_discard_label').text(
+        gViewState === 'confirmed_draft' ? '破棄して確定済みに戻す' : '下書きを破棄');
     // 削除は登録済みの所見がある月でだけ押せる
     $('#btn_remark_delete').prop('disabled', !gExists);
 
@@ -282,6 +301,8 @@ function sub480_syncButtons() {
     var hint2 = '';
     if (!ready) {
         hint2 = '先に所見を保存してください。';
+    } else if (gViewState === 'confirmed_draft') {
+        hint2 = '誤って解析した場合は「破棄して確定済みに戻す」で元に戻せます。';
     } else if (!canConfirm) {
         hint2 = '「手で追加」または上の「AIで解析」で補正の内容を作ってください。';
     } else if (gParseStatus === 'confirmed') {
@@ -336,6 +357,30 @@ function btnRemarkParse() {
         return;
     }
 
+    /* 下書きがあるときだけ確かめる。解析は下書きを上書きするので、手で直した
+       内容が消える。確定版は解析で書き換わらないので、下書きが無いとき
+       （確定済みだけのとき）は聞かない。押し間違えても破棄で戻せるため、
+       意図した再解析のたびに確認を挟む手間のほうが大きい */
+    if (!gHasDraft) {
+        sub480_startParse();
+        return;
+    }
+
+    Swal.fire({
+        title: '下書きを上書きしますか？',
+        html: '未確定の下書きがあります。<br>解析すると下書きは上書きされます'
+            + (gViewState === 'confirmed_draft' ? '（確定済みの内容は残ります）。' : '。'),
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '解析する',
+        cancelButtonText: 'やめる',
+        customClass: { popup: 'gf-rmk-dialog' }
+    }).then(function(result) {
+        if (result.isConfirmed) { sub480_startParse(); }
+    });
+}
+
+function sub480_startParse() {
     gParseLog = '';
     $('#remark_msg').empty();
 
@@ -549,7 +594,12 @@ function sub480_parseFinished() {
     // 保存はサーバ側で終わっているので、表は読み直して反映する
     sub480_post({ getMode: 'get' }, function(res) {
         sub480_render(res);
-        sub480_message('info', '解析結果を読み込みました。内容を確認して「確定」を押してください。');
+        // 確定済みがあるときは、予測にはまだ確定版が使われていると伝える。
+        // 解析で補正が置き換わったと受け取られないようにする
+        sub480_message('info', res.view_state === 'confirmed_draft'
+            ? '解析結果を下書きとして読み込みました。「下書きで確定する」を押すまで、'
+              + '予測には確定済みの内容が使われます。'
+            : '解析結果を読み込みました。内容を確認して「確定」を押してください。');
     });
 }
 
@@ -557,18 +607,29 @@ function sub480_parseFinished() {
    表示
    ------------------------------------------------------------------ */
 
+// 状態ごとのバッジ。draft は旧来の「解析済み（未確認）」と同じ見え方にする
+var REMARK_STATE_BADGE = {
+    none:            { cls: 'gf_rmk_none',            label: '未解析' },
+    draft:           { cls: 'gf_rmk_parsed',          label: '解析済み（未確認）' },
+    confirmed:       { cls: 'gf_rmk_confirmed',       label: '確認済み' },
+    confirmed_draft: { cls: 'gf_rmk_confirmed_draft', label: '確認済み｜下書きあり' }
+};
+
 function sub480_render(pRes) {
-    var status = pRes.parse_status;
-    var label = { none: '未解析', parsed: '解析済み（未確認）', confirmed: '確認済み' }[status] || status;
-
     gSavedText = pRes.remark_text;
-    gParseStatus = status;
+    gParseStatus = pRes.parse_status;
     gExists = !!pRes.exists;
+    gViewState = pRes.view_state || 'none';
+    gHasDraft = !!pRes.has_draft;
+    gConfirmedEvents = pRes.confirmed_events || [];
 
+    var badge = REMARK_STATE_BADGE[gViewState] || REMARK_STATE_BADGE.none;
     $('#remark_status_badge')
-        .removeClass('gf_rmk_none gf_rmk_parsed gf_rmk_confirmed')
-        .addClass('gf_rmk_' + status)
-        .text(label);
+        .removeClass('gf_rmk_none gf_rmk_parsed gf_rmk_confirmed gf_rmk_confirmed_draft')
+        .addClass(badge.cls)
+        .text(badge.label);
+
+    sub480_renderDraftBanner(pRes);
 
     var meta = [];
     if (pRes.updated_at) {
@@ -581,6 +642,88 @@ function sub480_render(pRes) {
 
     sub480_renderEvents(pRes.events || [], pRes.grounding || []);
     sub480_syncButtons();
+}
+
+/* 確定版と下書きの両方があるときの案内。
+
+   予測に何が使われているかを必ず書く。解析した時点で補正が置き換わった
+   ように見えると、確定済みの補正が消えたと受け取られる（実際は確定版が
+   そのまま予測に使われている）。件数を並べて、確定版と下書きの差を見せる */
+function sub480_renderDraftBanner(pRes) {
+    var $banner = $('#remark_draft_banner');
+    if (gViewState !== 'confirmed_draft') {
+        $banner.hide().empty();
+        return;
+    }
+
+    var draftCount = (pRes.events || []).length;
+    var when = pRes.parsed_at ? '（AI解析 ' + sub480_escape(pRes.parsed_at) + '）' : '';
+
+    $banner.html(
+        '<i class="fa-solid fa-triangle-exclamation"></i> '
+        + '<b>未確定の下書きがあります</b>' + when + '<br>'
+        + '予測には確定済みの内容（' + gConfirmedEvents.length + '件）が使われています。'
+        + '下書きは ' + draftCount + '件です。 '
+        + '<a href="#" onclick="return btnRemarkShowConfirmed()">確定済みの内容を見る</a>'
+    ).show();
+}
+
+/* 確定版を読み取り専用で見せる。表には下書きが出ているので、見比べる手段が要る */
+function btnRemarkShowConfirmed() {
+    var html;
+    if (gConfirmedEvents.length === 0) {
+        html = '<p class="text-muted">確定済みの補正はありません。</p>';
+    } else {
+        html = '<table class="table table-condensed" style="text-align:left; font-size:13px;">'
+             + '<thead><tr><th>イベント</th><th>種別</th><th>期間</th><th class="text-right">係数</th></tr></thead><tbody>';
+        for (var i = 0; i < gConfirmedEvents.length; i++) {
+            var e = gConfirmedEvents[i];
+            html += '<tr><td>' + sub480_escape(e.name || '(名称なし)') + '</td>'
+                  + '<td>' + sub480_escape(gTypeNames[e.type] || e.type || '') + '</td>'
+                  + '<td>' + sub480_escape(e.start_date || '') + '〜'
+                  + sub480_escape(e.end_date || '（終了期限なし）') + '</td>'
+                  + '<td class="text-right">'
+                  + (e.factor_mid !== null && e.factor_mid !== undefined && e.factor_mid !== ''
+                        ? sub480_escape(String(e.factor_mid)) : '—')
+                  + '</td></tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    Swal.fire({
+        title: '確定済みの内容（予測に使われています）',
+        html: html,
+        width: 760,
+        customClass: { popup: 'gf-rmk-dialog' },
+        confirmButtonText: '閉じる'
+    });
+    return false;
+}
+
+/* 下書きを捨てる。誤って解析を押したときの戻し方。
+
+   確定版は解析で書き換わらないので、下書きを消せば元どおりになる。
+   ただし下書きに手で直した内容があればそれも消えるので、1回確かめる */
+function btnRemarkDiscard() {
+    var toConfirmed = (gViewState === 'confirmed_draft');
+    Swal.fire({
+        title: toConfirmed ? '確定済みの内容に戻しますか？' : '下書きを破棄しますか？',
+        html: toConfirmed
+            ? '下書きを破棄して、確定済みの内容（' + gConfirmedEvents.length + '件）に戻します。<br>'
+              + '下書きで手を加えた内容も消えます。'
+            : '下書きを破棄します。この月には確定済みの補正がないため、補正は空になります。',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: toConfirmed ? '破棄して戻す' : '破棄する',
+        cancelButtonText: 'やめる',
+        customClass: { popup: 'gf-rmk-dialog' }
+    }).then(function(result) {
+        if (!result.isConfirmed) { return; }
+        sub480_post({ getMode: 'discard' }, function(res) {
+            sub480_render(res);
+            sub480_message('info', res.message || '下書きを破棄しました。');
+        });
+    });
 }
 
 function btnRemarkAddEvent() {

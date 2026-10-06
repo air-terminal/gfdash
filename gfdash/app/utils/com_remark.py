@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 
 from django.utils import timezone
 
-from ..models import Ta220Memo, Tz305MonthlyRemark
+from ..models import Ta220Memo, Tz305MonthlyRemark, Tz306MonthlyRemarkDraft
 
 # イベントの種別
 EVENT_TYPE_LEVEL_SHIFT = 'level_shift'   # 恒久的な水準の変化。end_date は省略可
@@ -121,9 +121,14 @@ def com_save_remark_text(pTargetMonth, pRemarkCls, pRemarkText, pUpdatedBy):
     """
     自由文の所見を保存する。
 
-    本文を書き換えたら parse_status を none に戻す。前の本文から作った
-    解析結果が、書き換え後の本文の結論として残るのを防ぐ。確定済みの
-    補正が古い記述に紐づいたままになると、後から妥当性を追えない。
+    予測所見は、本文を書き換えても確定版の補正はそのまま使う。誤字の修正や
+    言い回しの調整のたびに確定が外れると、次の予測からその月の補正が黙って
+    外れる。文章を直しただけで補正を作り直したくない場面のほうが多い。
+    本文と補正が食い違えば、画面を開くたびに走る根拠の確認
+    (com_check_grounding)が「要確認」として示す。
+
+    レビュー所見は書き換えたら確定を外す。確定は「この本文で最終」という
+    本文そのものへの印で、書き換えた本文は誰も最終と認めていない。
     """
     remark = com_get_remark(pTargetMonth, pRemarkCls)
     now = timezone.now()
@@ -143,7 +148,8 @@ def com_save_remark_text(pTargetMonth, pRemarkCls, pRemarkText, pUpdatedBy):
     remark.updated_by = pUpdatedBy
     remark.updated_at = now
 
-    if changed and remark.parse_status != Tz305MonthlyRemark.PARSE_STATUS_NONE:
+    if (changed and pRemarkCls == Tz305MonthlyRemark.REMARK_CLS_REVIEW
+            and remark.parse_status != Tz305MonthlyRemark.PARSE_STATUS_NONE):
         remark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_NONE
 
     remark.save(update_fields=['remark_text', 'updated_by', 'updated_at', 'parse_status'])
@@ -167,6 +173,81 @@ def com_load_events(pRemark):
 def com_dump_events(pEvents):
     """イベントの一覧を保存する形の文字列にする"""
     return json.dumps({'events': pEvents}, ensure_ascii=False, indent=2)
+
+
+# ------------------------------------------------------------------
+# 下書き（tz306）
+#
+# tz305 は確定版だけを持ち、予測とレポートはそちらだけを読む。AIの解析結果や
+# 確定前の編集内容は下書きに置き、確定したときだけ tz305 へ写す。確定済みの
+# 補正を未確定の操作で壊さないため（以前は解析が tz305 を直接上書きし、
+# 次の予測からその月の補正が黙って外れていた）。
+# ------------------------------------------------------------------
+
+def com_get_draft(pRemark):
+    """所見の下書きを返す。無ければ None"""
+    if pRemark is None or pRemark.pk is None:
+        return None
+    return Tz306MonthlyRemarkDraft.objects.filter(remark=pRemark).first()
+
+
+def com_is_legacy_draft(pRemark):
+    """
+    tz305 の行そのものが下書き扱いか。
+
+    下書きを tz306 へ分ける前は、未確定の解析結果を tz305 に parsed で置いて
+    いた。その行は移行せずに残すので、確定していない tz305 の行にイベントが
+    あれば下書きとして見せる。本文を書き換えて none に戻った行も同じ扱い
+    （前の本文から作ったイベントが残っている）。
+    """
+    return (pRemark is not None
+            and pRemark.parse_status != Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
+            and bool(com_load_events(pRemark)))
+
+
+def com_save_draft(pRemark, pEvents, pUpdatedBy, pParsedAt=None, pParsedModel=None):
+    """
+    下書きを保存する。無ければ作り、あれば上書きする。確定版(tz305)には触れない。
+
+    pParsedAt / pParsedModel は AI で解析したときだけ渡す。手で保存したときは
+    前の値を残す。どのAI出力を元にした下書きかを確定まで持ち越し、確定時に
+    tz305 へ写すため。
+    """
+    values = {
+        'parsed_json': com_dump_events(pEvents),
+        'updated_by': pUpdatedBy,
+        'updated_at': timezone.now(),
+    }
+    if pParsedAt is not None:
+        values['parsed_at'] = pParsedAt
+        values['parsed_model'] = pParsedModel
+
+    draft, _created = Tz306MonthlyRemarkDraft.objects.update_or_create(
+        remark=pRemark, defaults=values)
+    return draft
+
+
+def com_discard_draft(pRemark, pUpdatedBy):
+    """
+    下書きを捨てる。捨てるものが無ければ False。
+
+    tz306 の下書きなら行を消すだけで、tz305 の確定版はそのまま残る。旧形式の
+    下書き（tz305 の未確定の行）は、確定版が無いのでイベントを空にして
+    未解析へ戻す。
+    """
+    deleted, _ = Tz306MonthlyRemarkDraft.objects.filter(remark=pRemark).delete()
+    if deleted:
+        return True
+
+    if com_is_legacy_draft(pRemark):
+        pRemark.parsed_json = None
+        pRemark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_NONE
+        pRemark.updated_by = pUpdatedBy
+        pRemark.updated_at = timezone.now()
+        pRemark.save(update_fields=['parsed_json', 'parse_status', 'updated_by', 'updated_at'])
+        return True
+
+    return False
 
 
 def com_normalize_events(pRaw):

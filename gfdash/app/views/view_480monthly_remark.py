@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from django.http import HttpResponse, QueryDict, StreamingHttpResponse
 from django.utils import timezone
 
@@ -13,9 +13,10 @@ from ..models import Ta215Attnd, Tz305MonthlyRemark
 from ..utils.com_llm import com_finish_label, com_get_llm_client
 from ..utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
-    com_check_grounding, com_check_month_span, com_dump_events,
-    com_get_factor_presets, com_get_month_memos, com_get_remark, com_load_events,
-    com_normalize_events, com_save_remark_text,
+    com_check_grounding, com_check_month_span, com_discard_draft, com_dump_events,
+    com_get_draft, com_get_factor_presets, com_get_month_memos, com_get_remark,
+    com_is_legacy_draft, com_load_events, com_normalize_events, com_save_draft,
+    com_save_remark_text,
 )
 from ..utils.com_remark_ai import (
     RemarkParseError, com_parse_remark_with_ai, com_summarize_memos,
@@ -73,17 +74,33 @@ def post480_main(request):
     elif mode == 'status':
         ret = sub480_status(target_month)
     elif mode == 'save':
+        # 確定済みの予測所見の本文を直したかを、保存の前に控えておく。
+        # 予測所見は本文を直しても確定版の補正をそのまま使うので、それを
+        # 伝えないと「本文を変えたのに補正が古いまま」と受け取られる
+        before = com_get_remark(target_month, remark_cls)
+        kept_confirmed = (
+            before is not None
+            and remark_cls == Tz305MonthlyRemark.REMARK_CLS_FORECAST
+            and before.parse_status == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
+            and (before.remark_text or '') != (dic.get('text') or ''))
+
         remark = com_save_remark_text(
             target_month, remark_cls, dic.get('text') or '',
             getattr(request.user, 'username', '') or '')
         ret = sub480_view(remark)
         ret['message'] = '所見を保存しました。'
+        if kept_confirmed:
+            ret['message'] += (' 補正の内容は確定版のまま予測に使われます。'
+                               '本文の変更に合わせて補正を見直す場合は、'
+                               'もう一度「AIで解析」してください。')
     elif mode == 'delete':
         ret = sub480_delete(target_month, remark_cls)
     elif mode == 'check':
         ret = sub480_check(target_month, remark_cls, dic)
     elif mode == 'events':
         ret = sub480_save_events(request, target_month, remark_cls, dic)
+    elif mode == 'discard':
+        ret = sub480_discard(request, target_month, remark_cls)
     else:
         ret = {'remark_success': False, 'err_message': '不正なリクエストです。'}
 
@@ -219,25 +236,74 @@ def sub480_save_events(request, pTargetMonth, pRemarkCls, pDic):
             for message in finding['messages']:
                 warnings.append(f'{finding["index"] + 1}件目「{name}」: {message}')
 
-    remark.parsed_json = com_dump_events(events)
-    remark.parse_status = (Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED if is_confirm
-                           else Tz305MonthlyRemark.PARSE_STATUS_PARSED)
-    remark.updated_by = getattr(request.user, 'username', '') or ''
-    remark.updated_at = timezone.now()
-    remark.save(update_fields=['parsed_json', 'parse_status', 'updated_by', 'updated_at'])
+    username = getattr(request.user, 'username', '') or ''
+
+    # 確定していない内容は下書き(tz306)にだけ書く。tz305 を書き換えると、
+    # 確定済みの補正が消えて次の予測からその月の補正が黙って外れる
+    if not is_confirm:
+        com_save_draft(remark, events, username)
+        ret = sub480_view(remark)
+        ret['message'] = (f'{len(events)}件を下書きとして保存しました。'
+                          f'確定するまで補正には使われません。')
+        ret['warnings'] = warnings
+        return ret
+
+    # 確定は下書きを確定版へ写し、下書きを消す。途中で失敗すると、確定版と
+    # 下書きの両方に同じ内容が残るか、どちらにも無い状態になるので一括で行う
+    with transaction.atomic():
+        draft = com_get_draft(remark)
+
+        remark.parsed_json = com_dump_events(events)
+        remark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED
+        remark.updated_by = username
+        remark.updated_at = timezone.now()
+        update_fields = ['parsed_json', 'parse_status', 'updated_by', 'updated_at']
+
+        # どのAI出力を確定したかを確定版へ写す。下書きが無い（確定版を直して
+        # 確定し直した）ときは、前の値をそのまま残す
+        if draft is not None:
+            remark.parsed_at = draft.parsed_at
+            remark.parsed_model = draft.parsed_model
+            update_fields += ['parsed_at', 'parsed_model']
+
+        remark.save(update_fields=update_fields)
+
+        if draft is not None:
+            draft.delete()
 
     ret = sub480_view(remark)
 
     # 件数を添える。0件で「反映されます」とだけ出すと、何も効かないのに
     # 補正が入ったと受け取れる。
-    if not is_confirm:
-        ret['message'] = f'{len(events)}件を保存しました。確定するまで補正には使われません。'
-    elif events:
+    if events:
         ret['message'] = f'確定しました。{len(events)}件が予測とレポートに反映されます。'
     else:
         ret['message'] = '確定しました。補正するイベントはありません。'
 
     ret['warnings'] = warnings
+    return ret
+
+
+def sub480_discard(request, pTargetMonth, pRemarkCls):
+    """
+    下書きを捨てて確定済みに戻す。
+
+    誤って解析を押したときの戻し方。確定版(tz305)は解析で書き換わらないので、
+    下書きを消せば元どおりになる。
+    """
+    remark = com_get_remark(pTargetMonth, pRemarkCls)
+    if remark is None:
+        return {'remark_success': False, 'err_message': '所見がありません。'}
+
+    discarded = com_discard_draft(remark, getattr(request.user, 'username', '') or '')
+
+    ret = sub480_view(remark)
+    if not discarded:
+        ret['message'] = '破棄する下書きはありませんでした。'
+    elif remark.parse_status == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED:
+        ret['message'] = '下書きを破棄しました。確定済みの内容に戻っています。'
+    else:
+        ret['message'] = '下書きを破棄しました。'
     return ret
 
 
@@ -284,6 +350,10 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
         return sub_fail('所見が入力されていません。先に保存してください。')
 
     remark_text = remark.remark_text
+    # 確定済みがあるかで、解析後の案内を変える。解析は下書きにしか書かないので
+    # 確定版はそのまま予測に使われ続ける。それを知らせないと、確定済みの補正が
+    # 消えたと受け取られる
+    has_confirmed = (remark.parse_status == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED)
     model = pDic.get('model') or None
     username = getattr(request.user, 'username', '') or ''
 
@@ -324,8 +394,10 @@ def sub480_parse_stream(request, pTargetMonth, pRemarkCls, pDic):
 
             sub480_store_parsed(pTargetMonth, pRemarkCls, events, info, username)
 
-            q.put(f'\n解析結果を保存しました（{len(events)}件）。'
+            q.put(f'\n解析結果を下書きとして保存しました（{len(events)}件）。'
                   f'内容を確認して「確定」を押すと補正に使われます。\n')
+            if has_confirmed:
+                q.put('確定するまで、予測には確定済みの内容が使われます。\n')
 
         except RemarkParseError as e:
             q.put(f'\n[エラー] {e}\n')
@@ -446,22 +518,41 @@ def sub480_summary_stream(pTargetMonth, pRemarkCls, pDic):
 
 
 def sub480_store_parsed(pTargetMonth, pRemarkCls, pEvents, pInfo, pUsername):
-    """解析結果を parsed として保存する。別スレッドから呼ばれる"""
+    """
+    解析結果を下書きとして保存する。別スレッドから呼ばれる。
+
+    確定版(tz305)には書かない。以前は tz305 を直接上書きして confirmed を
+    parsed へ戻していたため、確定済みの所見に誤って解析をかけると補正の
+    内容が消え、次の予測からその月の補正が黙って外れていた
+    """
     remark = com_get_remark(pTargetMonth, pRemarkCls)
     if remark is None:
         return
 
-    remark.parsed_json = com_dump_events(pEvents)
-    remark.parsed_at = timezone.now()
-    remark.parsed_model = pInfo['model']
-    remark.parse_status = Tz305MonthlyRemark.PARSE_STATUS_PARSED
-    remark.updated_by = pUsername or remark.updated_by
-    remark.save(update_fields=['parsed_json', 'parsed_at', 'parsed_model',
-                               'parse_status', 'updated_by'])
+    com_save_draft(remark, pEvents, pUsername or remark.updated_by,
+                   pParsedAt=timezone.now(), pParsedModel=pInfo['model'])
+
+
+def sub480_fmt_time(pValue):
+    """日時を画面表示の形にする。無ければ空文字"""
+    return timezone.localtime(pValue).strftime('%Y/%m/%d %H:%M') if pValue else ''
 
 
 def sub480_view(pRemark):
-    """所見を画面へ返す形に整える"""
+    """
+    所見を画面へ返す形に整える。
+
+    確定版(tz305)と下書き(tz306)の両方を返す。補正の表に出すのは、下書きが
+    あれば下書き、無ければ確定版。確定版は「予測に何が使われているか」を
+    見せるために別に返す（下書きがあるときに件数を並べ、内容を見比べられる
+    ようにする）。
+
+    view_state は画面の状態。
+      none            … 確定版も下書きも無い
+      draft           … 下書きだけ（確定版が無い）
+      confirmed       … 確定版だけ
+      confirmed_draft … 確定版と下書きの両方。誤って解析を押すとこの状態になる
+    """
     if pRemark is None:
         return {
             'remark_success': True,
@@ -471,12 +562,42 @@ def sub480_view(pRemark):
             'remark_text': '',
             'grounding': [],
             'parse_status': Tz305MonthlyRemark.PARSE_STATUS_NONE,
+            'view_state': 'none',
+            'has_draft': False,
+            'confirmed_events': [],
             'parsed_at': '', 'parsed_model': '',
             'updated_at': '', 'updated_by': '',
             'events': [],
         }
 
-    events = com_load_events(pRemark)
+    is_confirmed = (pRemark.parse_status == Tz305MonthlyRemark.PARSE_STATUS_CONFIRMED)
+    confirmed_events = com_load_events(pRemark) if is_confirmed else []
+
+    # 下書きは tz306 が正。旧形式（tz305 の未確定の行）も下書きとして見せる
+    draft = com_get_draft(pRemark)
+    if draft is not None:
+        has_draft = True
+        draft_events = com_load_events(draft)
+        parsed_at, parsed_model = draft.parsed_at, draft.parsed_model
+    elif com_is_legacy_draft(pRemark):
+        has_draft = True
+        draft_events = com_load_events(pRemark)
+        parsed_at, parsed_model = pRemark.parsed_at, pRemark.parsed_model
+    else:
+        has_draft = False
+        draft_events = []
+        parsed_at, parsed_model = pRemark.parsed_at, pRemark.parsed_model
+
+    events = draft_events if has_draft else confirmed_events
+
+    if is_confirmed and has_draft:
+        view_state = 'confirmed_draft'
+    elif is_confirmed:
+        view_state = 'confirmed'
+    elif has_draft:
+        view_state = 'draft'
+    else:
+        view_state = 'none'
 
     return {
         'remark_success': True,
@@ -486,11 +607,13 @@ def sub480_view(pRemark):
         # 結果が変わるものを保存すると、古い指摘が残る
         'grounding': com_check_grounding(pRemark.remark_text, events),
         'parse_status': pRemark.parse_status,
-        'parsed_at': (timezone.localtime(pRemark.parsed_at).strftime('%Y/%m/%d %H:%M')
-                      if pRemark.parsed_at else ''),
-        'parsed_model': pRemark.parsed_model or '',
-        'updated_at': (timezone.localtime(pRemark.updated_at).strftime('%Y/%m/%d %H:%M')
-                       if pRemark.updated_at else ''),
+        'view_state': view_state,
+        'has_draft': has_draft,
+        'confirmed_events': confirmed_events,
+        # 解析の日時とモデルは、表に出している内容（下書きがあれば下書き）のもの
+        'parsed_at': sub480_fmt_time(parsed_at),
+        'parsed_model': parsed_model or '',
+        'updated_at': sub480_fmt_time(pRemark.updated_at),
         'updated_by': pRemark.updated_by or '',
         'events': events,
     }

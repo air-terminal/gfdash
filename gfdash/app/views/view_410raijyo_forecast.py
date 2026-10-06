@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 import calendar
 
-from ..models import Ta215Attnd, Tz301AttendanceForecast, Tz302LlmAnalysis
+from ..models import Ta215Attnd, Ta220Memo, Tz301AttendanceForecast, Tz302LlmAnalysis
 from ..models import Tz305MonthlyRemark
 from ..utils.com_remark import EVENT_TYPE_NAMES, com_get_remark, com_load_events
 
@@ -130,6 +130,16 @@ def sub410_get_forecast_data(start_date, end_date, base_date):
         date_list.append(current)
         current += timedelta(days=1)
 
+    # 祝日は X軸ラベルを㈷にして赤く出す（com_setChartLabelColor が㈷を見る）。
+    # 他の画面（101 / 201 など）と同じく ta220 の holiday_flg を正とする。
+    #
+    # この画面は予測期間が複数月にまたがるため、日ごとに引かず範囲で1回だけ引く
+    holiday_days = set(
+        Ta220Memo.objects.filter(
+            business_day__range=[start_date, end_date], holiday_flg=True
+        ).values_list('business_day', flat=True)
+    )
+
     actual_qs = Ta215Attnd.objects.filter(business_day__range=[start_date, end_date])
     actual_dict = {}
     for obj in actual_qs:
@@ -172,10 +182,13 @@ def sub410_get_forecast_data(start_date, end_date, base_date):
     current_month = None
     cur_act_sum = 0
     cur_fcst_sum = 0
-    weekday_names = ['㈪','㈫','㈬','㈭','㈮','㈯','㈰']
+    # 8番目(㈷)は祝日。他の画面と同じ並び
+    weekday_names = ['㈪','㈫','㈬','㈭','㈮','㈯','㈰','㈷']
 
     for d in date_list:
-        labels.append(f"{d.strftime('%m/%d')}{weekday_names[d.weekday()]}")
+        # 祝日は曜日より優先する。土曜の祝日は㈯ではなく㈷（他の画面と同じ扱い）
+        day_index = 7 if d in holiday_days else d.weekday()
+        labels.append(f"{d.strftime('%m/%d')}{weekday_names[day_index]}")
 
         # 月が変わったら累計をリセット
         if current_month != d.month:

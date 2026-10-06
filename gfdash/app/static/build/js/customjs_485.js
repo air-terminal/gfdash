@@ -72,7 +72,9 @@ function sub485_renderList(pRows) {
         html += '<td>' + sub485_escape(r.target_month) + '</td>';
         html += '<td>' + sub485_escape(r.cls_name) + '</td>';
         html += '<td><span class="gf_mnt_state gf_mnt_' + r.parse_status + '">'
-              + sub485_escape(r.status_name) + '</span></td>';
+              + sub485_escape(r.status_name) + '</span>'
+              + (r.has_draft ? '<span class="gf_mnt_state gf_mnt_draft">下書きあり</span>' : '')
+              + '</td>';
         html += '<td class="text-right">' + r.event_count + '</td>';
         html += '<td>' + sub485_escape(r.text_head) + '</td>';
         html += '<td>' + sub485_escape(r.parsed_model) + '</td>';
@@ -117,17 +119,26 @@ function sub485_renderDetail(pRes) {
     $('#detail_header').html(
         sub485_escape(pRes.target_month) + ' ' + sub485_escape(pRes.cls_name)
         + ' <span class="gf_mnt_state gf_mnt_' + pRes.parse_status + '">'
-        + sub485_escape(pRes.status_name) + '</span>');
+        + sub485_escape(pRes.status_name) + '</span>'
+        + (pRes.has_draft ? '<span class="gf_mnt_state gf_mnt_draft">下書きあり</span>' : ''));
 
     // value ではなく要素へ値として入れる。HTMLとして解釈される余地を残さない
     $('#detail_text').text(pRes.remark_text);
     $('#detail_json').val(pRes.parsed_json);
 
-    // 確定済みなら確定ボタンを、未確定なら解除ボタンを落とす。
-    // 現在の状態で押せない操作を残すと、押してから気づくことになる
+    // 編集欄に出ているのが下書きか確定版かを示す。保存は下書きへ書くので、
+    // 確定版を見ているつもりで直すと、確定版が変わったと誤解する
+    $('#detail_json_kind').text(pRes.has_draft
+        ? '― 下書き（確定するまで予測には使われません）'
+        : (pRes.parse_status === 'confirmed' ? '― 確定版' : ''));
+
+    // 現在の状態で押せない操作を落とす。押してから気づくことになるため。
+    // 確定は、未確定か、確定済みでも下書きがあれば押せる（下書きを確定版へ
+    // 写す）。解除は確定済みで下書きが無いときだけ（下書きがあると、確定版を
+    // 下書きへ移すときに作業中の下書きを消してしまう）
     var confirmed = (pRes.parse_status === 'confirmed');
-    $('#btn_mnt_confirm').prop('disabled', confirmed);
-    $('#btn_mnt_unconfirm').prop('disabled', !confirmed);
+    $('#btn_mnt_confirm').prop('disabled', confirmed && !pRes.has_draft);
+    $('#btn_mnt_unconfirm').prop('disabled', !confirmed || pRes.has_draft);
 
     sub485_renderGrounding(pRes.grounding);
 }

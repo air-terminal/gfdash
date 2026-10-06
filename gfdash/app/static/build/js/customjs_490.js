@@ -173,7 +173,8 @@ function sub490_capabilityText() {
 function sub490_startProbe(pNumCtx, pTimeout, pThink, pEffort) {
     var $console = $('#batch_console');
     $console.text('thinking の強さの効きを測定します...\n');
-    $console.append('※ バリデーション処理とエフェクト検証で計7回の生成を行うため、数分かかります。\n');
+    // 生成の回数は構成で変わる（受け付けた強さを1つずつ比べるため）
+    $console.append('※ 受け付けた強さを1つずつ生成して比べるため、数分かかります。\n');
     /* 同時に別の生成が走ると、temperature=0 でも出力が変わる。エフェクト検証は
        同じ強さの2回が一致することを前提に判定するので、判定できなくなる。
        実測で確認済み（単独なら一致するサーバで、横から短い要求を入れると分岐した） */

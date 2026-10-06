@@ -224,9 +224,18 @@
                             {% for m in ollama_models %}
                               <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
                             {% empty %}
-                              <option value="">(Ollamaから取得できませんでした)</option>
+                              <option value="">({{ llm_engine_name }}から取得できませんでした)</option>
                             {% endfor %}
                           </select>
+                          {% if model_mismatch %}
+                          <!-- .env の名前がサーバの一覧に無い。気づかずに .env と違う銘柄で
+                               測定やバッチを動かさないよう、使っている名前を示す -->
+                          <p class="text-warning" style="margin: 4px 0 0; font-size: 12px;">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            .env のモデル名 <code>{{ model_mismatch.env }}</code> はこのサーバにありません。
+                            一覧の <code>{{ model_mismatch.used }}</code> を使っています。
+                          </p>
+                          {% endif %}
                         </div>
                       </div>
                       {% endif %}

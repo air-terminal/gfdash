@@ -29,7 +29,15 @@ PROVIDER_OPENAI = 'openai'
 # thinking の強さ。弱い順に並べる。空文字は「強さを指定しない」。
 # Ollama は think に、OpenAI互換は reasoning_effort に同じ語を送る。
 # 強さを持たない銘柄では無視される（Ollama はエラーにしない）
-THINK_EFFORTS = ('low', 'medium', 'high', 'max')
+#
+# 語彙はサーバと銘柄で揃っていないので、知られている語を全部並べる。
+#   Ollama            … low / medium / high / max
+#   LM Studio         … minimal / low / medium / high / xhigh
+#   vLLM の Qwen3.8   … low / medium / xhigh（無指定は xhigh）
+#   harmony(gpt-oss)  … low / medium / high
+# どれが使えるかは測定（probe_think）が構成ごとに確かめ、画面はその結果だけを
+# 選ばせる。受け付けない値を選べると、実行が 400 で落ちる
+THINK_EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 
 
 def com_think_effort():
@@ -240,7 +248,10 @@ class LlmClientBase:
         強さは丸めずそのまま送る。サーバが実際に accepted にする値を知るための
         測定なので、送る前に読み替えると何を測ったのか分からなくなる。
 
-        戻りは {'ok': accepted か, 'reason': 断られた理由, 'text': 思考+本文}
+        戻りは {'ok': accepted か, 'reason': 断られた理由, 'text': 思考+本文,
+                'think_len': 思考の文字数}
+        思考の文字数を別に返すのは、受け付けても思考を止める強さ（LM Studio の
+        gpt-oss の minimal / xhigh）を見分けるため
         """
         raise NotImplementedError
 
@@ -276,11 +287,12 @@ class LlmClientBase:
         Step A バリデーション処理 … 各強さを1トークンだけ生成させ、400 か 200 かを見る。
             計算のゆらぎに影響されないため、効果が判定できないサーバでも確定する。
 
-        Step B エフェクト検証 … temperature=0・同じ seed で、弱い方を2回と強い方を
-            1回投げる。弱い方どうしが一致しなければ、サーバが決定的でないので
-            判定しない（連続バッチ処理やプレフィックスキャッシュで浮動小数点の
-            計算順序が変わると、temperature=0 でも出力が変わる）。一致していれば、
-            強い方との差の有無がそのまま強さの効果になる。
+        Step B エフェクト検証 … temperature=0・同じ seed で、受け付けた強さの
+            最も弱いものを2回、残りを1回ずつ投げる。弱い方どうしが一致しなければ、
+            サーバが決定的でないので判定しない（連続バッチ処理やプレフィックス
+            キャッシュで浮動小数点の計算順序が変わると、temperature=0 でも出力が
+            変わる）。思考が出なかった強さは選択肢から外し、残りの間で出力が
+            変わるかを強さの効果とする。
 
         `probed` は「測定として成立したか」。モデル名の打ち間違いや接続断で
         何も測れなかったときは False で、呼び出し側は保存しない。
@@ -344,32 +356,57 @@ class LlmClientBase:
             sub_log('比較できる強さが2つ未満のため、エフェクト検証は行いません\n')
             return out
 
-        weak, strong = accepted[0], accepted[-1]
-        sub_log(f'Step B エフェクト検証'
-                f'（temperature=0 / seed=0 固定 / {weak} を2回, {strong} を1回）\n')
+        # 受け付けた強さを1つずつ生成して比べる。両端だけを比べると、途中の値の
+        # 振る舞いが分からない。LM Studio の gpt-oss は minimal と xhigh を受け
+        # 付けるのに思考が0文字になり、両端（minimal と xhigh）だけを比べると
+        # どちらも0文字で「効かない」と誤判定する
+        weak = accepted[0]
+        plan = ([(f'{weak} 1回目', weak), (f'{weak} 2回目', weak)]
+                + [(level, level) for level in accepted[1:]])
+        sub_log(f'Step B エフェクト検証（temperature=0 / seed=0 固定 / '
+                f'{weak} を2回, 残り{len(accepted) - 1}段を各1回）\n')
+
         runs = []
-        for label, level in ((f'{weak} 1回目', weak), (f'{weak} 2回目', weak),
-                             (f'{strong}', strong)):
+        for label, level in plan:
             res = self.sub_probe_call(pModel, level, pNumCtx, pTimeout, PROBE_EFFECT_TOKENS)
             if not res['ok']:
                 out['probe_note'] = ' / '.join(notes + [f'{label} が失敗 ({res["reason"]})'])
                 sub_log(f'  {label}: 失敗 … {res["reason"]}\n')
                 return out
-            runs.append(res['text'])
-            sub_log(f'  {label}: {len(res["text"]):,}文字\n')
+            runs.append((level, res['text'], res['think_len']))
+            sub_log(f'  {label}: {len(res["text"]):,}文字（思考 {res["think_len"]:,}文字）\n')
 
-        notes.append(f'{weak} {len(runs[0]):,}/{len(runs[1]):,}文字, '
-                     f'{strong} {len(runs[2]):,}文字')
-        if runs[0] != runs[1]:
+        # 弱い方の2回目は比較から外す（1回目と同じ値の確認にだけ使う）
+        texts = {runs[0][0]: runs[0][1]}
+        thinks = {runs[0][0]: runs[0][2]}
+        for level, text, think_len in runs[2:]:
+            texts[level] = text
+            thinks[level] = think_len
+
+        # 思考が出なかった強さは選ばせない。受け付けても思考を止める値で、
+        # 強さとして選ぶと「強くしたつもりで思考が消える」ことになる。
+        # 思考を止めたいときは thinking を OFF にすればよい
+        usable = [level for level in accepted if thinks.get(level, 0) > 0]
+        silent = [level for level in accepted if level not in usable]
+        out['effort_values'] = usable
+
+        notes.append(', '.join(
+            f'{level} {len(texts[level]):,}文字(思考{thinks[level]:,})' for level in accepted))
+        if silent:
+            notes.append(f'{"/".join(silent)} は思考が出ないため選択肢から除外')
+
+        if runs[0][1] != runs[1][1]:
             out['effort_status'] = EFFORT_INDETERMINATE
             notes.append(f'{weak} を2回投げて出力が違うため判定不能（サーバが決定的でない）')
-        elif runs[0] == runs[2]:
-            out['effort_status'] = EFFORT_INEFFECTIVE
-            notes.append(f'{weak} と {strong} の出力が完全に一致するため効いていない')
-        else:
+        elif len({texts[level] for level in usable}) >= 2:
             out['effort_status'] = EFFORT_EFFECTIVE
-            notes.append(f'{weak} と {strong} で出力が変わるため効いている')
+            notes.append('思考が出る強さの間で出力が変わるため効いている')
+        else:
+            out['effort_status'] = EFFORT_INEFFECTIVE
+            notes.append('思考が出る強さの出力がすべて一致するため効いていない')
+
         out['probe_note'] = ' / '.join(notes)
+        sub_log(f'選べる強さ: {", ".join(usable) or "なし"}\n')
         sub_log(f'判定: {com_effort_label(out["effort_status"])}\n')
         return out
 
@@ -556,7 +593,9 @@ class OllamaClient(LlmClientBase):
         if not res['ok']:
             return res
         raw = res['data'] or {}
-        res['text'] = (raw.get('thinking') or '') + (raw.get('response') or '')
+        thinking = raw.get('thinking') or ''
+        res['text'] = thinking + (raw.get('response') or '')
+        res['think_len'] = len(thinking)
         return res
 
     def sub_stats(self, pRaw, pStarted):
@@ -602,6 +641,31 @@ class OpenAiClient(LlmClientBase):
     def sub_effort(self, pEffort):
         """OpenAI互換で送れる強さに丸める"""
         return self.EFFORT_ALIASES.get(pEffort, pEffort)
+
+    # 思考を止める強さ。OFF のときに enable_thinking と併せて送る
+    EFFORT_NONE = 'none'
+
+    def sub_post_chat(self, pPayload, pTimeout, pStream):
+        """
+        chat/completions へ送る。OFF に添えた reasoning_effort="none" が
+        400 で拒まれたら、外して1回だけ送り直す。
+
+        harmony 形式（gpt-oss 系）は low / medium / high しか受けず、それ以外は
+        400 にする（max で確認済み）。"none" も拒まれうる。添えたのは OFF を
+        効かせるための補助で、拒まれたからといって生成まで止めるのは過剰。
+        OFF の指示が効かない銘柄でも生成そのものは続ける、という扱いに合わせる
+        """
+        url = f'{self.base_url}/chat/completions'
+        res = requests.post(url, json=pPayload, headers=self.sub_headers(),
+                            timeout=pTimeout, stream=pStream)
+
+        if res.status_code == 400 and pPayload.get('reasoning_effort') == self.EFFORT_NONE:
+            retry = dict(pPayload)
+            retry.pop('reasoning_effort')
+            res.close()
+            res = requests.post(url, json=retry, headers=self.sub_headers(),
+                                timeout=pTimeout, stream=pStream)
+        return res
 
     def __init__(self):
         base = getattr(settings, 'OPENAI_API_BASE', 'http://localhost:8080/v1')
@@ -663,15 +727,20 @@ class OpenAiClient(LlmClientBase):
             if on and effort and param == 'chat_template_kwargs':
                 payload['reasoning_effort'] = effort
 
+            # OFF も reasoning_effort を添えて送る。enable_thinking は Qwen 系の
+            # チャットテンプレートが読む変数で、読まない銘柄では黙って無視される。
+            # LM Studio の gemma4 では enable_thinking の true / false / 指定なしが
+            # 同じ出力になり、OFF の段でも思考していた。LM Studio は
+            # reasoning_effort の "none" を受けて思考を止める
+            if not on and param == 'chat_template_kwargs':
+                payload['reasoning_effort'] = self.EFFORT_NONE
+
         if pStream:
             # 使用トークン数は既定では返らない。明示して受け取る
             payload['stream_options'] = {'include_usage': True}
 
         started = time.time()
-        res = requests.post(
-            f'{self.base_url}/chat/completions', json=payload,
-            headers=self.sub_headers(), timeout=pTimeout, stream=pStream,
-        )
+        res = self.sub_post_chat(payload, pTimeout, pStream)
         res.raise_for_status()
 
         if pStream:
@@ -722,7 +791,9 @@ class OpenAiClient(LlmClientBase):
             return res
         choice = ((res['data'] or {}).get('choices') or [{}])[0]
         message = choice.get('message') or {}
-        res['text'] = sub_reasoning_text(message) + (message.get('content') or '')
+        thinking = sub_reasoning_text(message)
+        res['text'] = thinking + (message.get('content') or '')
+        res['think_len'] = len(thinking)
         return res
 
     def sub_read_stream(self, pResponse, pOnText, pOnThink):

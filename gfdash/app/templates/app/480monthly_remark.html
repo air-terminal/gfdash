@@ -18,6 +18,15 @@
     .gf_rmk_none      { background-color: #95A5A6; }
     .gf_rmk_parsed    { background-color: #E67E22; }
     .gf_rmk_confirmed { background-color: #1ABB9C; }
+    /* 確定版と下書きの両方がある。確定版は予測に使われているが、確定待ちの
+       下書きがあることを目立たせる。誤って解析を押すとこの状態になる */
+    .gf_rmk_confirmed_draft { background-color: #E67E22; }
+
+    /* 下書きがあるときの案内。予測に何が使われているかを伝える場所 */
+    #remark_draft_banner {
+      margin-bottom: 12px; padding: 8px 12px; border-radius: 3px;
+      background-color: #FCF3E6; border: 1px solid #F0C08A; color: #8A5A1A;
+    }
     /* テーマの .x_title span が薄い灰色を当てるため、見出し内では打ち消す */
     .x_title .gf_rmk_badge { color: #fff; }
 
@@ -277,6 +286,11 @@
             <div class="clearfix"></div>
           </div>
           <div class="x_content">
+            <!-- 確定版と下書きの両方があるときだけ出す。予測に使われているのは
+                 確定版のほうだと伝えないと、解析した時点で補正が置き換わったと
+                 受け取られる -->
+            <div id="remark_draft_banner" style="display: none;"></div>
+
             <!-- 追加と確定はこの表に対する操作なので、表と同じ枠に置く。
                  上の枠に並べると、どの内容に対する操作なのかが読み取れない -->
             <div style="margin-bottom: 12px;">
@@ -285,7 +299,14 @@
               </button>
               <span class="gf_rmk_arrow">→</span>
               <button type="button" class="btn btn-success" id="btn_remark_confirm" onclick="btnRemarkConfirm()" disabled>
-                <span class="gf_rmk_step">3</span><i class="fa-solid fa-check"></i> 確定
+                <span class="gf_rmk_step">3</span><i class="fa-solid fa-check"></i>
+                <span id="btn_remark_confirm_label">確定</span>
+              </button>
+              <!-- 下書きがあるときだけ出す。誤って解析を押したときの戻し方 -->
+              <button type="button" class="btn btn-warning" id="btn_remark_discard"
+                      onclick="btnRemarkDiscard()" style="display: none;">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span id="btn_remark_discard_label">破棄して確定済みに戻す</span>
               </button>
               <span class="text-muted" id="remark_hint2" style="margin-left: 10px;"></span>
             </div>

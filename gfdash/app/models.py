@@ -331,6 +331,10 @@ class Tz305MonthlyRemark(models.Model):
     parsed_json に置く。予測とレポートが読むのは parsed_json だけ。
     LLM で解析しても画面から手で組み立てても同じ形になり、推論エンジンの
     無い環境でも同じ経路で補正が効く。
+
+    この表は確定版だけを持つ。AIの解析結果や確定前の編集内容は
+    Tz306MonthlyRemarkDraft に置き、確定したときだけここへ写す。
+    PARSE_STATUS_PARSED は、その分離より前に保存された行にだけ残る。
     """
 
     REMARK_CLS_FORECAST = 'forecast'
@@ -356,6 +360,34 @@ class Tz305MonthlyRemark(models.Model):
         unique_together = (('target_month', 'remark_cls'),)
         verbose_name = "月次所見"
         verbose_name_plural = "月次所見"
+
+class Tz306MonthlyRemarkDraft(models.Model):
+    """
+    月次所見の下書き。AIの解析結果や、確定前に保存した補正の編集内容を置く。
+
+    予測とレポートはこの表を読まない。確定すると tz305 へ写してこの行を消し、
+    破棄するとこの行だけを消す。確定版(tz305)と分けて持つのは、確定済みの
+    補正を未確定の操作で壊さないため。
+
+    状態の列は持たない。行があること自体が「未確定の下書きがある」ことを表す。
+    """
+
+    # 所見1件につき下書きは高々1件。所見を消したら下書きも消える
+    # （DDL 側にも ON DELETE CASCADE がある）
+    remark = models.OneToOneField(
+        Tz305MonthlyRemark, on_delete=models.CASCADE, db_column='remark_id',
+        related_name='draft', verbose_name="所見")
+    parsed_json = models.TextField(verbose_name="下書きのイベント")
+    parsed_at = models.DateTimeField(blank=True, null=True, verbose_name="解析日時")
+    parsed_model = models.CharField(max_length=100, blank=True, null=True, verbose_name="解析モデル")
+    updated_by = models.CharField(max_length=150, blank=True, null=True, verbose_name="更新者")
+    updated_at = models.DateTimeField(verbose_name="更新日時")
+
+    class Meta:
+        managed = False
+        db_table = 'tz306_monthly_remark_draft'
+        verbose_name = "月次所見の下書き"
+        verbose_name_plural = "月次所見の下書き"
 
 class Tz310AiRun(models.Model):
     """
