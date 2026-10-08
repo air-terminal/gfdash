@@ -405,14 +405,14 @@ thinking の強さ（`low` / `medium` / `high` / `max`）は、**推論エンジ
 | `model_name` | モデル名 | VARCHAR(200) | NOT NULL / **UQ** | - | |
 | `model_digest` | モデルのダイジェスト | VARCHAR(80) | NOT NULL | `''` | Ollama のみ。同名タグの入れ替わりを検知して再測定を促す |
 | `think_supported` | thinking の可否 | BOOLEAN | NOT NULL | `false` | thinking 自体を切り替えられるか |
-| `effort_status` | 強さの判定 | VARCHAR(20) | NOT NULL | `'unknown'` | `unknown` 未測定 / `effective` 効く / `ineffective` 効かない / `indeterminate` 判定不能 |
-| `effort_values` | 送れる強さ | JSONB | NOT NULL | `'[]'` | 400 にならなかった値の配列（例 `["low","medium","high"]`） |
+| `effort_status` | 強さの判定 | VARCHAR(20) | NOT NULL | `'unknown'` | `unknown` 未測定・比較できる強さが足りない / `effective` 効く / `ineffective` 効かない / `indeterminate` 判定不能 |
+| `effort_values` | 送れる強さ | JSONB | NOT NULL | `'[]'` | 選択肢にする値の配列（例 `["low","medium","high"]`）。決まり方は下記 |
 | `probe_note` | 判定の根拠 | TEXT | NOT NULL | `''` | 比較した文字数など。後から結果を疑えるように残す |
 | `last_engine` | 最後のエンジン | VARCHAR(20) | NOT NULL | `''` | `staged` / `single` / `forecast`。**違うときは復元しない** |
 | `last_num_ctx` | 最後のnum_ctx | INT | | - | |
 | `last_timeout` | 最後のタイムアウト | INT | | - | 秒 |
 | `last_think` | 最後のthinking | BOOLEAN | | - | |
-| `last_effort` | 最後の強さ | VARCHAR(10) | NOT NULL | `''` | |
+| `last_effort` | 最後の強さ | VARCHAR(10) | NOT NULL | `''` | 1つにまとめた値は代表の名前で残す（`max` → `high` など） |
 | `measured_at` | 実測日時 | TIMESTAMPTZ | | - | |
 | `input_date` | データ入力日 | DATE | NOT NULL | `CURRENT_DATE` | |
 
@@ -422,8 +422,15 @@ thinking の強さ（`low` / `medium` / `high` / `max`）は、**推論エンジ
 （連続バッチ処理やプレフィックスキャッシュで浮動小数点の計算順序が変わる）。
 サーバ側の起動条件でしか改善できないため、状態として記録するだけにしています。
 
-`effort_values` は判定とは独立に決まります。400 か 200 かは計算のゆらぎに影響され
-ないので、判定できないサーバでも「この値は送れない」は確定します。
+`effort_values` は次の順に絞り込まれます。
+
+1. 400 にならなかった値（バリデーション処理）。400 か 200 かは計算のゆらぎに影響され
+   ないので、判定できないサーバでも「この値は送れない」は確定します
+2. エフェクト検証まで進んだ場合は、思考が出なかった値を外します
+3. 効くと判定した場合は、出力が完全に同じになった値を1つにまとめ、`medium` に近い方の
+   名前を残します。距離が同じなら強い方を残します（Qwen3.8 を Ollama で測ると `high` と
+   `max` が同じ出力になり `high` が、LM Studio で測ると `minimal` と `low` が同じ出力に
+   なり `low` が残る）
 
 ---
 

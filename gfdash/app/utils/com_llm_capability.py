@@ -42,8 +42,9 @@ def com_capability_view(pClient, pModel):
     """
     画面へ渡す形。行が無くても同じ形を返し、テンプレート側に分岐を作らせない。
 
-    effort_values は「そのサーバで accepted になった強さ」で、スライダーの
+    effort_values は「そのサーバで accepted になり、思考が出た強さ」で、スライダーの
     選択肢をこれに絞る。not accepted の値を選ばせると実行が 400 で落ちる。
+    出力が同じになる強さは測定時に1つにまとめてある（probe_think）。
     """
     row = com_get_capability(pClient, pModel)
     if row is None:
@@ -99,7 +100,13 @@ def com_save_capability(pClient, pModel, pProbe, pParams):
 
     能力と設定値は独立に扱う。判定不能（サーバが決定的でない）でも、
     accepted な強さと設定値は確定しているので残す。
+
+    最後の強さは、測定でまとめた代表の綴りに置き換えて残す。ダイアログで max を
+    選んだまま測ると、max が選択肢から外れた（high にまとめた）ときに一致する
+    値が無くなり、次回の画面で強さが復元されない。
     """
+    effort = pParams.get('effort') or ''
+    effort = (pProbe.get('effort_aliases') or {}).get(effort, effort)
     values = {
         'model_digest': (pClient.model_digest(pModel) or '')[:80],
         'think_supported': bool(pProbe.get('think_supported')),
@@ -110,7 +117,7 @@ def com_save_capability(pClient, pModel, pProbe, pParams):
         'last_num_ctx': pParams.get('num_ctx'),
         'last_timeout': pParams.get('timeout'),
         'last_think': pParams.get('think'),
-        'last_effort': (pParams.get('effort') or '')[:10],
+        'last_effort': effort[:10],
         'measured_at': timezone.now(),
     }
     row, _created = Tz391LlmCapability.objects.update_or_create(

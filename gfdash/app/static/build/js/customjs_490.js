@@ -75,7 +75,8 @@ var LLM_CTX_MAX = 65536;
 var LLM_CTX_STEP = 4096;
 
 // 測定で accepted になった強さだけを選ばせる。
-// not accepted の値を選べると、実行が 400 で落ちる
+// not accepted の値を選べると、実行が 400 で落ちる。
+// 出力が同じになる強さ（Qwen3.8 の high と max など）は、測定時に1つにまとめてある
 function sub490_availableEfforts() {
     var values = (gLlmCapability && gLlmCapability.effort_values) || [];
     var out = [];

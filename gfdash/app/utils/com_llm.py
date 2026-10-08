@@ -40,6 +40,25 @@ PROVIDER_OPENAI = 'openai'
 THINK_EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 
 
+def sub_effort_center_key(pLevel):
+    """
+    同じ出力にまとめた強さから、代表を選ぶための並べ替えキー（min で使う）。
+
+    medium に最も近い名前を残し、距離が同じなら強い方を残す。
+
+    両端の名前ほど意味が強く、サーバによって解釈がばらつく。minimal は
+    Strata では思考 OFF、LM Studio では low と同じだった。max は Ollama では
+    xhigh、harmony 形式では 400 になる。同じ出力なら、意味を誇張しない
+    中央寄りの名前を残す（minimal = low は low、high = max は high）。
+
+    距離が同じとき強い方にするのは、知らない値が飛び込む先がたいてい既定の段で、
+    Qwen3.8 の既定は xhigh だから。minimal = xhigh = max の段に minimal と
+    名付けないため
+    """
+    index = THINK_EFFORTS.index(pLevel)
+    return (abs(index - THINK_EFFORTS.index('medium')), -index)
+
+
 def com_think_effort():
     """設定された thinking の強さ。未設定・未知の値なら空（強さを指定しない）"""
     value = (getattr(settings, 'LLM_THINK_EFFORT', '') or '').strip().lower()
@@ -292,7 +311,10 @@ class LlmClientBase:
             サーバが決定的でないので判定しない（連続バッチ処理やプレフィックス
             キャッシュで浮動小数点の計算順序が変わると、temperature=0 でも出力が
             変わる）。思考が出なかった強さは選択肢から外し、残りの間で出力が
-            変わるかを強さの効果とする。
+            変わるかを強さの効果とする。効く場合、出力が完全に一致する強さは
+            medium に最も近い綴りにまとめ（sub_effort_center_key）、`effort_values`
+            には代表だけを残す。まとめた対応は `effort_aliases`
+            （{まとめられた綴り: 代表}）で返す。
 
         `probed` は「測定として成立したか」。モデル名の打ち間違いや接続断で
         何も測れなかったときは False で、呼び出し側は保存しない。
@@ -307,6 +329,7 @@ class LlmClientBase:
             'think_supported': False,
             'effort_status': EFFORT_UNKNOWN,
             'effort_values': [],
+            'effort_aliases': {},
             'probe_note': '',
         }
         available = self.sub_think_available(pModel)
@@ -398,15 +421,44 @@ class LlmClientBase:
         if runs[0][1] != runs[1][1]:
             out['effort_status'] = EFFORT_INDETERMINATE
             notes.append(f'{weak} を2回投げて出力が違うため判定不能（サーバが決定的でない）')
+        elif len(usable) < 2:
+            # 比べる相手がいない。「効かない」と記録すると、測れていないのに
+            # 欄が畳まれ「指定しても変わらない」と出る。accepted が2つ未満の
+            # ときと同じく、判定せずに終える
+            notes.append('思考が出る強さが2つ未満のため比較できず')
         elif len({texts[level] for level in usable}) >= 2:
             out['effort_status'] = EFFORT_EFFECTIVE
             notes.append('思考が出る強さの間で出力が変わるため効いている')
+
+            # 出力が完全に一致する強さは同じ段にまとめる。サーバやテンプレートが
+            # 別名として読み替えると、綴りは違ってもモデルへの入力が同じになる
+            # （Ollama の Qwen3.8 は high と max を、LM Studio は minimal と low を
+            # 同じ入力にする）。両方を選ばせると、変えたつもりで何も変わらない。
+            # 代表の選び方は sub_effort_center_key
+            groups = {}
+            for level in usable:
+                groups.setdefault(texts[level], []).append(level)
+            aliases = {}
+            merged = []
+            for members in groups.values():
+                if len(members) < 2:
+                    continue
+                rep = min(members, key=sub_effort_center_key)
+                for level in members:
+                    if level != rep:
+                        aliases[level] = rep
+                merged.append(f'{" = ".join(members)} は {rep}')
+            if aliases:
+                out['effort_values'] = [level for level in usable if level not in aliases]
+                out['effort_aliases'] = aliases
+                notes.append(f'出力が一致するため {" / ".join(merged)} にまとめる'
+                             '（medium に近い名前を残す）')
         else:
             out['effort_status'] = EFFORT_INEFFECTIVE
             notes.append('思考が出る強さの出力がすべて一致するため効いていない')
 
         out['probe_note'] = ' / '.join(notes)
-        sub_log(f'選べる強さ: {", ".join(usable) or "なし"}\n')
+        sub_log(f'選べる強さ: {", ".join(out["effort_values"]) or "なし"}\n')
         sub_log(f'判定: {com_effort_label(out["effort_status"])}\n')
         return out
 
