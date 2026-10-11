@@ -23,19 +23,19 @@
     <div class="row gf_tile" style="display: inline-block;" >
       <div class="tile_count">
 
-        <div class="{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
+        <div class="{% if user_level >= 1 or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
           <span class="count_top"><i class="fa fa-user"></i> 月来場者数</span>
           <div class="count txt011"></div> 
           <span class="count_bottom">前年比  <span class="txt111"></span></span>
         </div>
         
-        <div class="{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
+        <div class="{% if user_level >= 1 or is_sample_mode %}col-md-3 col-sm-3 col-xs-6{% else %}col-md-6 col-sm-6 col-xs-12{% endif %} tile_stats_count">
           <span class="count_top"><i class="fa fa-user"></i> 平均来場者数</span>
           <div class="count txt012"></div> 
           <span class="count_bottom">前年比  <span class="txt112"></span></span>
         </div>
 
-{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}
+{% if user_level >= 1 or is_sample_mode %}
         <div class="col-md-3 col-sm-3 col-xs-6  tile_stats_count">
           <span class="count_top"><i class="fa fa-signal"></i> 月売上合計</span>
           <div class="count txt013" data-length="medium"></div> 
@@ -70,7 +70,7 @@
 
             <!-- 右側：操作ボタン群（ここに入っている要素がすべて1行に並びます） -->
             <div class="gf_header_controls">
-{% if request.user.is_superuser or request.user.groups.all.0.name == 'Manager' or is_sample_mode %}
+{% if user_level >= 1 or is_sample_mode %}
               <div id="toggleBtn" class="btn-group" data-toggle="buttons">
                 <label class="btn btn-default" data-toggle-class="btn-primary" data-toggle-passive-class="btn-default">
                   <input type="radio" name="chart_mode" value="raijyo" onchange="btnToggleChartMode()" checked>来場者

@@ -50,6 +50,7 @@ class BaseSystemConfig:
         '920permission_config.html': '画面の権限設定',
     #データメンテナンス系
         '990attendance_upload.html': '来場者数アップロード',
+        '991ai_data_transfer.html': 'AI関連データの書き出し・取り込み',
     }
 
     # 画面グループの区切り。権限設定画面(920)の一覧を見出しで分けるために使う。
@@ -91,6 +92,20 @@ class BaseSystemConfig:
         '920permission_config.html': 2,
     }
 
+    # デモンストレーションモードで許す POST の操作（getMode）。読み取りだけを並べる。
+    #
+    # デモは誰でも触れるので、DB を書き換えさせない。ここに載せた画面は、載せた
+    # 操作以外の POST をすべて拒否する（既定で拒否）。書き込みの操作を足しても、
+    # ここへ足さない限りデモでは動かない。
+    # 載っていない画面は、これまでどおり POST を通す。1xx〜3xx・410・415 などの
+    # POST は読み取りだけのため。**更新のある画面を作ったら、必ずここに載せること。**
+    # メンテナンス系(9xx)は画面ごと拒否されるので載せなくてよい。
+    SAMPLE_MODE_READ_MODES = {
+        '480monthly_remark.html': {'get', 'status', 'check'},
+        '485remark_maintenance.html': {'list', 'detail'},
+        '490ai_batch_run.html': {'data_status', 'capability'},
+    }
+
     @classmethod
     def get_default_permission_level(cls, template_name):
         """tz910_permission に定義が無い画面の既定権限レベルを返す"""
@@ -119,6 +134,8 @@ class BaseSystemConfig:
             '920permission_config.html': getattr(views_module, 'get920_main', None),
             # 取り込める列の一覧を画面に出すため、GET でコンテキストを渡す
             '990attendance_upload.html': getattr(views_module, 'get990_main', None),
+            # 書き出しの期間の初期値（所見がある範囲）を渡す
+            '991ai_data_transfer.html': getattr(views_module, 'get991_main', None),
         }
 
     @classmethod
@@ -154,4 +171,5 @@ class BaseSystemConfig:
             '913holiday_calendar.html': getattr(views_module, 'post913_main', None),
             '920permission_config.html': getattr(views_module, 'post920_main', None),
             '990attendance_upload.html': getattr(views_module, 'post990_main', None),
+            '991ai_data_transfer.html': getattr(views_module, 'post991_main', None),
         }

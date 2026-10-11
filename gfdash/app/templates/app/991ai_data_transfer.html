@@ -1,0 +1,129 @@
+{% extends "app/base_site.html" %}
+
+{% block stylesheets %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <link href="/static/vendors/dropzone/dist/min/dropzone.min.css" rel="stylesheet">
+  <!-- sweetalert2.js -->
+  <link href="/static/gf_vendors/sweetalert2/dist/sweetalert2.min.css" rel="stylesheet">
+  <style>
+    .gf_991_form .form-control { display: inline-block; width: auto; }
+    .gf_991_form label { font-weight: normal; margin-right: 6px; }
+    #plan_table th, #plan_table td { vertical-align: middle; font-size: 13px; }
+    #plan_table .gf_991_check { width: 1%; white-space: nowrap; text-align: center; }
+    #plan_table .gf_991_note { font-size: 12px; }
+    .gf_991_judge { display: inline-block; min-width: 4em; text-align: center; }
+  </style>
+{% endblock stylesheets %}
+
+{% block content %}
+  <div class="right_col" role="main">
+    <div class="">
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-file-export"></i> 書き出し</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content gf_991_form">
+              <p>
+                月次所見を JSON ファイルに書き出します。別の環境の「取り込み」で読み込めます。
+                <span class="text-muted">（登録済み {{ remark_count }}件）</span>
+              </p>
+              <p>
+                <label>期間</label>
+                <input type="month" id="export_from" class="form-control input-sm" value="{{ first_month }}">
+                〜
+                <input type="month" id="export_to" class="form-control input-sm" value="{{ last_month }}">
+                <label style="margin-left: 20px;">区分</label>
+                <select id="export_cls" class="form-control input-sm">
+                  <option value="">両方</option>
+                  {% for value, name in remark_classes %}
+                    <option value="{{ value }}">{{ name }}</option>
+                  {% endfor %}
+                </select>
+                <button id="btn_export" class="btn btn-primary btn-sm" type="button" onclick="btnExport()" style="margin-left: 20px;">
+                  <i class="fa-solid fa-download"></i> 書き出す
+                </button>
+              </p>
+              <p class="text-muted" style="margin-bottom: 0;">
+                期間を空にすると端を区切りません。確定していない所見は本文だけを書き出し、
+                下書きと更新者は書き出しません。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+            <div class="x_title">
+              <h2><i class="fa-solid fa-file-import"></i> 取り込み</h2>
+              <div class="clearfix"></div>
+            </div>
+            <div class="x_content">
+              <p>書き出したファイルを下の枠内にドラッグアンドドロップするか、クリックしてファイルを選択してください。</p>
+
+              <form method="post" enctype="multipart/form-data" class="dropzone clsbox" id="myDropzone">
+                <div class="fallback">
+                  <input id="file" name="file" type="file" />
+                </div>
+              </form>
+
+              <div class="ln_solid"></div>
+              <div class="form-group">
+                <button id="btn_plan" class="btn btn-info" type="button" onclick="btnPlan()">内容を確認</button>
+                <button id="btn_cancel" class="btn btn-default" type="button" onclick="btnCancel()">クリア</button>
+              </div>
+
+              <!-- 確認一覧。「内容を確認」を押すまで出さない -->
+              <div id="plan_wrap" style="display: none;">
+                <p id="plan_summary"></p>
+                <table class="table table-condensed table-hover" id="plan_table">
+                  <thead>
+                    <tr>
+                      <th class="gf_991_check">
+                        <!-- 既にある行のチェックをまとめて入れる・外す -->
+                        <label style="margin: 0; font-weight: normal;">
+                          <input type="checkbox" id="chk_overwrite_all" onclick="chkOverwriteAll(this)"> 上書き
+                        </label>
+                      </th>
+                      <th>対象月</th>
+                      <th>区分</th>
+                      <th>判定</th>
+                      <th>イベント</th>
+                      <th>備考</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+                <div class="form-group">
+                  <button id="btn_import" class="btn btn-success" type="button" onclick="btnImport()">取り込む</button>
+                </div>
+                <p class="text-muted">
+                  既にある月は、チェックを入れた行だけを上書きします。上書きした月の下書きは破棄します。
+                  誤りのある行が1件でもあると取り込めません。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+  {{ block.super }}
+  <!-- Dropzone.js -->
+  <script src="/static/vendors/dropzone/dist/min/dropzone.min.js"></script>
+
+  <!-- sweetalert2.js -->
+  <script src="/static/gf_vendors/sweetalert2/dist/sweetalert2.all.min.js"></script>
+
+  <!-- 991ai_data_transfer専用javascriptの宣言 -->
+  <script src="/static/build/js/customjs_991.js"></script>
+
+{% endblock javascripts %}

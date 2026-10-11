@@ -17,6 +17,7 @@ AI予測・レポートのコマンド（`run_forecast` / `run_llm_analysis` /
 | [`get_daily_weather`](#天候情報の取得) | 気象庁から天候情報を取得する |
 | [`import_attendance`](#来場者数の取り込み) | 来場者数のCSVを取り込む |
 | [`import_holiday2` / `export_holiday2`](#第2休日カレンダーの取り込み書き出し) | 第2休日カレンダーの取り込み・書き出し |
+| [`export_ai_data` / `import_ai_data`](#ai関連データの書き出し取り込み) | 月次所見の書き出し・取り込み（環境の間で持ち回す） |
 | [`gen_weather_station_master`](#気象観測地点マスタの再生成通常は不要) | 気象観測地点マスタを再生成する（通常は不要） |
 
 ---
@@ -184,6 +185,40 @@ Note: 複数の環境で同じカレンダーを使う場合、書き出したCS
 > ためと考えられます。
 >
 > 登録データ自体は無効のままでも保持され、画面表示には使われます。
+
+---
+
+## AI関連データの書き出し・取り込み
+
+月次所見（予測所見・レビュー所見）を JSON ファイルに書き出し、別の環境へ取り込みます。
+開発用の PC と本番機のあいだなど、所見を持ち回すときに使います。
+
+画面から行う場合は、**「メンテナンス」→「AI関連データの書き出し・取り込み」**（991）を
+開いてください。既定では Admin だけが使えます。
+
+```bash
+python manage.py export_ai_data --output ai_data.json
+python manage.py export_ai_data --from 2026-01 --to 2026-06 --cls forecast --output ai_data.json
+
+python manage.py import_ai_data ai_data.json --dry-run
+python manage.py import_ai_data ai_data.json
+python manage.py import_ai_data ai_data.json --overwrite-month 2026-09:forecast
+python manage.py import_ai_data ai_data.json --overwrite
+```
+
+| 項目 | 扱い |
+| :--- | :--- |
+| 書き出す内容 | 確定版の所見（本文・イベント・解析モデル）。確定していない所見は本文だけ |
+| 書き出さない内容 | 下書き、更新者。更新者は個人名のことがあり、他の環境へ持ち出さないため |
+| 既にある月 | **既定では上書きしません。** 画面では行ごとのチェック（一括のチェックあり）、コマンドでは `--overwrite-month` / `--overwrite` で指定した月だけを上書きします |
+| 上書きした月の下書き | 破棄します。古い内容を元にした下書きで、取り込んだ内容を戻せてしまうためです |
+| 誤りのある行 | 1件でもあれば、取り込みを行いません。一部だけ入るのを防ぐためです |
+
+取り込む予測所見の確定版は、「月次所見入力」（480）で確定するときと同じ検査を通します
+（根拠の入力、期間限定のイベントの終了日など）。画面から確定できない内容は、
+取り込みでも確定版になりません。
+
+Note: AI の実行履歴（予測・レポートの履歴）はまだ対象外です。
 
 ---
 

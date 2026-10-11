@@ -159,6 +159,12 @@
 
 {% block content %}
   <div class="right_col" role="main">
+
+    <!-- デモンストレーションモードの案内（base_site の .gf_sample_mode のときだけ出る） -->
+    <div class="alert alert-info gf_sample_notice" style="margin: 10px 0;">
+      <i class="fa-solid fa-circle-info"></i>
+      デモンストレーションモードのため、所見の保存・確定・削除などの変更はできません。登録済みの内容をご覧いただけます。
+    </div>
     <div class="row">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">
@@ -227,7 +233,7 @@
                    手順の外側に置いているのは、下書きの材料を作る補助であって
                    保存→解析→確定の流れの一段ではないため。
                    レビュー所見でだけ押せる（title と disabled は JS が区分に合わせて設定） -->
-              <button type="button" class="btn btn-default btn-sm" id="btn_remark_summary"
+              <button type="button" class="btn btn-default btn-sm gf_write" id="btn_remark_summary"
                       onclick="btnRemarkSummary()" disabled>
                 <i class="fa-solid fa-list-check"></i> 日次備考から下書き
               </button>
@@ -240,11 +246,11 @@
                  解析はサーバに保存済みの本文を読むため、編集したまま解析させると
                  前の本文が解析されるという実務上の理由もある -->
             <div style="margin-top: 10px;">
-              <button type="button" class="btn btn-primary" id="btn_remark_save" onclick="btnRemarkSave()" disabled>
+              <button type="button" class="btn btn-primary gf_write" id="btn_remark_save" onclick="btnRemarkSave()" disabled>
                 <span class="gf_rmk_step">1</span><i class="fa-solid fa-floppy-disk"></i> 所見を保存
               </button>
               <span class="gf_rmk_arrow gf_rmk_only_forecast">→</span>
-              <button type="button" class="btn btn-info gf_rmk_only_forecast" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
+              <button type="button" class="btn btn-info gf_rmk_only_forecast gf_write" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
                 <span class="gf_rmk_step">2</span><i class="fa-solid fa-wand-magic-sparkles"></i> AIで解析
               </button>
               <span class="text-muted gf_rmk_only_forecast">または</span>
@@ -252,13 +258,13 @@
               <!-- レビュー所見は本文だけなので、確定を保存の隣に置く。
                    予測所見の確定は補正の表に対する操作なので、表の枠にある -->
               <span class="gf_rmk_arrow gf_rmk_only_review" style="display: none;">→</span>
-              <button type="button" class="btn btn-success gf_rmk_only_review" id="btn_remark_confirm_text"
+              <button type="button" class="btn btn-success gf_rmk_only_review gf_write" id="btn_remark_confirm_text"
                       onclick="btnRemarkConfirm()" style="display: none;" disabled>
                 <span class="gf_rmk_step">2</span><i class="fa-solid fa-check"></i> 確定
               </button>
 
               <!-- 削除は手順の流れから外れる操作なので、間隔を空けて右に置く -->
-              <button type="button" class="btn btn-danger" id="btn_remark_delete"
+              <button type="button" class="btn btn-danger gf_write" id="btn_remark_delete"
                       onclick="btnRemarkDelete()" style="margin-left: 30px;" disabled>
                 <i class="fa-solid fa-trash"></i> 所見削除
               </button>
@@ -294,16 +300,16 @@
             <!-- 追加と確定はこの表に対する操作なので、表と同じ枠に置く。
                  上の枠に並べると、どの内容に対する操作なのかが読み取れない -->
             <div style="margin-bottom: 12px;">
-              <button type="button" class="btn btn-default" id="btn_remark_add" onclick="btnRemarkAddEvent()" disabled>
+              <button type="button" class="btn btn-default gf_write" id="btn_remark_add" onclick="btnRemarkAddEvent()" disabled>
                 <span class="gf_rmk_step gf_rmk_step_dark">2</span><i class="fa-solid fa-plus"></i> 手で追加
               </button>
               <span class="gf_rmk_arrow">→</span>
-              <button type="button" class="btn btn-success" id="btn_remark_confirm" onclick="btnRemarkConfirm()" disabled>
+              <button type="button" class="btn btn-success gf_write" id="btn_remark_confirm" onclick="btnRemarkConfirm()" disabled>
                 <span class="gf_rmk_step">3</span><i class="fa-solid fa-check"></i>
                 <span id="btn_remark_confirm_label">確定</span>
               </button>
               <!-- 下書きがあるときだけ出す。誤って解析を押したときの戻し方 -->
-              <button type="button" class="btn btn-warning" id="btn_remark_discard"
+              <button type="button" class="btn btn-warning gf_write" id="btn_remark_discard"
                       onclick="btnRemarkDiscard()" style="display: none;">
                 <i class="fa-solid fa-rotate-left"></i>
                 <span id="btn_remark_discard_label">破棄して確定済みに戻す</span>

@@ -30,3 +30,4 @@ from .view_913holiday_calendar import get913_main,post913_main
 from .view_920permission_config import get920_main,post920_main
 from .view_990attendance_upload import get990_main
 from .view_990attendance_upload import post990_main
+from .view_991ai_data_transfer import get991_main,post991_main

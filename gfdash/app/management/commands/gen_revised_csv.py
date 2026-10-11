@@ -1,27 +1,68 @@
 import csv
 import os
 import random
-from datetime import datetime, timedelta, date
-from django.core.management.base import BaseCommand
-from django.conf import settings
+from datetime import date, datetime, timedelta
+
+from django.core.management.base import BaseCommand, CommandError
+
+from app.utils.com_demo_scenario import (
+    DEFAULT_HOLIDAY2_PATH, DEFAULT_SCENARIO_PATH, HOLIDAY2_HOLIDAY, HOLIDAY2_WORKDAY,
+    com_day_effect, com_jp_holidays, com_load_scenario, com_read_demo_weather,
+    com_read_holiday2_days, com_weather_factor,
+)
+
 
 class Command(BaseCommand):
-    help = '祝日と休業日の整合性を修正した最終版デモ用CSVを生成します'
+    help = ('デモ用の来場者・売上・休日のCSVを生成します。'
+            'シナリオ（demo_data/scenario.json）の出来事と、第2休日カレンダーの効果を含みます')
+
+    def add_arguments(self, parser):
+        parser.add_argument('--start', type=str, default=None,
+                            help='最初の日 (YYYY-MM-DD。既定: シナリオの period.start_date)')
+        parser.add_argument('--end', type=str, default=None,
+                            help='最後の日 (YYYY-MM-DD。既定: シナリオの period.end_date)')
+        parser.add_argument('--scenario', type=str, default=str(DEFAULT_SCENARIO_PATH),
+                            help='シナリオのファイル（既定: demo_data/scenario.json）')
+        parser.add_argument('--holiday2', type=str, default=str(DEFAULT_HOLIDAY2_PATH),
+                            help='第2休日カレンダーのCSV（既定: demo_data/calendar/holiday2_demo.csv）')
+        parser.add_argument('--outdir', type=str, default='.',
+                            help='CSVの出力先（既定: カレントディレクトリ）')
 
     def handle(self, *args, **options):
-        start_date = date(2019, 1, 1)
-        end_date = date(2026, 3, 10)
-        
-        # 1. 祝日データの読み込み
-        holiday_path = os.path.join(settings.BASE_DIR, 'ta220all_gf.csv')
-        holiday_set = set()
-        if os.path.exists(holiday_path):
-            with open(holiday_path, mode='r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if row['holiday_flg'] == 't':
-                        holiday_set.add(row['business_day'])
-            self.stdout.write(self.style.SUCCESS(f'祝日マスターを読み込みました。'))
+        try:
+            scenario = com_load_scenario(options['scenario'])
+        except (OSError, ValueError, KeyError) as e:
+            raise CommandError(f'シナリオを読めません: {e}')
+
+        # 期間の既定はシナリオに持たせる。実行した日から決めると、同梱の
+        # 天候データ（決まった日まで）とデータの期間がずれる
+        period = scenario.get('period') or {}
+        start_date = self.sub_date(options['start'] or period.get('start_date') or '2019-01-01', '--start')
+        end_text = options['end'] or period.get('end_date')
+        if not end_text:
+            raise CommandError('最後の日がありません。--end か、シナリオの period.end_date を指定してください。')
+        end_date = self.sub_date(end_text, '--end')
+        if end_date < start_date:
+            raise CommandError('--end が --start より前になっています。')
+
+        # 乱数の種を固定する。作り直すたびに数値が変わると、所見の文面
+        # （「昨年は1割増」など）とデータが合わなくなる
+        rng = random.Random(scenario.get('seed', 0))
+
+        # 祝日は holidays から取る。以前は自社固有のファイルを読んでおり、
+        # 公開版の利用者の手元では祝日の無いデモデータになっていた
+        jp_holidays = com_jp_holidays(range(start_date.year, end_date.year + 1))
+        holiday2 = com_read_holiday2_days(options['holiday2'])
+        h2_effect = scenario.get('holiday2_effect') or {}
+        h2_off = float(h2_effect.get('off_weekday', 1.0))
+        h2_work = float(h2_effect.get('work_holiday', 1.0))
+        # 天候の効果。雨や猛暑の日に減らす。天候と無関係に作ると、日次備考と
+        # データが食い違い、予測も天候の効果を学べない
+        weather = com_read_demo_weather()
+
+        self.stdout.write(
+            f'期間: {start_date} 〜 {end_date} / 出来事 {len(scenario.get("events", []))}件 / '
+            f'第2休日 {len(holiday2)}日 / 天候 {len(weather)}日')
 
         data = {'ta215': [], 'tb120': [], 'tz201': [], 'ta220': []}
         issued_seasons = set()
@@ -34,9 +75,11 @@ class Command(BaseCommand):
 
         while current <= end_date:
             d_str = current.strftime('%Y-%m-%d')
-            is_holiday = d_str in holiday_set
+            holiday_name = jp_holidays.get(current)
+            is_holiday = holiday_name is not None
             is_weekend = current.weekday() >= 5
-            
+            event_factor, event_closed, event_memos = com_day_effect(scenario, current)
+
             # --- 0. メンテナンス休業日の算出（振替ロジック） ---
             fourth_thu = None
             thu_count = 0
@@ -49,42 +92,60 @@ class Command(BaseCommand):
                             fourth_thu = d
                             break
                 except ValueError: break
-            
+
             maint_day = fourth_thu
-            if maint_day.strftime('%Y-%m-%d') in holiday_set:
+            if maint_day in jp_holidays:
                 maint_day = maint_day + timedelta(days=1)
-            
+
             is_new_year = (current.month == 1 and current.day == 1)
             is_maint_target = (current == maint_day)
-            is_closed = is_new_year or is_maint_target
+            is_closed = is_new_year or is_maint_target or event_closed
+
+            # 日次備考。祝日名と出来事をつなげる
+            memo_parts = []
+            if is_holiday:
+                memo_parts.append(holiday_name)
 
             if is_closed:
-                # 【修正】休業日のフラグ管理
-                # 祝日マスターにある日は holiday_flg='t'、それ以外（平日メンテ等）は 'f'
+                # 休業日のフラグ管理
+                # 祝日の日は holiday_flg='t'、それ以外（平日メンテ等）は 'f'
                 current_holiday_flag = 't' if is_holiday else 'f'
-                
+
                 data['ta215'].append([d_str, 0, 0, 0, 0, 0, 0, 0, 0])
-                memo = '休業日(元旦)' if is_new_year else '定期メンテナンス'
-                if is_maint_target and current.weekday() == 4:
-                    memo += '(祝日振替)'
-                
+                if is_new_year:
+                    memo_parts = ['休業日(元旦)']
+                elif is_maint_target:
+                    memo_parts.append('定期メンテナンス' + ('(祝日振替)' if current.weekday() == 4 else ''))
+                memo_parts.extend(event_memos)
+
                 # ta220カラム: [日付, holiday_flg, closed_flg, memo]
-                data['ta220'].append([d_str, current_holiday_flag, 't', memo])
-                
+                data['ta220'].append([d_str, current_holiday_flag, 't', '／'.join(memo_parts)])
+
                 daily_nyukin = 0
                 if current.day == 1:
-                    kaihi = random.randint(40, 80) * 5000
+                    kaihi = rng.randint(40, 80) * 5000
                     data['tz201'].append([d_str, 6, 1, kaihi])
                     daily_nyukin = kaihi
-                
+
                 data['tb120'].append([d_str, daily_nyukin, daily_nyukin, 0, 0, 0, 0, 0])
                 current += timedelta(days=1)
                 continue
 
             # --- 1. 来場者数（トレンド計算） ---
             is_off_day = is_holiday or is_weekend
-            base_num = random.randint(350, 500) if is_off_day else random.randint(180, 260)
-            
+            day_factor = 1.0
+
+            # 第2休日カレンダー。近隣の事業所が休みの平日は土日に近い動きに、
+            # 祝日でも稼働する日は祝日より人出が減る
+            h2 = holiday2.get(current)
+            if h2 == HOLIDAY2_HOLIDAY and not is_off_day:
+                is_off_day = True
+                day_factor = h2_off
+            elif h2 == HOLIDAY2_WORKDAY and is_holiday and not is_weekend:
+                day_factor = h2_work
+
+            base_num = rng.randint(350, 500) if is_off_day else rng.randint(180, 260)
+
             if current.year == 2020 and current.month in [3, 4]:
                 multiplier = 0.85
             elif date(2020, 5, 1) <= current <= peak_end_date:
@@ -95,8 +156,9 @@ class Command(BaseCommand):
             else:
                 multiplier = 1.10 if current >= stable_start_date else 1.0
 
-            base = int(base_num * multiplier)
-            visitor = int(base * random.uniform(0.38, 0.45))
+            weather_factor = com_weather_factor(scenario, weather.get(current))
+            base = int(base_num * multiplier * day_factor * event_factor * weather_factor)
+            visitor = int(base * rng.uniform(0.38, 0.45))
             school = int(base * 0.1)
             member = base - visitor - school
             morning, afternoon = int(base * 0.25), int(base * 0.35)
@@ -106,19 +168,19 @@ class Command(BaseCommand):
             # --- 2. Tz201 ---
             daily_nyukin = 0
             if current.day == 1:
-                kaihi = random.randint(40, 80) * 5000
+                kaihi = rng.randint(40, 80) * 5000
                 data['tz201'].append([d_str, 6, 1, kaihi])
                 daily_nyukin += kaihi
-            
-            bukatu = random.randint(5, 15) * 1000 if (not is_off_day and random.random() < 0.2) else 0
-            facility = 10000 if random.random() < (1.0/45.0) else 0
+
+            bukatu = rng.randint(5, 15) * 1000 if (not is_off_day and rng.random() < 0.2) else 0
+            facility = 10000 if rng.random() < (1.0/45.0) else 0
             if (bukatu + facility) > 0:
                 data['tz201'].append([d_str, 18, 1, bukatu + facility])
                 daily_nyukin += (bukatu + facility)
 
             # クーポン (1001)
             coupon = int(visitor * 0.15) * 300
-            if random.random() < 0.15: coupon += int(base * 0.25) * 100
+            if rng.random() < 0.15: coupon += int(base * 0.25) * 100
             s_key = f"{current.year}_{(current.month-1)//3}"
             if s_key not in issued_seasons:
                 coupon += int(base * 0.3) * 300
@@ -127,11 +189,11 @@ class Command(BaseCommand):
 
             # --- 3. Tb120 ---
             price_offset = 0 if current >= date(2024, 4, 1) else -200
-            tanka = (random.randint(2800, 3400) if is_off_day else random.randint(2000, 2400)) + price_offset
+            tanka = (rng.randint(2800, 3400) if is_off_day else rng.randint(2000, 2400)) + price_offset
             range_sales = base * tanka
-            shop, school_s = random.randint(2000, 15000), school * 2500
-            sagaku = random.randint(-5, 5) * 100 if random.random() < 0.2 else 0
-            shukkin = random.randint(5, 10) * 100 if (current.weekday() == 2 and random.random() < 0.8) else 0
+            shop, school_s = rng.randint(2000, 15000), school * 2500
+            sagaku = rng.randint(-5, 5) * 100 if rng.random() < 0.2 else 0
+            shukkin = rng.randint(5, 10) * 100 if (current.weekday() == 2 and rng.random() < 0.8) else 0
 
             # 有高の計算
             aridaka = range_sales + shop + school_s + daily_nyukin + sagaku - shukkin
@@ -139,14 +201,24 @@ class Command(BaseCommand):
             data['tb120'].append([d_str, aridaka, daily_nyukin, shukkin, sagaku, 0, school_s, shop])
 
             # --- 4. Ta220 ---
-            # 通常営業日：祝日マスタに従う、closed_flgは 'f'
+            # 通常営業日：祝日は holidays に従う、closed_flgは 'f'
+            memo_parts.extend(event_memos)
             flag = 't' if is_holiday else 'f'
-            data['ta220'].append([d_str, flag, 'f', '祝日' if is_holiday else ''])
-            
+            data['ta220'].append([d_str, flag, 'f', '／'.join(memo_parts)])
+
             current += timedelta(days=1)
 
         # ファイル書き出し
+        outdir = options['outdir']
+        os.makedirs(outdir, exist_ok=True)
         for k, v in data.items():
-            with open(f'revised_{k}.csv', 'w', newline='', encoding='utf-8') as f:
+            with open(os.path.join(outdir, f'revised_{k}.csv'), 'w', newline='', encoding='utf-8') as f:
                 csv.writer(f).writerows(v)
-        self.stdout.write(self.style.SUCCESS('修正されたCSVが生成されました。'))
+        self.stdout.write(self.style.SUCCESS(
+            f'CSVを生成しました（{outdir}）。{len(data["ta215"])}日分'))
+
+    def sub_date(self, pValue, pName):
+        try:
+            return datetime.strptime(pValue, '%Y-%m-%d').date()
+        except ValueError:
+            raise CommandError(f'{pName} は YYYY-MM-DD で指定してください: {pValue}')

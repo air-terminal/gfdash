@@ -1,0 +1,331 @@
+{
+  "format": "gfdash-ai-data",
+  "format_version": 1,
+  "exported_at": "2026-09-30 23:59:59",
+  "remarks": [
+    {
+      "target_month": "2025-03",
+      "remark_cls": "forecast",
+      "remark_text": "3/20から4/6まで春休みジュニア体験会を開く。親子での来場が見込める。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "春休みジュニア体験会",
+          "type": "period",
+          "start_date": "2025-03-20",
+          "end_date": "2025-04-06",
+          "rationale": "前回の体験会では期間中の来場が1割弱増えた",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.05,
+          "factor_mid": 1.08,
+          "factor_high": 1.12
+        }
+      ],
+      "parsed_at": "2025-02-28 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2025-03",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 106%。\n春休みジュニア体験会で親子の来場が増えた。（3/20〜3/31 は前年同期比 117%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-04",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 101%。\n春休みジュニア体験会で親子の来場が増えた。（4/1〜4/6 は前年同期比 142%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-06",
+      "remark_cls": "forecast",
+      "remark_text": "6/1から打席料金を1割値上げする。利用回数が少し減ると見込む。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "打席料金の改定",
+          "type": "level_shift",
+          "start_date": "2025-06-01",
+          "end_date": null,
+          "rationale": "前回の値上げ後、来場が数%減ってそのまま定着した",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 0.93,
+          "factor_mid": 0.96,
+          "factor_high": 0.98
+        }
+      ],
+      "parsed_at": "2025-05-31 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2025-06",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 92%。\n料金改定の後、来場が減った。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-07",
+      "remark_cls": "forecast",
+      "remark_text": "7/19から8/31まで夏休みキャンペーン（学生半額）を行う。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "夏休みキャンペーン",
+          "type": "period",
+          "start_date": "2025-07-19",
+          "end_date": "2025-08-31",
+          "rationale": "昨年の同じキャンペーンで期間中の来場が約1割増えた",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.05,
+          "factor_mid": 1.1,
+          "factor_high": 1.15
+        }
+      ],
+      "parsed_at": "2025-06-30 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2025-07",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 102%。\n夏休みキャンペーンで学生の来場が伸びた。（7/19〜7/31 は前年同期比 116%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-08",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 110%。\n夏休みキャンペーンで学生の来場が伸びた。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-09",
+      "remark_cls": "forecast",
+      "remark_text": "9/16から10/31まで2階打席を改修のため休止する。打席数が2割減る。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "2階打席の改修工事（一部休止）",
+          "type": "period",
+          "start_date": "2025-09-16",
+          "end_date": "2025-10-31",
+          "rationale": "打席数が約2割減り、混雑時は待ちが出る",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 0.8,
+          "factor_mid": 0.85,
+          "factor_high": 0.9
+        }
+      ],
+      "parsed_at": "2025-08-31 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2025-09",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 82%。\n9/5は台風の接近で臨時休業とした。\n2階打席の改修で打席数が減り、来場が落ちた。（9/16〜9/30 は前年同期比 73%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-10",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 86%。\n2階打席の改修で打席数が減り、来場が落ちた。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2025-11",
+      "remark_cls": "forecast",
+      "remark_text": "11月に車で10分の場所へ新しい練習場が開業する。ビジターが一部流れると見込む。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "近隣に競合施設が開業",
+          "type": "level_shift",
+          "start_date": "2025-11-01",
+          "end_date": null,
+          "rationale": "商圏が重なる。開業直後は物珍しさで流出が大きい",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 0.9,
+          "factor_mid": 0.95,
+          "factor_high": 0.98
+        }
+      ],
+      "parsed_at": "2025-10-31 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2025-11",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 90%。\n近隣の新しい練習場の開業後、ビジターが減った。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-01",
+      "remark_cls": "forecast",
+      "remark_text": "1/10から2/28まで、夜の打席料金を割り引く（冬季ナイター割）。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "冬季ナイター割",
+          "type": "period",
+          "start_date": "2026-01-10",
+          "end_date": "2026-02-28",
+          "rationale": "冬の夜は空きが多く、割引で埋められる余地がある",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.02,
+          "factor_mid": 1.05,
+          "factor_high": 1.08
+        }
+      ],
+      "parsed_at": "2025-12-31 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2026-01",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 89%。\n冬季ナイター割を行ったが、競合施設の開業の影響が大きく、前年を下回った。（1/10〜1/31 は前年同期比 91%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-02",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 92%。\n冬季ナイター割を行ったが、競合施設の開業の影響が大きく、前年を下回った。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-04",
+      "remark_cls": "forecast",
+      "remark_text": "4/1から全打席に弾道測定器を入れる。練習の質を求める層の来場が増えると見込む。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "弾道測定器を全打席に導入",
+          "type": "level_shift",
+          "start_date": "2026-04-01",
+          "end_date": null,
+          "rationale": "導入済みの他施設で来場が数%増えたと聞いている",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.02,
+          "factor_mid": 1.05,
+          "factor_high": 1.08
+        }
+      ],
+      "parsed_at": "2026-03-31 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2026-04",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 90%。\n全打席に弾道測定器を導入した。料金改定と競合施設の開業の影響が残り前年は下回っているが、導入の効果はもう少し様子を見る。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-07",
+      "remark_cls": "forecast",
+      "remark_text": "7/18から8/31まで夏休みキャンペーン（学生半額）を行う。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "夏休みキャンペーン",
+          "type": "period",
+          "start_date": "2026-07-18",
+          "end_date": "2026-08-31",
+          "rationale": "昨年の同じキャンペーンで期間中の来場が1割強増えた",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.05,
+          "factor_mid": 1.1,
+          "factor_high": 1.15
+        }
+      ],
+      "parsed_at": "2026-06-30 18:00:00",
+      "parsed_model": "demo-scenario"
+    },
+    {
+      "target_month": "2026-07",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 94%。\n夏休みキャンペーンを今年も行った。前年同期はやや下回ったが、キャンペーンによる伸びは昨年並み。（7/18〜7/31 は前年同期比 92%）",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-08",
+      "remark_cls": "review",
+      "remark_text": "来場者数は前年同月比 95%。\n夏休みキャンペーンを今年も行った。前年同期はやや下回ったが、キャンペーンによる伸びは昨年並み。",
+      "parse_status": "confirmed",
+      "events": [],
+      "parsed_at": null,
+      "parsed_model": null
+    },
+    {
+      "target_month": "2026-10",
+      "remark_cls": "forecast",
+      "remark_text": "10/10から11/30まで開業20周年キャンペーンを行う。打席料金の割引と記念品を用意する。",
+      "parse_status": "confirmed",
+      "events": [
+        {
+          "name": "開業20周年キャンペーン",
+          "type": "period",
+          "start_date": "2026-10-10",
+          "end_date": "2026-11-30",
+          "rationale": "夏休みキャンペーンより割引は小さいが、期間が長く告知も広い",
+          "use_for_forecast": true,
+          "use_for_report": true,
+          "ack": false,
+          "factor_low": 1.04,
+          "factor_mid": 1.08,
+          "factor_high": 1.12
+        }
+      ],
+      "parsed_at": "2026-09-30 18:00:00",
+      "parsed_model": "demo-scenario"
+    }
+  ]
+}

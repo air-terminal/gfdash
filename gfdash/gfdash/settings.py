@@ -170,10 +170,24 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = '/'  # ログイン成功時はダッシュボード(index.htmlルート)へ
 LOGOUT_REDIRECT_URL = 'login'
 
-# サンプル公開モードの設定
-# True: ログイン不要で全画面閲覧可能 / False: 通常のログイン必須モード
-# ** インターネット上でTrueとする場合、誰でも見れる状態となるので注意すること **
+# デモンストレーションモード（インターネット公開のデモ用）
+# True: ログイン不要で閲覧できる。ただし**DBは書き換えさせない**（メンテナンス系 9xx は
+#       表示せず、所見の保存・確定・削除などの更新操作は拒否する）
+# False: 通常のログイン必須モード
+# 社内だけでログインなしに運用したい場合は、こちらではなく ANONYMOUS_LEVEL を使う
 IS_SAMPLE_MODE = os.environ.get('IS_SAMPLE_MODE', 'False') == 'True'
+
+# ログインなしで運用するモード（社内のローカル運用向け）
+# 値を入れると、ログインしていない利用者をその権限として扱う
+#   0: Staff / 1: Manager / 2: Admin（メンテナンス系 9xx も使える）
+# 空（既定）なら通常どおりログインが必要。デモンストレーションモードとは独立で、
+# こちらは更新操作も許す。デモンストレーションモードと両方を指定した場合は
+# デモンストレーションモード（書き換え不可）を優先する。
+# ** インターネット上で使うと、誰でもその権限で操作できるので絶対に使わないこと **
+ANONYMOUS_LEVEL = (
+    int(os.environ['ANONYMOUS_LEVEL'])
+    if os.environ.get('ANONYMOUS_LEVEL', '').strip() in ('0', '1', '2') else None
+)
 
 # ==========================================
 # LLM (Ollama) / Batch Execution Settings

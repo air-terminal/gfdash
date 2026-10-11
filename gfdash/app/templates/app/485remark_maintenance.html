@@ -47,6 +47,12 @@
 
 {% block content %}
   <div class="right_col" role="main">
+
+    <!-- デモンストレーションモードの案内（base_site の .gf_sample_mode のときだけ出る） -->
+    <div class="alert alert-info gf_sample_notice" style="margin: 10px 0;">
+      <i class="fa-solid fa-circle-info"></i>
+      デモンストレーションモードのため、所見の保存・確定・削除などの変更はできません。登録済みの内容をご覧いただけます。
+    </div>
     <div class="row">
       <div class="col-md-12 col-sm-12 col-xs-12">
         <div class="x_panel">
@@ -126,16 +132,16 @@
 
             <div class="ln_solid"></div>
             <div class="form-group">
-              <button type="button" class="btn btn-primary" onclick="btnMntSaveJson()">
+              <button type="button" class="btn btn-primary gf_write" onclick="btnMntSaveJson()">
                 <i class="fa-solid fa-floppy-disk"></i> JSONを保存
               </button>
-              <button type="button" class="btn btn-success" id="btn_mnt_confirm" onclick="btnMntConfirm()">
+              <button type="button" class="btn btn-success gf_write" id="btn_mnt_confirm" onclick="btnMntConfirm()">
                 <i class="fa-solid fa-check"></i> 確定
               </button>
-              <button type="button" class="btn btn-default" id="btn_mnt_unconfirm" onclick="btnMntUnconfirm()">
+              <button type="button" class="btn btn-default gf_write" id="btn_mnt_unconfirm" onclick="btnMntUnconfirm()">
                 <i class="fa-solid fa-rotate-left"></i> 確定を解除
               </button>
-              <button type="button" class="btn btn-danger" onclick="btnMntDelete()" style="margin-left: 30px;">
+              <button type="button" class="btn btn-danger gf_write" onclick="btnMntDelete()" style="margin-left: 30px;">
                 <i class="fa-solid fa-trash"></i> この所見を削除
               </button>
             </div>

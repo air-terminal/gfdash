@@ -38,9 +38,19 @@
       {% endblock stylesheets %}
       
     {% endblock head %}
+    {% if is_sample_mode %}
+    <!-- デモンストレーションモードでは更新の操作を出さない。サーバ側でも拒否するが
+         （config_core.SAMPLE_MODE_READ_MODES）、押せるボタンが並んでいると混乱する。
+         ボタンの有効・無効は各画面の JS が切り替えるので、無効化ではなく隠す -->
+    <style>
+      .gf_sample_mode .gf_write { display: none !important; }
+      .gf_sample_notice { display: none; }
+      .gf_sample_mode .gf_sample_notice { display: block; }
+    </style>
+    {% endif %}
   </head>
 
-  <body class="{% block body_class %}nav-md {% endblock body_class %}">
+  <body class="{% block body_class %}nav-md {% endblock body_class %}{% if is_sample_mode %} gf_sample_mode{% endif %}">
     {% block body %}
       <div class="container body">
         <div class="main_container">

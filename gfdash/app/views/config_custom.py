@@ -29,6 +29,14 @@ class CustomSystemConfig(BaseSystemConfig):
     #     '8': 1,
     # }
 
+    # 更新の操作を持つカスタム画面は、デモンストレーションモードで許す読み取りの
+    # 操作(getMode)だけをここに足してください。載せた画面は、それ以外の POST が
+    # デモで拒否されます（config_core.py の SAMPLE_MODE_READ_MODES を参照）。
+    # SAMPLE_MODE_READ_MODES = {
+    #     **BaseSystemConfig.SAMPLE_MODE_READ_MODES,
+    #     '5xxhogehoge.html': {'list', 'detail'},
+    # }
+
     # 画面グループの見出しを追加する場合はここで上書きします。
     # PAGE_GROUP_NAMES = {
     #     **BaseSystemConfig.PAGE_GROUP_NAMES,

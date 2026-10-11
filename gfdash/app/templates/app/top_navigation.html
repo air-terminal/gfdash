@@ -24,7 +24,18 @@
     </ul>
     {% endif %}
 
-    {% if not is_sample_mode %}
+    {% if is_anonymous_mode %}
+    <!-- ログインなしのモード（ANONYMOUS_LEVEL）。ユーザー名もログアウトも無い -->
+    <ul class="nav navbar-nav navbar-right">
+      <li class="gf_demo_label_wrapper">
+          <span class="label label-default">
+            <i class="fa-solid fa-unlock"></i> ログインなしで運用中
+          </span>
+      </li>
+    </ul>
+    {% endif %}
+
+    {% if not is_sample_mode and not is_anonymous_mode %}
     <ul class="nav navbar-nav navbar-right">
       <li class="">
         <a href="javascript:;" class="user-profile dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
