@@ -250,7 +250,7 @@
                 <span class="gf_rmk_step">1</span><i class="fa-solid fa-floppy-disk"></i> 所見を保存
               </button>
               <span class="gf_rmk_arrow gf_rmk_only_forecast">→</span>
-              <button type="button" class="btn btn-info gf_rmk_only_forecast gf_write" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
+              <button type="button" class="btn btn-info gf_rmk_only_forecast" id="btn_remark_parse" onclick="btnRemarkParse()" disabled>
                 <span class="gf_rmk_step">2</span><i class="fa-solid fa-wand-magic-sparkles"></i> AIで解析
               </button>
               <span class="text-muted gf_rmk_only_forecast">または</span>
@@ -271,7 +271,11 @@
             </div>
 
             <p class="text-muted" id="remark_hint" style="margin: 8px 0 0 0;"></p>
-            {% if disable_batch_execution %}
+            {% if is_sample_mode %}
+              <p class="text-muted gf_rmk_only_forecast" style="margin: 2px 0 0 0;">
+                デモでは「AIで解析」を押すと、実際に AI で解析したときの記録を約20秒に縮めて再生します（保存はしません）。
+              </p>
+            {% elif disable_batch_execution %}
               <p class="text-muted gf_rmk_only_forecast" style="margin: 2px 0 0 0;">
                 この環境ではAI解析は無効です。「手で追加」から入力してください。
               </p>
@@ -368,7 +372,11 @@
     var gFactorPresets = {{ factor_presets_json|safe }};
     var gTypeNames = {{ type_names_json|safe }};
     // AIが使えない環境。順序の制御に関わらず解析は押させない
-    var gAiDisabled = {{ disable_batch_execution|yesno:"true,false" }};
+    // デモでは解析の代わりに記録を再生するので押させる（#43）
+    var gDemoReplay = {{ is_sample_mode|yesno:"true,false" }};
+    // 再生する記録の月と区分（例 {"ym": "2025-09", "cls": "forecast"}）。デモ以外では空
+    var gDemoReplayTarget = {{ demo_replay_target_json|safe }};
+    var gAiDisabled = {{ disable_batch_execution|yesno:"true,false" }} && !gDemoReplay;
   </script>
 
   <!-- 480monthly_remark専用javascriptの宣言 -->

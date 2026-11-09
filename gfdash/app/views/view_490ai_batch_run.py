@@ -17,6 +17,7 @@ from app.utils.com_llm import (
 from app.utils.com_llm_capability import (
     com_capability_view, com_restore_params, com_save_capability,
 )
+from app.utils.com_demo_replay import com_demo_replay_enabled, com_replay_stream
 from app.utils.com_llm_preset import com_get_llm_presets
 from app.utils.report_engines import com_engine_for_mode, com_resolve_llm_params
 
@@ -277,6 +278,16 @@ def post490_main(request):
         return sub490_probe_stream(dic)
 
     batch_type = dic.get('batch_type')
+
+    # デモモードの擬似実行。実際に AI を動かしたときの記録を縮めて流す（#43）。
+    # DB には触れない。デモモード以外では応じない（本番の画面に擬似を混ぜない）
+    if get_mode == 'demo_replay':
+        if not com_demo_replay_enabled():
+            def sub_not_demo():
+                yield 'この操作はデモンストレーションモードでのみ使えます。'
+            return StreamingHttpResponse(sub_not_demo(), content_type='text/plain; charset=utf-8')
+        key = '490_forecast' if batch_type == 'forecast' else f"490_{dic.get('mode') or ''}"
+        return StreamingHttpResponse(com_replay_stream(key), content_type='text/plain; charset=utf-8')
 
     # デモモード等で実行禁止の場合はブロックメッセージをストリームで返す
     if getattr(settings, 'DISABLE_BATCH_EXECUTION', False):

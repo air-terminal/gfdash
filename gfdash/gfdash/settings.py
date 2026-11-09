@@ -177,6 +177,10 @@ LOGOUT_REDIRECT_URL = 'login'
 # 社内だけでログインなしに運用したい場合は、こちらではなく ANONYMOUS_LEVEL を使う
 IS_SAMPLE_MODE = os.environ.get('IS_SAMPLE_MODE', 'False') == 'True'
 
+# デモンストレーションモードで、490 / 480 の AI 処理を押したときに再生する記録
+# （demo_data/replay/）の長さ（秒）。実際の実行は数分かかるので縮めて見せる
+DEMO_REPLAY_SECONDS = int(os.environ.get('DEMO_REPLAY_SECONDS', '20'))
+
 # ログインなしで運用するモード（社内のローカル運用向け）
 # 値を入れると、ログインしていない利用者をその権限として扱う
 #   0: Staff / 1: Manager / 2: Admin（メンテナンス系 9xx も使える）

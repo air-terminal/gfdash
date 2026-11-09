@@ -101,9 +101,10 @@ class BaseSystemConfig:
     # POST は読み取りだけのため。**更新のある画面を作ったら、必ずここに載せること。**
     # メンテナンス系(9xx)は画面ごと拒否されるので載せなくてよい。
     SAMPLE_MODE_READ_MODES = {
-        '480monthly_remark.html': {'get', 'status', 'check'},
+        # demo_replay は AI 処理の擬似実行（記録の再生。#43）。DB に触れない
+        '480monthly_remark.html': {'get', 'status', 'check', 'demo_replay'},
         '485remark_maintenance.html': {'list', 'detail'},
-        '490ai_batch_run.html': {'data_status', 'capability'},
+        '490ai_batch_run.html': {'data_status', 'capability', 'demo_replay'},
     }
 
     @classmethod

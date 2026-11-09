@@ -61,6 +61,52 @@ function sub480_applyUrlParams() {
     if (cls === 'forecast' || cls === 'review') {
         gRemarkCls = cls;
     }
+
+    // デモの「AIで解析」で記録の月へ開き直したとき。読み込みが終わったら再生する。
+    // 再読み込みで再生が繰り返されないよう、URL からは外しておく
+    if (sub480_isDemo() && params.get('demo_parse') === '1') {
+        gDemoAutoParse = true;
+        params.delete('demo_parse');
+        var query = params.toString();
+        history.replaceState(null, '', location.pathname + (query ? '?' + query : ''));
+    }
+}
+
+/* ------------------------------------------------------------------
+   デモの擬似実行（#43）
+
+   デモでは「AIで解析」で、実際に AI で解析したときの記録を再生する。記録は
+   特定の月の所見を解析したものなので、開いている月が違えばその月を開き直す。
+   見えている所見の本文と、流れる解析のログを一致させるため。
+   ------------------------------------------------------------------ */
+
+var gDemoAutoParse = false;
+
+function sub480_isDemo() {
+    return (typeof gDemoReplay !== 'undefined' && gDemoReplay);
+}
+
+function sub480_demoParse() {
+    var target = (typeof gDemoReplayTarget !== 'undefined') ? gDemoReplayTarget : {};
+    if (!target.ym || (target.ym === sub480_ym() && (target.cls || 'forecast') === gRemarkCls)) {
+        sub480_startParse();
+        return;
+    }
+    var parts = target.ym.split('-');
+    Swal.fire({
+        title: 'デモの解析を再生します',
+        html: 'デモでは、' + parseInt(parts[0], 10) + '年' + parseInt(parts[1], 10) + '月の予測所見を'
+            + 'AIで解析したときの記録を再生します。<br>その月の所見を開いてから再生します。',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: '開いて再生する',
+        cancelButtonText: 'やめる',
+        customClass: { popup: 'gf-rmk-dialog' }
+    }).then(function(result) {
+        if (!result.isConfirmed) { return; }
+        location.href = location.pathname + '?ym=' + encodeURIComponent(target.ym)
+                      + '&cls=' + encodeURIComponent(target.cls || 'forecast') + '&demo_parse=1';
+    });
 }
 
 /* ------------------------------------------------------------------
@@ -169,6 +215,12 @@ function sub480_load() {
         $('#remark_text').val(res.remark_text);
         sub480_render(res);
         $('#remark_msg').empty();
+
+        // デモで記録の月へ開き直したときは、所見が見えてから再生を始める
+        if (gDemoAutoParse) {
+            gDemoAutoParse = false;
+            sub480_startParse();
+        }
     });
 }
 
@@ -255,7 +307,8 @@ function sub480_syncButtons() {
 
     $('#btn_remark_save').prop('disabled', !canSave);
     // AIが使えない環境では、順序に関わらず解析は押させない
-    $('#btn_remark_parse').prop('disabled', !ready || gAiDisabled);
+    // デモでは記録を再生するだけなので、月や保存の状態に関わらず押せる（#43）
+    $('#btn_remark_parse').prop('disabled', sub480_isDemo() ? false : (!ready || gAiDisabled));
     // 要約は手順の外なので保存状態に依らない。AIが無い環境では押せない。
     // レビュー所見だけで使える。予測所見の対象月は未来で、備考にあるのは
     // 計画休業程度であり、それは予測が別の経路で既に織り込んでいる
@@ -351,6 +404,11 @@ function btnRemarkConfirm() {
 var gParseLog = '';
 
 function btnRemarkParse() {
+    // デモは記録を再生するだけ。本文の有無や下書きの確認は要らない
+    if (sub480_isDemo()) {
+        sub480_demoParse();
+        return;
+    }
     if (!$('#remark_text').val().trim()) {
         Swal.fire({ title: '確認', text: '所見が入力されていません。', icon: 'warning',
                     customClass: { popup: 'gf-rmk-dialog' } });
@@ -410,7 +468,9 @@ function sub480_startParse() {
 }
 
 function sub480_runParse() {
-    var postData = { getMode: 'parse', ym: sub480_ym(), cls: sub480_cls() };
+    // デモでは本物の解析ではなく、記録の再生を頼む（#43）。DB には書かれない
+    var demo = (typeof gDemoReplay !== 'undefined' && gDemoReplay);
+    var postData = { getMode: demo ? 'demo_replay' : 'parse', ym: sub480_ym(), cls: sub480_cls() };
     if ($('#remark_model').length > 0) { postData.model = $('#remark_model').val(); }
 
     // fetch で少しずつ読む。応答を待ってからまとめて出すと、数分かかる
@@ -591,6 +651,12 @@ function sub480_insertSummary(pText) {
 }
 
 function sub480_parseFinished() {
+    // デモの再生は何も保存していない。表はそのままで、そのことを伝える
+    if (typeof gDemoReplay !== 'undefined' && gDemoReplay) {
+        sub480_message('info', 'デモのため、解析結果は保存していません。'
+            + '表示中の補正は、登録済みの内容です。');
+        return;
+    }
     // 保存はサーバ側で終わっているので、表は読み直して反映する
     sub480_post({ getMode: 'get' }, function(res) {
         sub480_render(res);

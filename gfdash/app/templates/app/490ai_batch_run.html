@@ -86,9 +86,14 @@
             <p>サーバー上で動作するAI予測・分析のバッチ処理を画面から直接キックします。<br>
                <span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> AI処理には数分かかる場合があります。実行中は画面を閉じないでください。</span></p>
 
-            {% if disable_batch_execution %}
+            {% if is_sample_mode %}
+            <!-- デモでは実行の代わりに、実際に AI を動かしたときの記録を縮めて再生する（#43） -->
+            <div class="alert alert-info" style="margin-top: 15px;">
+              <i class="fa-solid fa-circle-info"></i> デモンストレーションモードです。実行ボタンを押すと、実際に AI を動かしたときの記録を約20秒に縮めて再生します（結果は保存しません）。
+            </div>
+            {% elif disable_batch_execution %}
             <div class="alert alert-warning" style="margin-top: 15px;">
-              <i class="fa-solid fa-triangle-exclamation"></i> デモモードまたはAI未設定環境のため、バッチの実行は無効化されています。
+              <i class="fa-solid fa-triangle-exclamation"></i> AI未設定環境のため、バッチの実行は無効化されています。
             </div>
             {% endif %}
 
@@ -187,7 +192,7 @@
                       </div>
                     </form>
                     <div class="text-right">
-                      <button type="button" class="btn btn-success" onclick="runBatch('forecast')" {% if disable_batch_execution %}disabled{% endif %}>
+                      <button type="button" class="btn btn-success" onclick="runBatch('forecast')" {% if disable_batch_execution and not is_sample_mode %}disabled{% endif %}>
                         <i class="fa-solid fa-play"></i> 予測バッチを実行
                       </button>
                     </div>
@@ -259,7 +264,7 @@
 
                       <div class="form-group">
                         <div class="col-md-9 col-sm-8 col-xs-12 col-md-offset-3 col-sm-offset-4">
-                          <button type="button" class="btn btn-primary" onclick="runBatch('llm')" {% if disable_batch_execution %}disabled{% endif %}>
+                          <button type="button" class="btn btn-primary" onclick="runBatch('llm')" {% if disable_batch_execution and not is_sample_mode %}disabled{% endif %}>
                             <i class="fa-solid fa-play"></i> レポート作成バッチを実行
                           </button>
                         </div>
@@ -293,6 +298,8 @@
   <script src="/static/gf_vendors/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
   <script src="/static/gf_vendors/bootstrap-datepicker/dist/locales/bootstrap-datepicker.ja.min.js"></script>
   <script>
+    // デモンストレーションモードでは、実行の代わりに記録を再生する（#43）
+    var gDemoReplay = {{ is_sample_mode|yesno:"true,false" }};
     // LLM実行パラメータのプリセットと既定値。定義は app/utils/com_utils.py にある。
     var gLlmPresets = {{ llm_presets_json|safe }};
     var gLlmParams  = { num_ctx: {{ llm_num_ctx }}, timeout: {{ llm_timeout }}, think: {{ llm_think|yesno:"true,false" }},

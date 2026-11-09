@@ -777,6 +777,15 @@ function sub490_startBatch(batchType, postData) {
     // UIのロックと初期化
     var $console = $('#batch_console');
 
+    // デモでは本物の実行ではなく、記録の再生を頼む（#43）。サーバは記録を
+    // 縮めて、本物と同じ形のログで流すので、表示の処理はそのまま使える
+    if (typeof gDemoReplay !== 'undefined' && gDemoReplay) {
+        postData.getMode = 'demo_replay';
+        $console.text('');
+        sub490_streamToConsole(postData, function(pLogText) { sub490_afterDemoReplay(batchType, pLogText); });
+        return;
+    }
+
     // 🌟 修正: JavaScript側で即座に初期ログをフライング表示する（Optimistic UI）
     $console.text("実行開始中...\n");
     if (batchType === 'forecast') {
@@ -842,6 +851,24 @@ function sub490_streamToConsole(postData, pOnDone) {
         $console.append("\n[通信エラー] 処理中にエラーが発生しました。\nError: " + error.message + "\n");
         $('button').prop('disabled', false);
         if (typeof NProgress != 'undefined') { NProgress.done(); }
+    });
+}
+
+function sub490_afterDemoReplay(batchType, pLogText) {
+    /* デモの再生が終わったあとの案内。結果は保存していないので、種に入っている
+       生成済みの結果を見に行ってもらう */
+    // 予測もレポートも、結果は 410（来場者予測推移）に出る
+    var where = (batchType === 'forecast')
+        ? '予測の結果は「来場者予測推移」の画面でご覧いただけます。'
+        : '生成済みの AI 分析レポートは「来場者予測推移」の画面でご覧いただけます。';
+    Swal.fire({
+        title: 'デモの再生が終わりました',
+        html: '<div class="gf_confirm_body">実際に AI を動かしたときの記録を、短く縮めて再生しました。'
+            + 'デモのため結果は保存していません。<br><br>' + where + '</div>',
+        icon: 'info',
+        width: 'auto',
+        customClass: { popup: 'gf-llm-param-dialog gf-llm-confirm-dialog' },
+        confirmButtonText: '閉じる'
     });
 }
 

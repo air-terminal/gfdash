@@ -10,6 +10,7 @@ import threading
 import traceback
 
 from ..models import Ta215Attnd, Tz305MonthlyRemark
+from ..utils.com_demo_replay import com_demo_replay_enabled, com_load_replay, com_replay_stream
 from ..utils.com_llm import com_finish_label, com_get_llm_client
 from ..utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
@@ -34,6 +35,13 @@ def get480_main(ctx):
     # 画面で別の式を持つと、手入力とAI解析で違う幅になりかねない。
     ctx['factor_presets_json'] = json.dumps(com_get_factor_presets(), ensure_ascii=False)
     ctx['type_names_json'] = json.dumps(EVENT_TYPE_NAMES, ensure_ascii=False)
+
+    # デモで「AIで解析」を押したときに再生する記録の月と区分（#43）。画面は、開いて
+    # いる月がこれと違えば、その月を開き直してから再生する。見えている所見の本文と、
+    # 流れる解析のログを一致させるため
+    record = com_load_replay('480_parse') if com_demo_replay_enabled() else None
+    ctx['demo_replay_target_json'] = json.dumps(
+        (record or {}).get('target') or {}, ensure_ascii=False)
 
     client = com_get_llm_client()
     ctx['llm_engine_name'] = client.name
@@ -64,6 +72,15 @@ def post480_main(request):
 
     if mode == 'summarize':
         return sub480_summary_stream(target_month, remark_cls, dic)
+
+    # デモモードの擬似実行。AIで解析の記録を縮めて流す（#43）。DB には触れない
+    if mode == 'demo_replay':
+        if not com_demo_replay_enabled():
+            def sub_not_demo():
+                yield 'この操作はデモンストレーションモードでのみ使えます。'
+            return StreamingHttpResponse(sub_not_demo(), content_type='text/plain; charset=utf-8')
+        return StreamingHttpResponse(com_replay_stream('480_parse'),
+                                     content_type='text/plain; charset=utf-8')
 
     if target_month is None:
         ret = {'remark_success': False, 'err_message': '対象月の指定が不正です。'}
