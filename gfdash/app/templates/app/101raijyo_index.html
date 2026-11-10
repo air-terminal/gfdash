@@ -56,6 +56,68 @@
 
           <div class="x_content">
 
+            <!-- 数値は、月の選択（上の見出し）のすぐ下に置く。001 / 410 と同じ「月の選択 → 数値 → グラフ」の順。
+                 値は customjs_101.js が txt0xx / txt1xx のクラスで、カードと小型の表の両方に入れる
+                 （github issue #27） -->
+
+            <!-- 数値の小型の表。iPad 縦向きのときだけ、下のカードに代えて出す（高さを詰めるため）。
+                 5枚目のカード（気温モードのときだけ値が入る）は、今の画面では選べないので入れない -->
+            <table class="gf_kpi_compact">
+              <tr>
+                <th>総来場者数</th>
+                <th>メンバー</th>
+                <th>ビジター</th>
+                <th>平均来場者数</th>
+              </tr>
+              <tr>
+                <td class="txt011"></td>
+                <td class="txt012"></td>
+                <td class="txt013"></td>
+                <td class="txt014"></td>
+              </tr>
+              <tr>
+                <td class="gf_kpi_sub">前年比 <span class="txt111"></span></td>
+                <td class="gf_kpi_sub">前年比 <span class="txt112"></span></td>
+                <td class="gf_kpi_sub">前年比 <span class="txt113"></span></td>
+                <td class="gf_kpi_sub">前年比 <span class="txt114"></span></td>
+              </tr>
+            </table>
+
+            <div class="tiles tile_count gf_kpi_tiles">
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 総来場者数</h2></span>
+                <div class="count txt011"></div>
+                <span class="count_bottom">前年比  <span class="txt111"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> メンバー</h2></span>
+                  <div class="count txt012"></div>
+                  <span class="count_bottom">前年比  <span class="txt112"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> ビジター</h2></span>
+                  <div class="count txt013"></div>
+                  <span class="count_bottom">前年比  <span class="txt113"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2> 平均来場者数</h2></span>
+                <div class="count txt014"></div>
+                <span class="count_bottom">前年比  <span class="txt114"></span></span>
+              </div>
+
+              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+                <span class="count_top"><h2 class="txt020"></h2></span>
+                <div class="count txt021"></div>
+                <span class="count_bottom txt022"></span>
+              </div>
+
+            </div>
+            <div class="clearfix"></div>
+
             <div class="x_title gf_smart_toolbar" style="background: #f8f9fa; padding: 12px; border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 25px; border: 1px solid #ddd; margin-bottom: 15px;">
   
               <div class="control_unit">
@@ -126,39 +188,6 @@
               <span class="fa-solid fa-flag purple" style="color: var(--gfdash-purple) !important; display: inline-block;"></span><span>20m/s以上</span>
             </div>
 
-            <div class="tiles tile_count">
-
-              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
-                <span class="count_top"><h2> 総来場者数</h2></span>
-                <div class="count txt011"></div> 
-                <span class="count_bottom">前年比  <span class="txt111"></span></span>
-              </div>
-    
-              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
-                <span class="count_top"><h2> メンバー</h2></span>
-                  <div class="count txt012"></div> 
-                  <span class="count_bottom">前年比  <span class="txt112"></span></span>
-              </div>
-
-              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
-                <span class="count_top"><h2> ビジター</h2></span>
-                  <div class="count txt013"></div> 
-                  <span class="count_bottom">前年比  <span class="txt113"></span></span>
-              </div>
-
-              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
-                <span class="count_top"><h2> 平均来場者数</h2></span>
-                <div class="count txt014"></div> 
-                <span class="count_bottom">前年比  <span class="txt114"></span></span>
-              </div>
-
-              <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
-                <span class="count_top"><h2 class="txt020"></h2></span>
-                <div class="count txt021"></div> 
-                <span class="count_bottom txt022"></span>
-              </div>
-
-            </div>
           </div>
         </div>
       </div>

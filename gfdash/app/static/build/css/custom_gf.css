@@ -771,6 +771,21 @@ body.modal-open .modal-backdrop {
         height: 100% !important;
         padding: 0 !important;          /* ユーザー名側の余白もリセット */
     }
+
+    /* Bootstrap の .nav は前後に回り込み解除用の ::before / ::after を持つ。flex の中では
+       これも並びの1つに数えられ、space-between で本物の li が枠の中央に押し出される。
+       題名が三本線から離れ、ユーザー名が右端から離れていたのはこのため（github issue #27） */
+    .nav_menu nav > .nav.navbar-nav::before,
+    .nav_menu nav > .nav.navbar-nav::after {
+        display: none !important;
+    }
+
+    /* 残りの幅は題名の側だけが取り、ユーザー名（デモ・ログインなしの表示も）は右端に寄せる */
+    .top_nav .nav_menu nav > .navbar-right {
+        flex-grow: 0 !important;
+        flex-shrink: 0 !important;
+        margin-left: auto !important;
+    }
 }
 
 /* =========================================================
@@ -1805,4 +1820,169 @@ body.modal-open .modal-backdrop {
         text-align: center !important;
         margin: 0 !important;
     }
+}
+
+/* =========================================================
+   22. iPad 縦向きの共通部品（github issue #27）
+   001 / 410 で使う。iPad 縦向きは、幅で切ると横向きの PC 表示まで
+   変わるので、向きで切る。iPad mini の縦（744px）も含めるため、
+   下限は 700px にする
+   ========================================================= */
+
+/* 数値の小型の表（.gf_kpi_compact）。iPad 縦向きのときだけ、数値のカード
+   （.gf_kpi_tiles）に代えて出し、高さを詰める。既定（PC・横向き・スマホ）では出さない */
+.gf_kpi_compact {
+    display: none;
+}
+
+/* テーマの開閉ボタン（collapse-link）に付ける。テーマと同じく見出しの右に置く。
+   テーマの薄い灰色（#C5C7CB）では押せることに気づきにくいので、枠を付けて濃くする。
+   見出しが flex で並ぶ画面（410）でも右端に来るよう、float に加えて order と
+   margin-left: auto も指定する */
+.gf_collapse_btn {
+    float: right;
+    order: 99;
+    margin-left: auto !important;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    line-height: 24px;
+    text-align: center;
+    font-size: 12px;
+    color: #73879C;
+    border: 1px solid #D5D9DE;
+    border-radius: 3px;
+    background-color: #F7F9FB;
+    cursor: pointer;
+}
+.gf_collapse_btn:hover,
+.gf_collapse_btn:focus {
+    color: #2A3F54;
+    background-color: #EDF1F5;
+    text-decoration: none;
+}
+
+@media (min-width: 700px) and (orientation: portrait) {
+    .gf_kpi_tiles {
+        display: none !important;
+    }
+    .gf_kpi_compact {
+        display: table;
+        width: 100%;
+        margin-bottom: 6px;
+        table-layout: fixed;
+        border-collapse: collapse;
+    }
+    .gf_kpi_compact th {
+        font-size: 11px;
+        font-weight: normal;
+        color: #73879C;
+        padding: 2px 6px 0;
+    }
+    .gf_kpi_compact td {
+        font-size: 20px;
+        font-weight: bold;
+        color: #73879C;
+        padding: 0 6px 2px;
+    }
+    /* 補足の行（前年比など） */
+    .gf_kpi_compact td.gf_kpi_sub {
+        font-size: 12px;
+        font-weight: normal;
+        padding-top: 0;
+    }
+    .gf_kpi_compact th,
+    .gf_kpi_compact td {
+        border-left: 2px solid #ADB2B5;
+    }
+    .gf_kpi_compact th:first-child,
+    .gf_kpi_compact td:first-child {
+        border-left: none;
+    }
+}
+
+
+/* =========================================================
+   22-2. 410画面 iPad 縦向きでの配置（github issue #27）
+   グラフを見ながらレポートを読めるように、グラフを画面上部に固定し、
+   その下でレポートをスクロールさせる。横向きは PC と同じ表示のまま
+   ========================================================= */
+
+/* 運営者の所見の枠。テーマの開閉ボタンが x_panel の style 属性を消すので、クラスで付ける */
+.gf_panel_410 {
+    border: 1px solid #CCD0D7;
+    background-color: #FFF;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* グラフの見方（ダイアログを開くリンク）。右軸の目盛りと重ならないよう、グラフの上に余白を取る */
+.gf_chart_wrapper_410 {
+    padding-top: 24px !important;
+}
+.gf_chart_help_410 {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    z-index: 2;
+    font-size: 12px;
+    color: #3498DB;
+}
+
+@media (min-width: 700px) and (orientation: portrait) {
+    .gf_forecast_sticky_410 {
+        position: -webkit-sticky;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: #FFF;
+        padding-bottom: 6px;
+        box-shadow: 0 4px 6px -4px rgba(0, 0, 0, 0.15);
+    }
+    /* 幅 700〜767px はスマホ向けの横スクロール（最小幅 800px）が掛かるので打ち消す。
+       ほかの画面の .gf_chart_scroll_container に効かないよう、410 の中に限る */
+    .gf_forecast_sticky_410 .gf_chart_scroll_container {
+        overflow: visible !important;
+    }
+    .gf_chart_wrapper_410 {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 340px !important;
+    }
+}
+
+
+/* =========================================================
+   23. タブ（共通。480 の所見の区分・410 の所見とレポート）
+   テーマの nav-tabs は選択中も白のままで、どちらが選ばれているのか
+   読み取れない。選択中はサイドバーと同じ紺で塗り、それ以外は枠付きの
+   薄い灰色にして、押せるものと選ばれているものを色で分ける。
+   切り替えは各画面の JS で行う（BS3 の CSS と BS4 の JS が混在しており、
+   data-toggle は使えない）
+   ========================================================= */
+.gf_tabs {
+    margin-bottom: 14px;
+    border-bottom-color: #2A3F54;
+}
+/* 非選択の下辺は下線と同じ色にする。透明にすると下線が箱で途切れ、
+   非選択のタブが手前に置かれたように見える */
+.gf_tabs > li > a {
+    padding: 8px 20px;
+    margin-right: 4px;
+    color: #73879C;
+    background-color: #F7F9FB;
+    border: 1px solid #D5D9DE;
+    border-bottom-color: #2A3F54;
+}
+.gf_tabs > li > a:hover,
+.gf_tabs > li > a:focus {
+    background-color: #EDF1F5;
+    color: #2A3F54;
+}
+.gf_tabs > li.active > a,
+.gf_tabs > li.active > a:hover,
+.gf_tabs > li.active > a:focus {
+    background-color: #2A3F54;
+    border-color: #2A3F54;
+    color: #fff;
+    font-weight: bold;
 }

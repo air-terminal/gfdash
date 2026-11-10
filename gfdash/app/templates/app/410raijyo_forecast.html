@@ -44,7 +44,27 @@
 
           <div class="x_content">
             
-            <div class="row tile_count" style="margin-top: 0; margin-bottom: 10px;">
+            <!-- iPad 縦向きでは、グラフと数値を画面上部に固定し、その下でレポートを読む。
+                 グラフを見ながらレポートを読めるようにするため（github issue #27） -->
+            <div id="forecast_sticky" class="gf_forecast_sticky_410">
+
+            <!-- 数値の小型の表。iPad 縦向きのときだけ、下の4枚のカードに代えて出す（高さを詰めるため） -->
+            <table class="gf_kpi_compact">
+              <tr>
+                <th><i class="fa-solid fa-flag-checkered" style="color: #E74C3C;"></i> 着地見込み</th>
+                <th><i class="fa fa-user" style="color: #1ABB9C;"></i> 月間実績</th>
+                <th><i class="fa fa-line-chart" style="color: #3498DB;"></i> AI月間予測</th>
+                <th><i class="fa fa-history" style="color: #9B59B6;"></i> 前年同月</th>
+              </tr>
+              <tr>
+                <td class="gf_kpi_landing">0</td>
+                <td class="gf_kpi_actual">0</td>
+                <td class="gf_kpi_forecast_total">0</td>
+                <td class="gf_kpi_prev_year_same_month">0</td>
+              </tr>
+            </table>
+
+            <div class="row tile_count gf_kpi_tiles" style="margin-top: 0; margin-bottom: 10px;">
               <div class="col-md-3 col-sm-6 col-xs-6 tile_stats_count gf_first_tile" style="padding-bottom: 5px;">
                 <span class="count_top"><i class="fa-solid fa-flag-checkered" style="color: #E74C3C;"></i> 選択月の着地見込み</span>
                 <div class="count" id="kpi_landing">0</div>
@@ -69,15 +89,22 @@
             </div>
 
             <!-- 2. グラフエリア（スマホ時のみ横スクロールさせる枠を追加・インライン高さを除去） -->
-            <div id="sync_scroll_container" class="gf_chart_scroll_container" style="position: relative; border: 1px solid #E6E9ED;">
-              <div id="chart_wrapper" class="gf_chart_wrapper_410" style="position: relative; padding: 10px;">
-                <canvas id="chart_forecast_canvas"></canvas>
+            <div style="position: relative;">
+              <!-- グラフの見方はダイアログで出す。常に出しておくと、グラフとレポートの間が離れる -->
+              <a href="javascript:void(0)" class="gf_chart_help_410" onclick="sub410_showChartHelp()">
+                <i class="fa-solid fa-circle-info"></i> グラフの見方
+              </a>
+              <div id="sync_scroll_container" class="gf_chart_scroll_container" style="position: relative; border: 1px solid #E6E9ED;">
+                <div id="chart_wrapper" class="gf_chart_wrapper_410" style="position: relative; padding: 10px;">
+                  <canvas id="chart_forecast_canvas"></canvas>
+                </div>
               </div>
             </div>
 
-            <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; border: 1px solid #ddd;">
-              <h5><i class="fa-solid fa-circle-info text-info"></i> グラフの見方</h5>
-              <div class="row">
+            </div><!-- /#forecast_sticky -->
+
+            <div id="chart_help_410" style="display: none;">
+              <div class="row" style="text-align: left; font-size: 13px;">
                 <div class="col-md-6">
                   <strong>【日別データ（左軸）】</strong>
                   <ul style="margin-bottom: 10px; padding-left: 20px;">
@@ -101,10 +128,16 @@
                  入力は 480 で行うので、ここは読むだけ -->
             <div class="row" style="margin-top: 15px;" id="remark_panel_row">
               <div class="col-md-12 col-sm-12 col-xs-12">
-                <div class="x_panel" style="border: 1px solid #CCD0D7; background-color: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <!-- 枠の見た目は style ではなくクラスで付ける。テーマの開閉ボタン（collapse-link）は、
+                     開閉のたびに x_panel の style 属性を消すため -->
+                <div class="x_panel gf_panel_410">
                   <div class="x_title" style="margin-bottom: 12px; padding-bottom: 5px;">
+                    <!-- 既定では畳む。レポートの本文に早く届くように。所見の件数だけは見出しに出す。
+                         開閉はテーマの開閉ボタンを流用し、テーマと同じく見出しの右に置く -->
                     <h3 style="font-size: 16px !important; font-weight: bold !important; color: #2A3F54; margin: 0;">
+                      <a class="collapse-link gf_collapse_btn" title="開く／畳む"><i class="fa fa-chevron-down"></i></a>
                       <i class="fa-solid fa-pen-to-square text-primary"></i> 運営者の所見
+                      <span id="remark_summary"></span>
                       <small class="text-muted" style="font-size: 12px; margin-left: 8px;">
                         データには現れない出来事。編集は
                         <a href="480monthly_remark.html">月次所見入力</a> 画面で行います。
@@ -120,7 +153,9 @@
                     </h3>
                     <div class="clearfix"></div>
                   </div>
-                  <div class="x_content" style="padding: 0 10px;">
+                  <div class="x_content" id="remark_view_wrap" style="padding: 0 10px; display: none;">
+                    <!-- 予測所見とレビュー所見はタブで切り替える。タブは所見のある区分だけ出す -->
+                    <ul class="nav nav-tabs gf_tabs" id="remark_tabs_410"></ul>
                     <div id="remark_view"></div>
                   </div>
                 </div>
@@ -137,30 +172,29 @@
                     <div class="clearfix"></div>
                   </div>
                   <div class="x_content" style="padding: 0 10px;">
-                    
-                    <div style="margin-bottom: 15px; border-bottom: 1px dashed #E6E9ED; padding-bottom: 10px;">
-                      <h4 onclick="$('#ai_report_forecast_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');" 
-                          style="font-size: 14px; font-weight: bold; color: #3498DB; border-left: 4px solid #3498DB; padding-left: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;">
-                        <i class="fa-solid fa-line-chart"></i> 該当月の見通し・先行予測
-                        <i class="fa fa-chevron-up pull-right gf-toggle-icon" style="font-size: 11px; margin-top: 4px; color: #95A5A6;"></i>
-                      </h4>
-                      <div id="ai_report_forecast_wrap">
-                        <div id="ai_report_forecast" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
-                          読み込み中...
-                        </div>
+
+                    <!-- 先行予測とレビューはタブで切り替える。縦に2本並べると、下のレビューまで遠い -->
+                    <ul class="nav nav-tabs gf_tabs" id="report_tabs_410">
+                      <li data-tab="forecast">
+                        <a href="#" onclick="return sub410_showReportTab('forecast')">
+                          <i class="fa-solid fa-line-chart"></i> 該当月の見通し・先行予測
+                        </a>
+                      </li>
+                      <li data-tab="review">
+                        <a href="#" onclick="return sub410_showReportTab('review')">
+                          <i class="fa-solid fa-history"></i> 当月の営業レビュー・総括
+                        </a>
+                      </li>
+                    </ul>
+
+                    <div id="ai_report_forecast_wrap" class="gf_report_pane_410">
+                      <div id="ai_report_forecast" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
+                        読み込み中...
                       </div>
                     </div>
-
-                    <div style="margin-bottom: 5px;">
-                      <h4 onclick="$('#ai_report_review_wrap').slideToggle(); $(this).find('.gf-toggle-icon').toggleClass('fa-chevron-down fa-chevron-up');" 
-                          style="font-size: 14px; font-weight: bold; color: #1ABB9C; border-left: 4px solid #1ABB9C; padding-left: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;">
-                        <i class="fa-solid fa-history"></i> 当月の営業レビュー・総括
-                        <i class="fa fa-chevron-up pull-right gf-toggle-icon" style="font-size: 11px; margin-top: 4px; color: #95A5A6;"></i>
-                      </h4>
-                      <div id="ai_report_review_wrap">
-                        <div id="ai_report_review" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
-                          読み込み中...
-                        </div>
+                    <div id="ai_report_review_wrap" class="gf_report_pane_410" style="display: none;">
+                      <div id="ai_report_review" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
+                        読み込み中...
                       </div>
                     </div>
 

@@ -40,6 +40,13 @@ $(document).ready(function() {
     // 本文を編集したら、保存しないと次へ進めないことを示す
     $('#remark_text').on('input', sub480_syncButtons);
 
+    // 所見の欄は本文の長さに合わせて伸ばす。実運用では10行を超えて書くため、
+    // 固定の高さでは途中から隠れ、別の所で下書きする必要があった（github issue #27）。
+    // 伸びる上限は CSS の max-height で決め、それを超えたら欄の中でスクロールする
+    if (typeof autosize !== 'undefined') {
+        autosize($('#remark_text'));
+    }
+
     sub480_load();
 });
 
@@ -212,7 +219,7 @@ function sub480_load() {
     gLoadedYm = sub480_ym();
 
     sub480_post({ getMode: 'get' }, function(res) {
-        $('#remark_text').val(res.remark_text);
+        sub480_setText(res.remark_text);
         sub480_render(res);
         $('#remark_msg').empty();
 
@@ -257,7 +264,7 @@ function sub480_confirmDelete() {
         if (!r.isConfirmed) { return; }
 
         sub480_post({ getMode: 'delete' }, function(res) {
-            $('#remark_text').val('');
+            sub480_setText('');
             sub480_render(res);
             sub480_message('success', res.message);
         });
@@ -633,6 +640,15 @@ function sub480_summaryDone() {
     if ($btn) { $btn.disabled = !ok; }
 }
 
+// 所見の欄に本文を入れる。val() で入れただけでは autosize が高さを測り直さない
+function sub480_setText(pText) {
+    var $area = $('#remark_text');
+    $area.val(pText);
+    if (typeof autosize !== 'undefined') {
+        autosize.update($area);
+    }
+}
+
 // 本文の末尾に足す。上書きしないのは、既に書いた文章を消さないため。
 // 保存はしない。挿入しただけでは「未保存の編集」になり、保存ボタンが押せる
 function sub480_insertSummary(pText) {
@@ -641,7 +657,7 @@ function sub480_insertSummary(pText) {
 
     var $area = $('#remark_text');
     var current = $area.val();
-    $area.val(current.trim() === '' ? text : current.replace(/\s+$/, '') + '\n\n' + text);
+    sub480_setText(current.trim() === '' ? text : current.replace(/\s+$/, '') + '\n\n' + text);
 
     // 手で打ったときと同じ経路で「編集中」にする
     $area.trigger('input');
@@ -794,12 +810,17 @@ function btnRemarkDiscard() {
 
 function btnRemarkAddEvent() {
     var events = sub480_collect();
+    // 描き直しで開閉が既定に戻らないよう、今の開閉を控えておく。
+    // 追加したカードは名前が空なので開いて描かれる
+    var openStates = $('#remark_events_list .gf_ev_card').map(function() {
+        return !$(this).hasClass('gf_ev_collapsed');
+    }).get();
     events.push({
         name: '', type: 'period', start_date: '', end_date: '',
         factor_low: '', factor_mid: '', factor_high: '',
         rationale: '', use_for_forecast: true, use_for_report: true
     });
-    sub480_renderEvents(events);
+    sub480_renderEvents(events, null, openStates);
     sub480_syncButtons();
 
     // 描き直しで指摘が消えるため、付け直す。追加した行だけでなく、
@@ -807,7 +828,7 @@ function btnRemarkAddEvent() {
     sub480_groundingLater();
 }
 
-function sub480_renderEvents(pEvents, pGrounding) {
+function sub480_renderEvents(pEvents, pGrounding, pOpenStates) {
     var html = '';
 
     for (var i = 0; i < pEvents.length; i++) {
@@ -861,15 +882,44 @@ function sub480_renderEvents(pEvents, pGrounding) {
         });
     }
 
+    // 開閉と要約（github issue #27）。
+    // 見出しの空いた所か開閉ボタンを押すと開閉する。名前の欄・削除ボタン・
+    // 指摘の目印を押したときは開閉しない（名前の編集や削除の邪魔になる）
+    $list.off('.sum');
+    $list.on('click.sum', '.gf_ev_head', function(ev) {
+        var $t = $(ev.target);
+        if (!$t.closest('.gf_ev_toggle').length
+            && $t.closest('input, select, button, a, label').length) {
+            return;
+        }
+        var $card = $(this).closest('.gf_ev_card');
+        sub480_setCardOpen($card, $card.hasClass('gf_ev_collapsed'));
+    });
+    // 値を変えたら要約を書き直す。率や見立ての変更では、係数が別のハンドラで
+    // 入るので、その後に読む
+    $list.on('input.sum change.sum changeDate.sum', 'input, select', function() {
+        var $card = $(this).closest('.gf_ev_card');
+        setTimeout(function() { sub480_updateSummary($card); }, 0);
+    });
+
     // 保存済みの値に合わせて、率の入力欄の出し分けと係数の編集可否を整える
     $list.find('.gf_ev_card').each(function() {
         sub480_syncRow($(this));
         sub480_syncRationale($(this));
+        sub480_updateSummary($(this));
     });
+
+    // 描き直す前の開閉を引き継ぐ（イベントの追加で全体を描き直すため）
+    if (pOpenStates) {
+        $list.find('.gf_ev_card').each(function(i) {
+            if (i < pOpenStates.length) { sub480_setCardOpen($(this), pOpenStates[i]); }
+        });
+    }
 
     sub480_applyGrounding(pGrounding);
 
     $('#remark_events_wrap').toggle(pEvents.length > 0);
+    $('.gf_ev_toggle_all').toggle(pEvents.length > 0);
     $('#remark_events_empty').toggle(pEvents.length === 0);
 }
 
@@ -917,6 +967,14 @@ function sub480_setCardWarnings($pCard, pFinding) {
               + '<input type="checkbox" class="rmk_ack"' + (ack ? ' checked' : '') + '> '
               + '内容を確認した（所見に根拠は無いが、この見立てでよい）'
               + '</label>';
+    }
+
+    // 要確認になったカードは開く。畳んだままだと指摘を見落とす。
+    // 要確認のままのカードを毎回開き直すと、畳んでおけなくなるので、
+    // 要確認に変わったときだけ開く
+    var wasWarn = $pCard.hasClass('gf_ev_card_warn');
+    if (has && !ack && !wasWarn) {
+        sub480_setCardOpen($pCard, true);
     }
 
     $pCard.toggleClass('gf_ev_card_warn', has && !ack);
@@ -977,18 +1035,26 @@ function sub480_eventCard(pEvent, pNo) {
     var e = pEvent;
     // 承知したかどうかはカードに持たせる。指摘の枠に置くと、枠が出ていない
     // 間に保存したときに落ちる
-    var html = '<div class="gf_ev_card" data-ack="' + (e.ack ? '1' : '') + '">';
+    // 既定は畳む（見出しの1行だけ）。件数が増えると縦に長くなり、一覧として
+    // 見渡せなくなるため。要確認の指摘が付いたカードは、指摘を付けるときに開く。
+    // 名前の無いカード（手で追加した直後）は入力するので開いておく（github issue #27）
+    var collapsed = !!(e.name || '').trim();
+    var html = '<div class="gf_ev_card' + (collapsed ? ' gf_ev_collapsed' : '') + '"'
+             + ' data-ack="' + (e.ack ? '1' : '') + '">';
 
     // 指摘の入れ物は常に置き、中身だけを差し替える。カードごと描き直すと
     // 入力中の値と焦点が飛ぶ（指摘は編集のたびに出し入れするため）
     html += '<div class="gf_ev_head">'
           + '<span class="gf_ev_no">' + pNo + '</span>'
           + '<input type="text" class="rmk_name" placeholder="イベント名" value="' + sub480_attr(e.name) + '">'
+          + '<span class="gf_ev_summary"></span>'
           + '<span class="gf_ev_warn_badge" style="display:none;">'
           + '<i class="fa fa-exclamation-triangle"></i> 要確認</span>'
           + '<button type="button" class="btn btn-default btn-xs"'
           + ' onclick="sub480_removeCard(this)" title="このイベントを削除">'
           + '<i class="fa fa-trash"></i></button>'
+          + '<button type="button" class="btn btn-default btn-xs gf_ev_toggle" title="開く／畳む">'
+          + '<i class="fa ' + (collapsed ? 'fa-chevron-down' : 'fa-chevron-up') + '"></i></button>'
           + '</div>';
 
     // 本文から導けない値の指摘。AIの出力を鵜呑みにしないよう、カードの
@@ -1042,6 +1108,56 @@ function sub480_eventCard(pEvent, pNo) {
     return html;
 }
 
+/* ------------------------------------------------------------------
+   カードの開閉と要約（github issue #27）
+
+   補正の件数が増えると、全部を開いたカードでは縦に長くなり一覧として
+   見渡せない。畳んだときは見出しの1行に、期間・増減率・用途を出す。
+   入力欄は畳んでも DOM に残すので、保存・確定・指摘の処理は変わらない
+   ------------------------------------------------------------------ */
+
+function sub480_setCardOpen($pCard, pOpen) {
+    $pCard.toggleClass('gf_ev_collapsed', !pOpen);
+    $pCard.find('.gf_ev_toggle .fa')
+          .toggleClass('fa-chevron-up', !!pOpen)
+          .toggleClass('fa-chevron-down', !pOpen);
+}
+
+function btnRemarkToggleAll(pOpen) {
+    $('#remark_events_list .gf_ev_card').each(function() {
+        sub480_setCardOpen($(this), pOpen);
+    });
+}
+
+// 「10/10　+1%　予測・レポート」の形。日付は年を省く（対象月の前後に限られるため）
+function sub480_updateSummary($pCard) {
+    var md = function(pDay) {
+        var m = /^\d{4}-(\d{2})-(\d{2})$/.exec((pDay || '').trim());
+        return m ? m[1] + '/' + m[2] : '';
+    };
+    var start = md($pCard.find('.rmk_start').val());
+    var end = md($pCard.find('.rmk_end').val());
+    var period = start ? (end && end !== start ? start + '〜' + end : (end ? start : start + '〜')) : '日付未入力';
+
+    var mid = parseFloat($pCard.find('.rmk_mid').val());
+    var effect;
+    if (isNaN(mid)) {
+        effect = '記録のみ';
+    } else {
+        var pct = Math.round((mid - 1) * 100);
+        effect = (pct > 0 ? '+' : '') + pct + '%';
+    }
+
+    var uses = [];
+    if ($pCard.find('.rmk_fc').is(':checked')) { uses.push('予測'); }
+    if ($pCard.find('.rmk_rp').is(':checked')) { uses.push('レポート'); }
+
+    $pCard.find('.gf_ev_summary').html(
+        '<span class="gf_ev_sum_period">' + sub480_escape(period) + '</span>'
+        + '<span class="gf_ev_sum_effect">' + sub480_escape(effect) + '</span>'
+        + '<span class="gf_ev_sum_use">' + sub480_escape(uses.join('・') || '用途なし') + '</span>');
+}
+
 function sub480_removeCard(pButton) {
     $(pButton).closest('.gf_ev_card').remove();
 
@@ -1052,6 +1168,7 @@ function sub480_removeCard(pButton) {
 
     var left = $('#remark_events_list .gf_ev_card').length;
     $('#remark_events_wrap').toggle(left > 0);
+    $('.gf_ev_toggle_all').toggle(left > 0);
     $('#remark_events_empty').toggle(left === 0);
     sub480_syncButtons();
 

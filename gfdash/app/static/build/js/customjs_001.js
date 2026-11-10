@@ -351,7 +351,9 @@ function sub001_postView(postParam){
         sub001_set_summaryData(detailSum, detailSumOld, uriageSum, uriageSumOld);
 
         // 天候情報表示
-        com_set_day_weather_table(chartXLabels, weatherData, weatherTelopsFlg, weatherTelopsData);                
+        com_set_day_weather_table(chartXLabels, weatherData, weatherTelopsFlg, weatherTelopsData);
+        // 日数が変わると表の幅が変わるので、グラフの幅を合わせ直す
+        sub001_applyChartWidth();
 
         $("#calendar_saveval").val($("#gf_calendar").val());
         sub001_set_btn();
@@ -790,31 +792,40 @@ function sub001_getChartMode(){
 
 function sub001_syncChartWidth() {
     const tableContainer = document.getElementById('weather_table_container');
-    const chartWrapper = document.getElementById('chart_wrapper'); // 親divを指定
-    const chartCanvas = document.getElementById('chart_plot_02b');
-    
-    if (!tableContainer || !chartWrapper || !chartCanvas) return;
+    if (!tableContainer) return;
 
+    // 画面幅が変わったときに合わせ直す
     const ro = new ResizeObserver(entries => {
-        // テーブル本体の幅を取得
-        const tableElement = tableContainer.querySelector('table');
-        if (tableElement) {
-            const targetWidth = tableElement.offsetWidth;
-            
-            // 現在の幅と異なる場合のみ実行（無限ループ防止の二重策）
-            if (chartWrapper.style.width !== targetWidth + 'px') {
-                chartWrapper.style.width = targetWidth + 'px';
-                
-                // Chart.jsにリサイズを通知
-                if (window.Chart1) {
-                    window.Chart1.resize();
-                }
-            }
-        }
+        sub001_applyChartWidth();
     });
 
     // テーブルのコンテナを監視
     ro.observe(tableContainer);
+}
+
+// グラフの幅を天気の表の幅にそろえる。
+// 表が枠からはみ出して横スクロールする幅（iPad 縦など）では、月を変えて日数が
+// 変わり表の幅が変わっても、枠の大きさは変わらず ResizeObserver が動かない。
+// そのため、表を描き直した直後にも呼ぶ（github issue #27）
+function sub001_applyChartWidth() {
+    const tableContainer = document.getElementById('weather_table_container');
+    const chartWrapper = document.getElementById('chart_wrapper'); // 親divを指定
+    if (!tableContainer || !chartWrapper) return;
+
+    // テーブル本体の幅を取得
+    const tableElement = tableContainer.querySelector('table');
+    if (!tableElement) return;
+    const targetWidth = tableElement.offsetWidth;
+
+    // 現在の幅と異なる場合のみ実行（無限ループ防止の二重策）
+    if (chartWrapper.style.width !== targetWidth + 'px') {
+        chartWrapper.style.width = targetWidth + 'px';
+
+        // Chart.jsにリサイズを通知
+        if (window.Chart1) {
+            window.Chart1.resize();
+        }
+    }
 }
 
 $(document).ready(function() {

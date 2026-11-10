@@ -72,6 +72,45 @@
     .gf_ev_warns_ack .gf_ev_ack { border-top-color: #E0E3E6; }
     .gf_ev_ack input { margin-right: 4px; }
     .gf_ev_body { padding: 10px 12px 4px; }
+
+    /* 畳んだカード。見出しの1行だけを出し、要約（期間・増減率・用途）を添える。
+       入力欄は DOM に残す（保存・確定・指摘の処理は畳んでいても全件を読む）（github issue #27） */
+    .gf_ev_head { cursor: pointer; }
+    .gf_ev_collapsed .gf_ev_body,
+    .gf_ev_collapsed .gf_ev_warns { display: none !important; }
+    .gf_ev_collapsed .gf_ev_head { border-bottom: none; border-radius: 4px; }
+    .gf_ev_summary { display: none; flex: 0 0 auto; font-size: 12px; color: #5A738E; white-space: nowrap; }
+    .gf_ev_collapsed .gf_ev_summary { display: inline-flex; gap: 10px; }
+    /* 期間の長さで列がずれないよう、幅を取っておく。目印（確認済み・要確認）は
+       付くカードと付かないカードがあるので、要約より前に並べ、要約をボタンの
+       すぐ左にそろえる */
+    .gf_ev_sum_period { min-width: 7.5em; }
+    .gf_ev_collapsed .gf_ev_head > * { order: 3; }
+    .gf_ev_collapsed .gf_ev_head > .gf_ev_no,
+    .gf_ev_collapsed .gf_ev_head > .rmk_name { order: 0; }
+    .gf_ev_collapsed .gf_ev_head > .gf_ev_warn_badge { order: 1; }
+    .gf_ev_collapsed .gf_ev_head > .gf_ev_summary { order: 2; }
+    .gf_ev_sum_effect { font-weight: bold; min-width: 3.5em; text-align: right; }
+    /* 畳んだときの名前は読むだけに見せる（押せば開かずにそのまま編集できる） */
+    .gf_ev_collapsed .gf_ev_head .rmk_name { border-color: transparent; background: transparent; font-weight: bold; }
+    .gf_ev_toggle { flex: 0 0 auto; }
+    /* 操作ボタンの行。「すべて開く／すべて畳む」は同じ行の右端に置く */
+    .gf_rmk_ops { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 12px; }
+    .gf_rmk_ops .btn { margin-bottom: 0; }
+    .gf_ev_toggle_all { margin-left: auto; white-space: nowrap; }
+    /* 補正の内容の題名の横の案内 */
+    /* テーマの .x_title h2 は行の幅を取り、横に置いた案内が次の行に落ちるので、
+       この見出しだけ横並びにする。幅が足りなければ案内が折り返す */
+    #remark_events_panel .x_title { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+    /* custom_gf.css の .x_panel .x_title h2 { width: 100% !important } を、この見出しだけ打ち消す */
+    #remark_events_panel .x_title h2 { width: auto !important; flex: 0 0 auto; }
+    #remark_events_panel .x_title .clearfix { display: none; }
+    .gf_rmk_title_hint { flex: 1 1 auto; font-size: 13px; }
+    /* スマホ幅では要約を名前の下の行に回す */
+    @media (max-width: 575px) {
+      .gf_ev_collapsed .gf_ev_head { flex-wrap: wrap; }
+      .gf_ev_collapsed .gf_ev_summary { order: 10; flex-basis: 100%; padding-left: 28px; }
+    }
     .gf_ev_field { margin-bottom: 8px; }
     .gf_ev_field > label {
       display: block; margin: 0 0 2px 0;
@@ -108,23 +147,7 @@
     .gf_rmk_step_dark { background-color: #E6E9ED; color: #4B5F71; }
     .gf_rmk_arrow { color: #ccc; margin: 0 4px; }
 
-    /* 区分のタブ。テーマの nav-tabs は選択中も白のままで、どちらが選ばれて
-       いるのか読み取れない。選択中はサイドバーと同じ紺で塗り、それ以外は
-       枠付きの薄い灰色にして、押せるものと選ばれているものを色で分ける */
-    .gf_rmk_tabs { margin-bottom: 14px; border-bottom-color: #2A3F54; }
-    /* 非選択の下辺は下線と同じ色にする。透明にすると下線が箱で途切れ、
-       非選択のタブが手前に置かれたように見える */
-    .gf_rmk_tabs > li > a {
-      padding: 8px 20px; margin-right: 4px; color: #73879C;
-      background-color: #F7F9FB; border: 1px solid #D5D9DE; border-bottom-color: #2A3F54;
-    }
-    .gf_rmk_tabs > li > a:hover,
-    .gf_rmk_tabs > li > a:focus { background-color: #EDF1F5; color: #2A3F54; }
-    .gf_rmk_tabs > li.active > a,
-    .gf_rmk_tabs > li.active > a:hover,
-    .gf_rmk_tabs > li.active > a:focus {
-      background-color: #2A3F54; border-color: #2A3F54; color: #fff; font-weight: bold;
-    }
+    /* 区分のタブの見た目は custom_gf.css の .gf_tabs（410 と共通） */
     .gf_rmk_intro { margin-bottom: 12px; }
 
     /* 白いボタン(btn-default)は無効にしても白いままで、押せるものと見分けが
@@ -204,7 +227,7 @@
                  実態と合わない。対象月はタブの外に置き、両方に共通であることを示す。
                  切り替えは JS で行う（BS3 の CSS と BS4 の JS が混在しており、
                  data-toggle は使えない） -->
-            <ul class="nav nav-tabs gf_rmk_tabs" id="remark_cls_tabs">
+            <ul class="nav nav-tabs gf_tabs" id="remark_cls_tabs">
               <li class="active" data-cls="forecast">
                 <a href="#" onclick="return btnRemarkSwitchCls('forecast')">
                   <i class="fa-solid fa-chart-line"></i> 予測所見
@@ -239,7 +262,9 @@
               </button>
             </div>
 
-            <textarea id="remark_text" class="form-control" rows="5"
+            <!-- 最低12行。本文が長ければ autosize で伸ばし、画面の7割を超えたら欄の中でスクロールする
+                 （実運用では10行を超えて書く。github issue #27） -->
+            <textarea id="remark_text" class="form-control" rows="12" style="max-height: 70vh;"
                       placeholder="例）10月上旬に近隣へ競合施設が開業する予定。同規模の施設のため、影響は数%程度の減少と見込む。&#10;10月15日にボールを全交換する。"></textarea>
 
             <!-- 押せる順序を絞る。4つが常に押せると、どれから押すのか読み取れない。
@@ -293,6 +318,10 @@
         <div class="x_panel">
           <div class="x_title">
             <h2><i class="fa-solid fa-sliders"></i> 補正の内容</h2>
+            <!-- 次に何をすればよいかの案内。題名の行に置き、操作ボタンの行を
+                 「すべて開く／すべて畳む」に使う（github issue #27）。
+                 h2 はテーマの指定で1行に切り詰められるので、h2 の外に置いて折り返せるようにする -->
+            <span class="text-muted gf_rmk_title_hint" id="remark_hint2"></span>
             <div class="clearfix"></div>
           </div>
           <div class="x_content">
@@ -303,7 +332,7 @@
 
             <!-- 追加と確定はこの表に対する操作なので、表と同じ枠に置く。
                  上の枠に並べると、どの内容に対する操作なのかが読み取れない -->
-            <div style="margin-bottom: 12px;">
+            <div class="gf_rmk_ops">
               <button type="button" class="btn btn-default gf_write" id="btn_remark_add" onclick="btnRemarkAddEvent()" disabled>
                 <span class="gf_rmk_step gf_rmk_step_dark">2</span><i class="fa-solid fa-plus"></i> 手で追加
               </button>
@@ -318,7 +347,13 @@
                 <i class="fa-solid fa-rotate-left"></i>
                 <span id="btn_remark_discard_label">破棄して確定済みに戻す</span>
               </button>
-              <span class="text-muted" id="remark_hint2" style="margin-left: 10px;"></span>
+              <!-- 開閉はカードが1件以上あるときだけ出す。右端に寄せる -->
+              <div class="gf_ev_toggle_all" style="display: none;">
+                <button type="button" class="btn btn-default btn-xs" onclick="btnRemarkToggleAll(true)">
+                  <i class="fa fa-chevron-up"></i> すべて開く</button>
+                <button type="button" class="btn btn-default btn-xs" onclick="btnRemarkToggleAll(false)">
+                  <i class="fa fa-chevron-down"></i> すべて畳む</button>
+              </div>
             </div>
 
             <div id="remark_events_empty" class="text-muted">

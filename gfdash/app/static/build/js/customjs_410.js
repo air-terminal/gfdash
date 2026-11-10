@@ -38,6 +38,11 @@ function sub410_postView(postParam){
         $("#kpi_actual").text(results.kpiActual.toLocaleString());
         $("#kpi_forecast_total").text(results.kpiForecastTotal.toLocaleString());
         $("#kpi_prev_year_same_month").text(results.kpiPrevYearSameMonth.toLocaleString());
+        // iPad 縦向き用の小型の表にも同じ数値を入れる
+        $(".gf_kpi_landing").text(results.kpiLanding.toLocaleString());
+        $(".gf_kpi_actual").text(results.kpiActual.toLocaleString());
+        $(".gf_kpi_forecast_total").text(results.kpiForecastTotal.toLocaleString());
+        $(".gf_kpi_prev_year_same_month").text(results.kpiPrevYearSameMonth.toLocaleString());
 
         // ▼ 追加：AIレポートテキストを画面の要素に注入
         //$("#ai_report_forecast").text(results.reportForecast1m);
@@ -59,20 +64,8 @@ function sub410_postView(postParam){
         $("#ai_report_forecast table, #ai_report_review table").addClass("table table-striped table-bordered table-sm").css("margin-top", "10px");
         
         
-        // ▼ 追加：予測レポートの初期状態コントロール ▼
-        var $forecastWrap = $('#ai_report_forecast_wrap');
-        var $forecastIcon = $forecastWrap.siblings('h4').find('.gf-toggle-icon');
-
-        if (results.hasReview) {
-            // ① レビューがある場合 ＝ 予測レポートを「畳んだ状態」にする
-            $forecastWrap.hide();
-            $forecastIcon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
-        } else {
-            // ② レビューがない(予測のみ)場合 ＝ 予測レポートを「展開した状態」にする
-            $forecastWrap.show();
-            $forecastIcon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
-        }
-        // ▲ ここまで ▲
+        // レビューがある月はレビューを、まだ無い月は先行予測を最初に開く
+        sub410_showReportTab(results.hasReview ? 'review' : 'forecast');
 
         // --- Chart.js 描画処理 ---
         if (typeof(Chart) !== 'undefined' && results.xLabels) {
@@ -170,10 +163,19 @@ function sub410_postView(postParam){
                     scales: {
                         x: {
                             grid: { color: "rgba(0, 0, 0, 0.05)" },
+                            // 全日を出す。間引くと、曜日の並びが追えなくなる。
+                            // 幅が足りるように「日」と「曜日」の2段にして、斜めにしない
                             ticks: { font: { size: 11 },
+                                autoSkip: false,
+                                maxRotation: 0,
+                                callback: function(value) {
+                                    return sub410_splitDayLabel(this.getLabelForValue(value));
+                                },
                                 // コールバック関数を使ってラベルの色を動的に変更
                                 color: function(context) {
-                                    return com_setChartLabelColor(context);
+                                    var label = context.tick.label;
+                                    if (Array.isArray(label)) { label = label.join(''); }
+                                    return com_setChartLabelColor({ tick: { label: label } });
                                 }
                             }
                         },
@@ -285,14 +287,27 @@ function sub410_renderRemarks(pRemarks) {
     }
     $('#remark_panel_row').show();
 
+    // 畳んでいても、所見があることと、予測に反映されているかは見出しで分かるようにする
+    var nConfirmed = remarks.filter(function(r) { return r.confirmed; }).length;
+    var summary = remarks.length + '件';
+    summary += (nConfirmed === remarks.length)
+        ? '<span class="gf_rmk_state gf_rmk_state_on">確認済み</span>'
+        : '<span class="gf_rmk_state gf_rmk_state_off">未確認あり</span>';
+    $('#remark_summary').html('<small style="font-size: 12px; font-weight: normal; margin-left: 6px;">' + summary + '</small>');
+
     var html = '';
+    var tabs = '';
 
     for (var i = 0; i < remarks.length; i++) {
         var r = remarks[i];
 
-        html += '<div style="margin-bottom: 14px;">';
+        // 区分の名前はタブに出す。本文の側には確認済みかどうかだけを出す
+        tabs += '<li data-cls="' + sub410_escape(r.cls) + '">'
+              + '<a href="#" onclick="return sub410_showRemarkTab(\'' + sub410_escape(r.cls) + '\')">'
+              + sub410_escape(r.label) + '</a></li>';
+
+        html += '<div class="gf_remark_pane_410" data-cls="' + sub410_escape(r.cls) + '" style="margin-bottom: 14px;">';
         html += '<div style="margin-bottom: 4px;">'
-              + '<b style="color:#4B5F71;">' + sub410_escape(r.label) + '</b>'
               + (r.confirmed
                  ? '<span class="gf_rmk_state gf_rmk_state_on">確認済み</span>'
                  : '<span class="gf_rmk_state gf_rmk_state_off">未確認 — 予測とレポートには反映されていません</span>')
@@ -330,7 +345,49 @@ function sub410_renderRemarks(pRemarks) {
         html += '</div>';
     }
 
+    $('#remark_tabs_410').html(tabs);
     $('#remark_view').html(html);
+
+    // レポートのタブと同じく、レビューがあればレビューを最初に開く
+    var hasReview = remarks.some(function(r) { return r.cls === 'review'; });
+    sub410_showRemarkTab(hasReview ? 'review' : remarks[0].cls);
+}
+
+// 月次分析レポートのタブ切り替え（'forecast' / 'review'）
+function sub410_showReportTab(pTab) {
+    $('#report_tabs_410 > li').each(function() {
+        $(this).toggleClass('active', $(this).data('tab') === pTab);
+    });
+    $('#ai_report_forecast_wrap').toggle(pTab === 'forecast');
+    $('#ai_report_review_wrap').toggle(pTab === 'review');
+    return false;
+}
+
+// 運営者の所見のタブ切り替え（所見の区分 'forecast' / 'review'）
+function sub410_showRemarkTab(pCls) {
+    $('#remark_tabs_410 > li').each(function() {
+        $(this).toggleClass('active', $(this).data('cls') === pCls);
+    });
+    $('#remark_view > .gf_remark_pane_410').each(function() {
+        $(this).toggle($(this).data('cls') === pCls);
+    });
+    return false;
+}
+
+// グラフの見方をダイアログで出す
+function sub410_showChartHelp() {
+    Swal.fire({
+        title: 'グラフの見方',
+        html: $('#chart_help_410').html(),
+        width: 640,
+        confirmButtonText: '閉じる'
+    });
+}
+
+// 日付ラベル「10/01㈬」を、2段の「01」「㈬」に分ける。形が違えばそのまま返す
+function sub410_splitDayLabel(pLabel) {
+    var m = /^\d{2}\/(\d{2})(.*)$/.exec(pLabel || '');
+    return m ? [m[1], m[2]] : pLabel;
 }
 
 function sub410_escape(pText) {

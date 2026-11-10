@@ -43,6 +43,17 @@
          桁を広げても足りない場合に備え、折り返し自体を禁じる */
       #llm-form .control-label { white-space: nowrap; }
     }
+    /* iPad 縦など（sm: 768〜991px）は ②③ が左右に並び、ラベルと選択欄を横に並べると
+       選択欄が狭く「120日間 (約4ヶ月) ※推奨」やモデル名が途中で切れる。
+       この幅ではラベルを選択欄の上に置き、選択欄に枠の幅いっぱいを使わせる（github issue #27） */
+    @media (min-width: 768px) and (max-width: 991px) {
+      .gf_490_forms .form-horizontal .control-label {
+        width: 100%; float: none; text-align: left; padding-top: 0; margin-bottom: 4px;
+      }
+      .gf_490_forms .form-horizontal .form-group > div[class*="col-sm-"] {
+        width: 100%; margin-left: 0;
+      }
+    }
     /* 操作の順番。上から順に見ていけばよいことを示す */
     .gf_step_no {
       display: inline-block; min-width: 18px; height: 18px; line-height: 18px;
@@ -148,7 +159,7 @@
                   </div>
                 </div>
 
-            <div class="row">
+            <div class="row gf_490_forms">
               <div class="col-md-6 col-sm-6 col-xs-12">
                 <div class="panel panel-default">
                   <div class="panel-heading">
@@ -212,7 +223,9 @@
                            「使用モデル」が1文字ずつ折り返し、行数が倍になる -->
                       <div class="form-group">
                         <label class="control-label col-md-3 col-sm-4 col-xs-12">モード</label>
-                        <div class="col-md-6 col-sm-8 col-xs-12">
+                        <!-- 幅はほかの欄（col-md-9）にそろえる。col-md-6 では iPad 横などで
+                             「当月レビュー (review)」が途中で切れる -->
+                        <div class="col-md-9 col-sm-8 col-xs-12">
                           <select id="llm_mode" class="form-control">
                             <option value="review">当月レビュー (review)</option>
                             <option value="forecast_1m">来月予測 (forecast_1m)</option>
