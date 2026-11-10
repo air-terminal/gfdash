@@ -837,6 +837,164 @@ SAME_DAY_MARKERS = (
 )
 
 
+# --------------------------------------------------------------------
+# 根拠と係数の突き合わせ（gitea issue #52）
+#
+# 根拠（rationale）は、半年後に「その係数が妥当だったか」を判断する唯一の
+# 手がかり。係数と食い違っていると、評価のときに読めなくなる。工程7で
+# 遡及の所見を作ったとき、確定済みの所見に次の食い違いが見つかった。
+#   - 根拠に「係数は設定しない」とあるのに係数が入っている
+#   - 根拠に「中値を 1.20 とした」とあるのに中央の係数が 1.01
+#   - 天候（猛暑）を予測の補正に使っている
+# 本文の検査と同じく推定であって証明ではないので、確定は止めない。
+# --------------------------------------------------------------------
+
+# 係数を持たせないと宣言する語
+NO_FACTOR_MARKERS = (
+    r'係数\s*[はを]?\s*(?:設定|付け|つけ|入れ|掛け|かけ)(?:し|せ)?(?:ない|ず)',
+    r'係数\s*(?:なし|無し)',
+    r'(?<![A-Za-z])note(?![A-Za-z])',
+    r'記録のみ',
+    r'様子見',
+)
+
+# 天候に起因することを示す語。予測モデルは気温を回帰変数に持ち、
+# 天候は事前に計画できる出来事でもない
+WEATHER_MARKERS = (
+    r'猛暑', r'酷暑', r'暑さ', r'寒さ', r'気温', r'天候', r'天気',
+    r'台風', r'大雨', r'豪雨', r'降雨', r'雨', r'雪', r'梅雨', r'秋雨', r'前線',
+)
+
+# 見立てが推測であることを示す語。推測なら幅に「効果なし（1.00）」を含める
+GUESS_MARKERS = (
+    r'裏付け\s*(?:が|は)?\s*(?:ない|なし|無)',
+    r'根拠\s*(?:が|は)?\s*(?:ない|なし|無)',
+    r'不明', r'推測', r'わからない', r'分からない', r'読めない',
+)
+
+# 減る・増えることを示す語。符号の無い「8%」の向きを決めるのに使う
+DECREASE_WORDS = r'減|下が|下げ|低下|落ち|マイナス|割引|値引'
+INCREASE_WORDS = r'増|上が|上げ|伸び|プラス'
+
+# 数量の書き方。値はすべて係数（中央）の候補に換算する
+RATIONALE_FACTOR_PATTERNS = (
+    # 0.80 / 1.20（係数そのもの）。小数を係数とみなすのは、係数を表す語が
+    # 根拠のどこかにあるときだけ。「1.5km」「0.5時間」を拾わないため
+    ('factor', r'(?<![\d.])([0-3]\.\d{1,4})(?![\d.%倍割])'),
+    ('times', r'(?<![\d.])(\d+(?:\.\d+)?)\s*倍'),
+    ('percent', r'([+\-])?\s*(\d+(?:\.\d+)?)\s*(?:%|パーセント)'),
+    ('wari', r'([+\-])?\s*(\d+)\s*割'),
+)
+FACTOR_WORDS = r'係数|中値|中央値|中央|倍率|設定'
+
+# 根拠の数量と中央の係数が「一致している」とみなす差
+RATIONALE_FACTOR_TOLERANCE = 0.005
+
+
+def sub_check_rationale(pEvent):
+    """根拠の文と係数・用途を突き合わせ、食い違いの指摘を返す"""
+    rationale = sub_normalize_text(pEvent.get('rationale'))
+    # 天候の判定はイベント名も見る。根拠が空でも「雨による影響」と名付けられる
+    name = sub_normalize_text(pEvent.get('name'))
+    mid = pEvent.get('factor_mid')
+    messages = []
+
+    if rationale and mid is not None \
+            and any(re.search(p, rationale) for p in NO_FACTOR_MARKERS):
+        messages.append(
+            '根拠では係数を設定しないとありますが、係数が入っています。'
+            '効かせるなら根拠を直してください。')
+
+    if rationale and mid is not None:
+        candidates = sub_rationale_factors(rationale)
+        # 根拠の数量が係数の幅（下限〜上限）の中にあれば一致とみなす。
+        # 「最大10%」を上限に、「1.1倍程度」を中央の近くに置く書き方があり、
+        # 中央とだけ比べると、根拠どおりの入力まで指摘してしまう
+        lo = pEvent.get('factor_low')
+        hi = pEvent.get('factor_high')
+        lo = mid if lo is None else min(lo, mid)
+        hi = mid if hi is None else max(hi, mid)
+        if candidates and not any(
+                lo - RATIONALE_FACTOR_TOLERANCE <= c <= hi + RATIONALE_FACTOR_TOLERANCE
+                for c in candidates):
+            shown = '・'.join(sub_format_factor(c) for c in sorted(set(candidates)))
+            messages.append(
+                f'根拠の数値（{shown}）と中央の係数（{sub_format_factor(mid)}）が'
+                '食い違っています。')
+
+    if pEvent.get('use_for_forecast') and mid is not None \
+            and any(re.search(p, rationale + ' ' + name) for p in WEATHER_MARKERS):
+        messages.append(
+            '天候は予測モデルが気温の回帰変数で扱っています。事前に計画できる出来事'
+            'ではないため、予測の補正には使わないことを勧めます。')
+
+    low = pEvent.get('factor_low')
+    high = pEvent.get('factor_high')
+    if rationale and low is not None and high is not None \
+            and any(re.search(p, rationale) for p in GUESS_MARKERS) \
+            and not (low <= 1.0 <= high):
+        messages.append(
+            '根拠が推測の場合、係数の幅（下限〜上限）に効果なし（1.00）を'
+            '含めることを勧めます。')
+
+    return messages
+
+
+def sub_rationale_factors(pText):
+    """
+    根拠の文から数量を抜き出し、係数の候補に換算して返す。
+
+    「8%」のように向きが書かれていなければ、前後の語（減・増など）で決める。
+    それでも決まらなければ、増と減の両方を候補にする（どちらかに一致すればよい）。
+    換算は com_factors_from_percent と同じく 1 + 率/100。「60%まで」のように
+    水準を表す書き方は、率/100 も候補に加える。
+    """
+    candidates = []
+    has_factor_word = re.search(FACTOR_WORDS, pText) is not None
+
+    for kind, pattern in RATIONALE_FACTOR_PATTERNS:
+        for m in re.finditer(pattern, pText):
+            if kind == 'factor':
+                if has_factor_word:
+                    candidates.append(float(m.group(1)))
+            elif kind == 'times':
+                candidates.append(float(m.group(1)))
+            else:
+                value = float(m.group(2))
+                percent = value * 10 if kind == 'wari' else value
+                for sign in sub_rationale_signs(pText, m, m.group(1)):
+                    candidates.append(round(1 + sign * percent / 100, 4))
+                # 「60%まで減少」「8割に落ちる」は増減の幅ではなく、その水準になる
+                # という意味。係数は 0.60 / 0.80 になる
+                if re.match(r'\s*(?:程度|ほど)?\s*(?:まで|に|へ)', pText[m.end():]):
+                    candidates.append(round(percent / 100, 4))
+
+    # 係数の許容範囲を外れる値は、係数のことではない（「200%の売上」など）
+    return [c for c in candidates if FACTOR_MIN <= c <= FACTOR_MAX]
+
+
+def sub_rationale_signs(pText, pMatch, pSign):
+    """数量の向き。明示された符号 → 前後の語 → 決まらなければ両方"""
+    if pSign == '+':
+        return (1,)
+    if pSign == '-':
+        return (-1,)
+
+    # 「8%減少」「減少要因1%」「2割増」のように、語は数量の前にも後にも来る
+    around = pText[max(0, pMatch.start() - 6):pMatch.end() + 6]
+    down = re.search(DECREASE_WORDS, around) is not None
+    up = re.search(INCREASE_WORDS, around) is not None
+    if down and not up:
+        return (-1,)
+    if up and not down:
+        return (1,)
+    return (1, -1)
+
+
+def sub_format_factor(pValue):
+    return f'{pValue:.2f}'
+
+
 def com_check_grounding(pRemarkText, pEvents):
     """
     イベントの値が所見の本文から導けるかを確かめ、疑わしい点を返す。
@@ -849,9 +1007,9 @@ def com_check_grounding(pRemarkText, pEvents):
     扱うかどうかは呼び出し側が決める。
     """
     text = sub_normalize_text(pRemarkText)
-    if not text:
-        return []
 
+    # 本文の検査は本文があるときだけ。根拠の検査（sub_check_rationale）は
+    # 本文が空でも行う。根拠はイベントごとに書かれ、本文とは別に読まれるため
     has_quantity = any(re.search(p, text) for p in QUANTITY_PATTERNS)
     date_count = sum(len(re.findall(p, text)) for p in DATE_PATTERNS)
     has_end_marker = any(re.search(p, text) for p in END_MARKERS)
@@ -862,7 +1020,7 @@ def com_check_grounding(pRemarkText, pEvents):
     for index, event in enumerate(pEvents):
         messages = []
 
-        if event.get('factor_mid') is not None and not has_quantity:
+        if text and event.get('factor_mid') is not None and not has_quantity:
             # 誰が入れた値かはここでは分からない。AIの推測と決めつけると、
             # 人が選び直したあとも「AIが推測した」と出て、文面が事実と食い違う
             messages.append(
@@ -871,7 +1029,7 @@ def com_check_grounding(pRemarkText, pEvents):
         start = event.get('start_date')
         end = event.get('end_date')
 
-        if end and event.get('type') == EVENT_TYPE_PERIOD:
+        if text and end and event.get('type') == EVENT_TYPE_PERIOD:
             if start == end:
                 # 1日だけと明記されていれば、終了日は本文から導ける。
                 # 明記が無ければ、終わりが読み取れず開始日を複写した疑いが強い
@@ -883,6 +1041,8 @@ def com_check_grounding(pRemarkText, pEvents):
                 messages.append(
                     '終了日が所見から読み取れません。日付の表現が1つしか無く、'
                     '終わりを示す語もありません。')
+
+        messages.extend(sub_check_rationale(event))
 
         if messages:
             findings.append({'index': index, 'messages': messages,

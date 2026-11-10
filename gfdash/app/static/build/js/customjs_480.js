@@ -1214,8 +1214,17 @@ function sub480_openRationale(pButton) {
         }
     }).then(function(r) {
         if (!r.isConfirmed) { return; }
+        var $card = $cell.closest('.gf_ev_card');
+        var changed = ($input.val() !== r.value);
         $input.val(r.value);
-        sub480_syncRationale($cell.closest('.gf_ev_card'));
+        sub480_syncRationale($card);
+
+        // 根拠も指摘の対象（係数との食い違い。gitea issue #52）。書き換えたら洗い直す。
+        // 前の確認は前の根拠に対するものなので、ほかの値を変えたときと同じく外す
+        if (changed) {
+            $card.data('ack', false);
+            sub480_groundingLater();
+        }
     });
 }
 
