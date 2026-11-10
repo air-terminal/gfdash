@@ -68,13 +68,32 @@ FACTOR_PRESETS = [
 ]
 
 
-def com_factors_from_percent(pPercent):
+# 根拠の強さ（gitea issue #53）。見立てがどれだけ確かかを、イベントごとに残す。
+#
+# 書かれていないと、評価のときに「見立てが外れた」のか「自信が無いと言って
+# いたとおり効かなかった」のかを区別できない。未選択は None（既存の所見は
+# このキーを持たない）。
+CONFIDENCE_RECORD = 'record'        # 実績あり（過去の同じ出来事の実績がある）
+CONFIDENCE_ANNOUNCE = 'announce'    # 告知あり（告知・予約など、来場に効く手立てがある）
+CONFIDENCE_GUESS = 'guess'          # 推測
+CONFIDENCE_LEVELS = (CONFIDENCE_RECORD, CONFIDENCE_ANNOUNCE, CONFIDENCE_GUESS)
+
+CONFIDENCE_NAMES = {
+    CONFIDENCE_RECORD: '実績あり',
+    CONFIDENCE_ANNOUNCE: '告知あり',
+    CONFIDENCE_GUESS: '推測',
+}
+
+
+def com_factors_from_percent(pPercent, pConfidence=None):
     """
     増減率(%)から係数3点を作る。
 
     0 は「影響が読めない」を意味し、係数を持たせない。0% を 1.00 の補正と
     して掛けると、影響が無いという判断が「影響が無いと確信している」に
     化ける。幅も付かないため、不確かさが消えてしまう。
+
+    根拠の強さが推測なら、幅を効果なし（1.00）まで広げる（com_apply_confidence）。
     """
     try:
         percent = float(pPercent)
@@ -87,11 +106,34 @@ def com_factors_from_percent(pPercent):
     mid = 1.0 + percent / 100.0
     half = max(FACTOR_BAND_MIN, abs(percent) / 100.0 * FACTOR_BAND_RATIO)
 
-    return {
+    return com_apply_confidence({
         'factor_low': round(max(FACTOR_MIN, mid - half), 4),
         'factor_mid': round(mid, 4),
         'factor_high': round(min(FACTOR_MAX, mid + half), 4),
-    }
+    }, pConfidence)
+
+
+def com_apply_confidence(pFactors, pConfidence):
+    """
+    根拠の強さに合わせて係数の幅を直す。推測のときだけ、幅に効果なし（1.00）を
+    含める（増える見立てなら下限を、減る見立てなら上限を 1.00 にする）。
+
+    中央の係数は変えない。選んだ見立て（「減る（-10%）」など）の名前と中央が
+    食い違わないようにするため。推測だと言いながら効果なしを幅の外に置くと、
+    評価のときに「効かなかった」ことが見立ての外れに見えてしまう。
+
+    customjs_480.js の sub480_applyConfidence と同じ式。片方だけ変えないこと。
+    """
+    factors = dict(pFactors)
+    mid = factors.get('factor_mid')
+    if pConfidence != CONFIDENCE_GUESS or mid is None:
+        return factors
+
+    if mid > 1.0:
+        factors['factor_low'] = 1.0
+    elif mid < 1.0:
+        factors['factor_high'] = 1.0
+    return factors
 
 
 def com_get_factor_presets():
@@ -327,6 +369,10 @@ def sub_normalize_event(pRaw, pLabel):
         'rationale': str(pRaw.get('rationale') or '').strip(),
         'use_for_forecast': bool(pRaw.get('use_for_forecast')),
         'use_for_report': bool(pRaw.get('use_for_report')),
+        # 根拠の強さ（gitea issue #53）。未選択・不明な値は None。既存の所見と
+        # AI の解析結果はこのキーを持たないので None になる
+        'confidence': (pRaw.get('confidence')
+                       if pRaw.get('confidence') in CONFIDENCE_LEVELS else None),
         # 本文から導けない値であることを、人が承知したか。
         #
         # 所見に数量が書かれていなくても、経験から見立てを置くことはある。
@@ -928,10 +974,14 @@ def sub_check_rationale(pEvent):
             '天候は予測モデルが気温の回帰変数で扱っています。事前に計画できる出来事'
             'ではないため、予測の補正には使わないことを勧めます。')
 
+    # 推測かどうかは、根拠の強さ（gitea issue #53）で選ばれていればそれを、
+    # 選ばれていなければ根拠の語で見る。「個別指定」で幅を手で狭めた場合に拾う
     low = pEvent.get('factor_low')
     high = pEvent.get('factor_high')
-    if rationale and low is not None and high is not None \
-            and any(re.search(p, rationale) for p in GUESS_MARKERS) \
+    is_guess = (pEvent.get('confidence') == CONFIDENCE_GUESS) or (
+        not pEvent.get('confidence') and rationale
+        and any(re.search(p, rationale) for p in GUESS_MARKERS))
+    if is_guess and low is not None and high is not None \
             and not (low <= 1.0 <= high):
         messages.append(
             '根拠が推測の場合、係数の幅（下限〜上限）に効果なし（1.00）を'

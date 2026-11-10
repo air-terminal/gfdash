@@ -844,13 +844,17 @@ function sub480_renderEvents(pEvents, pGrounding, pOpenStates) {
     $list.off('input change', '.rmk_pct').on('input change', '.rmk_pct', function() {
         sub480_applyLevel($(this).closest('.gf_ev_card'));
     });
+    // 根拠の強さを変えたら係数の幅を作り直す（推測なら効果なしまで広げる。gitea issue #53）
+    $list.off('change', '.rmk_conf').on('change', '.rmk_conf', function() {
+        sub480_applyLevel($(this).closest('.gf_ev_card'));
+    });
 
     // 指摘の対象になる項目を直したら洗い直す。名前空間を付けて、上の
     // ハンドラを外さないようにする。
     // 日付は changeDate も見る。bootstrap-datepicker はカレンダーから
     // 選んだときに change を出さない経路がある
     $list.off('.grd').on('change.grd changeDate.grd',
-                         '.rmk_type, .rmk_start, .rmk_end, .rmk_level,'
+                         '.rmk_type, .rmk_start, .rmk_end, .rmk_level, .rmk_conf,'
                          + ' .rmk_low, .rmk_mid, .rmk_high',
                          function() {
                              // 値が変われば、前の確認はその値に対するものでは
@@ -1081,13 +1085,18 @@ function sub480_eventCard(pEvent, pNo) {
 
     // 2段目: どれだけ影響するか
     html += '<div class="row">';
-    html += '<div class="col-md-4 col-sm-6 col-xs-12 gf_ev_field"><label>影響の見立て</label>'
+    html += '<div class="col-md-3 col-sm-6 col-xs-12 gf_ev_field"><label>影響の見立て</label>'
           + '<select class="rmk_level">' + sub480_levelOptions(e) + '</select>'
           + '<div class="rmk_pct_wrap" style="display:none; margin-top:4px;">'
           + '<input type="number" class="rmk_pct" step="1" placeholder="例 -7（%）" value="'
           + sub480_attr(sub480_percentOf(e)) + '"></div></div>';
 
-    html += '<div class="col-md-4 col-sm-6 col-xs-12 gf_ev_field">'
+    // 根拠の強さ（gitea issue #53）。評価のときに「見立てが外れた」のか「自信が無いと
+    // 言っていたとおり効かなかった」のかを区別するために残す。推測なら幅を効果なしまで広げる
+    html += '<div class="col-md-2 col-sm-6 col-xs-12 gf_ev_field"><label>根拠の強さ</label>'
+          + '<select class="rmk_conf">' + sub480_confidenceOptions(e.confidence) + '</select></div>';
+
+    html += '<div class="col-md-3 col-sm-6 col-xs-12 gf_ev_field">'
           + '<label>係数（下限 / 中央 / 上限）</label>'
           + '<div class="gf_ev_factors">'
           + '<input type="text" class="rmk_low"  value="' + sub480_attr(e.factor_low) + '" readonly>'
@@ -1095,7 +1104,7 @@ function sub480_eventCard(pEvent, pNo) {
           + '<input type="text" class="rmk_high" value="' + sub480_attr(e.factor_high) + '" readonly>'
           + '</div></div>';
 
-    html += '<div class="col-md-4 col-sm-12 col-xs-12 gf_ev_field"><label>根拠・補足情報</label>'
+    html += '<div class="col-md-4 col-sm-6 col-xs-12 gf_ev_field"><label>根拠・補足情報</label>'
           + '<input type="hidden" class="rmk_rationale" value="' + sub480_attr(e.rationale) + '">'
           + '<div class="gf_ev_rationale">'
           + '<button type="button" class="btn btn-info btn-xs rmk_rationale_btn"'
@@ -1152,9 +1161,13 @@ function sub480_updateSummary($pCard) {
     if ($pCard.find('.rmk_fc').is(':checked')) { uses.push('予測'); }
     if ($pCard.find('.rmk_rp').is(':checked')) { uses.push('レポート'); }
 
+    // 根拠の強さは選ばれているときだけ添える（gitea issue #53）
+    var conf = sub480_confidenceName($pCard.find('.rmk_conf').val());
+
     $pCard.find('.gf_ev_summary').html(
         '<span class="gf_ev_sum_period">' + sub480_escape(period) + '</span>'
         + '<span class="gf_ev_sum_effect">' + sub480_escape(effect) + '</span>'
+        + '<span class="gf_ev_sum_conf">' + sub480_escape(conf) + '</span>'
         + '<span class="gf_ev_sum_use">' + sub480_escape(uses.join('・') || '用途なし') + '</span>');
 }
 
@@ -1197,7 +1210,12 @@ function sub480_openRationale(pButton) {
             + '<p class="text-muted" style="margin-bottom:6px;">'
             + 'なぜその見立てにしたのかを書いてください。'
             + '所見のどの記述を根拠にしたか、過去に似た事例があったかなど。</p>'
-            + '<textarea id="dlg_rationale" class="form-control" rows="6"></textarea>'
+            // 評価に耐える根拠の3要素を、空欄のときに型として見せる（gitea issue #53）。
+            // 何を書けば十分か示されていないと、係数と食い違う根拠になりやすい
+            + '<textarea id="dlg_rationale" class="form-control" rows="6" placeholder="'
+            + '①何が起きるか　②なぜ来場に効くか　③どれくらい自信があるか&#10;'
+            + '例: 4/23 に設備更新。店頭掲示と LINE で告知するため来場増を見込む。&#10;'
+            + '　　実績の裏付けは無いので中値は控えめ、下限は効果なしとする。"></textarea>'
             + '</div>',
         width: 640,
         showCancelButton: true,
@@ -1269,9 +1287,10 @@ function sub480_levelOf(pEvent) {
         return 'none';
     }
 
+    // 推測なら幅を広げた形で保存されているので、プリセットにも同じ直しを当てて比べる
     for (var i = 0; i < gFactorPresets.length; i++) {
-        var p = gFactorPresets[i];
-        if (sub480_sameFactors(p, pEvent)) { return p.key; }
+        var p = sub480_applyConfidence(gFactorPresets[i], pEvent.confidence);
+        if (sub480_sameFactors(p, pEvent)) { return gFactorPresets[i].key; }
     }
     return RMK_MANUAL_KEY;
 }
@@ -1308,6 +1327,8 @@ function sub480_applyLevel($pRow) {
     } else {
         factors = sub480_presetByKey(key);
     }
+    // 個別指定では手で入れた幅を尊重し、根拠の強さでは直さない（上で return 済み）
+    factors = sub480_applyConfidence(factors, $pRow.find('.rmk_conf').val());
 
     $pRow.find('.rmk_low').val(factors.factor_low === null ? '' : factors.factor_low);
     $pRow.find('.rmk_mid').val(factors.factor_mid === null ? '' : factors.factor_mid);
@@ -1348,6 +1369,42 @@ function sub480_factorsFromPercent(pPercent) {
     };
 }
 
+// com_remark.com_apply_confidence と同じ式。片方だけ変えないこと。
+// 推測のときだけ、幅に効果なし（1.00）を含める。中央は変えない
+function sub480_applyConfidence(pFactors, pConfidence) {
+    var f = {
+        factor_low: pFactors.factor_low,
+        factor_mid: pFactors.factor_mid,
+        factor_high: pFactors.factor_high
+    };
+    var mid = sub480_num(f.factor_mid);
+    if (pConfidence !== 'guess' || mid === null) { return f; }
+
+    if (mid > 1) {
+        f.factor_low = 1;
+    } else if (mid < 1) {
+        f.factor_high = 1;
+    }
+    return f;
+}
+
+function sub480_confidenceOptions(pConfidence) {
+    var html = '<option value=""' + (pConfidence ? '' : ' selected') + '>（未選択）</option>';
+    for (var i = 0; i < gConfidenceNames.length; i++) {
+        var key = gConfidenceNames[i][0];
+        html += '<option value="' + key + '"' + (key === pConfidence ? ' selected' : '') + '>'
+              + sub480_escape(gConfidenceNames[i][1]) + '</option>';
+    }
+    return html;
+}
+
+function sub480_confidenceName(pConfidence) {
+    for (var i = 0; i < gConfidenceNames.length; i++) {
+        if (gConfidenceNames[i][0] === pConfidence) { return gConfidenceNames[i][1]; }
+    }
+    return '';
+}
+
 /* ------------------------------------------------------------------
    共通
    ------------------------------------------------------------------ */
@@ -1368,6 +1425,7 @@ function sub480_collect() {
             rationale: $card.find('.rmk_rationale').val(),
             use_for_forecast: $card.find('.rmk_fc').prop('checked'),
             use_for_report: $card.find('.rmk_rp').prop('checked'),
+            confidence: $card.find('.rmk_conf').val() || null,
             // 指摘の枠が出ていないときもカード側から拾う
             ack: !!$card.data('ack')
         });

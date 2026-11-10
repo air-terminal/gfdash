@@ -91,6 +91,8 @@
     .gf_ev_collapsed .gf_ev_head > .gf_ev_warn_badge { order: 1; }
     .gf_ev_collapsed .gf_ev_head > .gf_ev_summary { order: 2; }
     .gf_ev_sum_effect { font-weight: bold; min-width: 3.5em; text-align: right; }
+    /* 根拠の強さ（gitea issue #53）。未選択の行とも列がそろうよう幅を取る */
+    .gf_ev_sum_conf { min-width: 4em; color: #8A9BAC; }
     /* 畳んだときの名前は読むだけに見せる（押せば開かずにそのまま編集できる） */
     .gf_ev_collapsed .gf_ev_head .rmk_name { border-color: transparent; background: transparent; font-weight: bold; }
     .gf_ev_toggle { flex: 0 0 auto; }
@@ -406,6 +408,8 @@
     // 画面で別の式を持つと、手入力とAI解析で違う幅になりかねない。
     var gFactorPresets = {{ factor_presets_json|safe }};
     var gTypeNames = {{ type_names_json|safe }};
+    // 根拠の強さ（gitea issue #53）。[[キー, 名前], ...] の並び
+    var gConfidenceNames = {{ confidence_names_json|safe }};
     // AIが使えない環境。順序の制御に関わらず解析は押させない
     // デモでは解析の代わりに記録を再生するので押させる（#43）
     var gDemoReplay = {{ is_sample_mode|yesno:"true,false" }};

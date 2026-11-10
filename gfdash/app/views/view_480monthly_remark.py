@@ -13,7 +13,8 @@ from ..models import Ta215Attnd, Tz305MonthlyRemark
 from ..utils.com_demo_replay import com_demo_replay_enabled, com_load_replay, com_replay_response
 from ..utils.com_llm import com_finish_label, com_get_llm_client
 from ..utils.com_remark import (
-    EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
+    CONFIDENCE_LEVELS, CONFIDENCE_NAMES, EVENT_TYPE_NAMES,
+    com_check_against_confirmed, com_check_events,
     com_check_grounding, com_check_month_span, com_discard_draft, com_dump_events,
     com_get_draft, com_get_factor_presets, com_get_month_memos, com_get_remark,
     com_is_legacy_draft, com_load_events, com_normalize_events, com_save_draft,
@@ -35,6 +36,9 @@ def get480_main(ctx):
     # 画面で別の式を持つと、手入力とAI解析で違う幅になりかねない。
     ctx['factor_presets_json'] = json.dumps(com_get_factor_presets(), ensure_ascii=False)
     ctx['type_names_json'] = json.dumps(EVENT_TYPE_NAMES, ensure_ascii=False)
+    # 根拠の強さ（gitea issue #53）。並び順は選択肢の順にするため、キーの並びで渡す
+    ctx['confidence_names_json'] = json.dumps(
+        [[key, CONFIDENCE_NAMES[key]] for key in CONFIDENCE_LEVELS], ensure_ascii=False)
 
     # デモで「AIで解析」を押したときに再生する記録の月と区分（#43）。画面は、開いて
     # いる月がこれと違えば、その月を開き直してから再生する。見えている所見の本文と、
