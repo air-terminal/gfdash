@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from django.conf import settings
+from django.http import StreamingHttpResponse
 
 REPLAY_DIR = Path(settings.BASE_DIR).parent / 'demo_data' / 'replay'
 
@@ -32,6 +33,21 @@ WAIT_DOT = 0.5
 # 送り出す刻み（秒）。生成中の文章は細かいチャンクで数千個届くので、1つずつ待つと
 # 目標の長さに収まらない。この刻みごとに、その間に届くはずだった分をまとめて送る
 TICK = 0.1
+
+
+def com_replay_response(pKey):
+    """
+    再生のストリームを応答にする。
+
+    前段の nginx は既定で応答をためてから送るため、少しずつ流しても最後に
+    まとめて届き、文字がリアルタイムに出ない（公開デモで発生。前段の無い
+    ローカルの確認では起きなかった）。本物の実行のストリーム（490 / 480）と
+    同じく、バッファリングとキャッシュを止める指定を付ける
+    """
+    response = StreamingHttpResponse(com_replay_stream(pKey), content_type='text/plain; charset=utf-8')
+    response['X-Accel-Buffering'] = 'no'
+    response['Cache-Control'] = 'no-cache'
+    return response
 
 
 def com_demo_replay_enabled():

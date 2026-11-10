@@ -10,7 +10,7 @@ import threading
 import traceback
 
 from ..models import Ta215Attnd, Tz305MonthlyRemark
-from ..utils.com_demo_replay import com_demo_replay_enabled, com_load_replay, com_replay_stream
+from ..utils.com_demo_replay import com_demo_replay_enabled, com_load_replay, com_replay_response
 from ..utils.com_llm import com_finish_label, com_get_llm_client
 from ..utils.com_remark import (
     EVENT_TYPE_NAMES, com_check_against_confirmed, com_check_events,
@@ -79,8 +79,7 @@ def post480_main(request):
             def sub_not_demo():
                 yield 'この操作はデモンストレーションモードでのみ使えます。'
             return StreamingHttpResponse(sub_not_demo(), content_type='text/plain; charset=utf-8')
-        return StreamingHttpResponse(com_replay_stream('480_parse'),
-                                     content_type='text/plain; charset=utf-8')
+        return com_replay_response('480_parse')
 
     if target_month is None:
         ret = {'remark_success': False, 'err_message': '対象月の指定が不正です。'}
