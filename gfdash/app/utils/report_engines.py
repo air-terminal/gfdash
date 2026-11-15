@@ -13,7 +13,7 @@ from . import report_forecast, report_review_single, report_review_staged
 # エンジンは report_common に書いた2関数を公開する
 REVIEW_ENGINES = {
     'single': report_review_single,    # 軽量版。月の合計だけを1回で渡す
-    'staged': report_review_staged,    # 多段版。週別・期間・天候の比較を3つの角度で読み、最後にまとめる
+    'staged': report_review_staged,    # 多段版。旬別・期間・天候の比較を3つの角度で読み、最後にまとめる
 }
 REVIEW_ENGINE_DEFAULT = 'staged'
 

@@ -49,6 +49,9 @@
               <input type="radio" name="chart_mode" value="raijyo" checked style="display:none;">
 {% endif %}              
 
+              <!-- 前年の比べ方（同日／同曜日）。中身は custom_com.js が描く（github issue #7） -->
+              <div class="gf_prev_mode" id="prev_mode_toggle"></div>
+
               <div class="gf_custom_menu_parts">
                 <button id="tbn_prev_month" type="button" class="btn btn-default glyphicon glyphicon-chevron-left" onclick="btnPrevMonth()"></button>
                 <div class="input-group date" style="margin-bottom: 0px;">

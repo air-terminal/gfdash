@@ -1986,3 +1986,49 @@ body.modal-open .modal-backdrop {
     color: #fff;
     font-weight: bold;
 }
+
+
+/* =========================================================
+   24. サイドメニューの小見出し（github issue #29）
+   サブメニューの中で、まれに使う画面をまとめる区切り。
+   テーマはサブメニューの li に丸印（:before）と縦線（:after）を付けるので、
+   小見出しでは丸印を消し、押せる項目と見分けがつくよう小さく薄い文字にする
+   ========================================================= */
+.nav.child_menu li.gf_menu_group {
+    margin-top: 6px;
+    padding-top: 6px;
+    padding-bottom: 2px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 11px;
+    color: #95A5A6;
+    cursor: default;
+}
+.nav.child_menu li.gf_menu_group:hover {
+    background-color: transparent;
+}
+.nav-md ul.nav.child_menu li.gf_menu_group:before {
+    display: none;
+}
+/* 畳んだサイドメニュー（nav-sm）で横に開くときも同じ見た目にする */
+.nav-sm ul.nav.child_menu li.gf_menu_group {
+    padding: 6px 10px 2px;
+}
+
+
+/* =========================================================
+   25. 前年の比べ方の切り替え（github issue #7）
+   日ごとに前年と並べる画面の見出しに置く「前年: 同日｜同曜日」
+   ========================================================= */
+.gf_prev_mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.gf_prev_mode .btn {
+    margin-bottom: 0;
+}
+.gf_prev_mode_label {
+    font-size: 12px;
+    color: #73879C;
+}

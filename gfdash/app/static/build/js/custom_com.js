@@ -664,3 +664,68 @@ function com_getHalfYearLabel(pMode) {
 function com_getHalfYearMonths(pMode) {
     return com_getHalfYearInfo(pMode).months.slice();
 }
+
+/* ------------------------------------------------------------------
+   前年との比べ方（github issue #7）
+
+   日ごとの前年の値（001 のグラフの前年の棒）で、前年の日を
+   「同日（1年前の同じ月日）」か「同曜日（364日前）」から選ぶ。選んだほうは
+   ブラウザに覚えさせ、次に開いたときも同じほうで始める。
+   累計と月の合計は、どちらでも前年同月（日付）で比べる（com_utils の説明を参照）。
+   既定は今までどおりの同日（com_utils.com_get_prev_mode と同じ）
+   ------------------------------------------------------------------ */
+var COM_PREV_MODE_KEY = 'gf_prev_mode';
+
+function com_getPrevMode() {
+    try {
+        var mode = window.localStorage.getItem(COM_PREV_MODE_KEY);
+        return (mode === 'weekday') ? 'weekday' : 'date';
+    } catch (e) {
+        return 'date';
+    }
+}
+
+function com_setPrevMode(pMode) {
+    try {
+        window.localStorage.setItem(COM_PREV_MODE_KEY, pMode === 'weekday' ? 'weekday' : 'date');
+    } catch (e) {
+        // 覚えられなくても、この画面の中では切り替わる
+    }
+}
+
+// グラフの凡例や表の見出しに使う呼び名。「前年」か「前年同曜日」
+function com_prevLabel(pMode) {
+    return (pMode || com_getPrevMode()) === 'weekday' ? '前年同曜日' : '前年';
+}
+
+// 切り替えのボタンを pSelector の中に描く。押されたら覚えて pOnChange(mode) を呼ぶ
+function com_renderPrevModeToggle(pSelector, pOnChange) {
+    var $box = $(pSelector);
+    if (!$box.length) { return; }
+
+    var mode = com_getPrevMode();
+    $box.html(
+        '<span class="gf_prev_mode_label">前年:</span>'
+        + '<div class="btn-group" role="group">'
+        + '<button type="button" class="btn btn-default" data-prev-mode="date"'
+        + ' title="1年前の同じ月日と比べる">同日</button>'
+        + '<button type="button" class="btn btn-default" data-prev-mode="weekday"'
+        + ' title="52週前（364日前）の同じ曜日と比べる。年末年始など日付で決まる日は前年の別の日と並ぶ">同曜日</button>'
+        + '</div>');
+
+    var sync = function(pMode) {
+        $box.find('button').each(function() {
+            var on = ($(this).data('prev-mode') === pMode);
+            $(this).toggleClass('btn-primary active', on).toggleClass('btn-default', !on);
+        });
+    };
+    sync(mode);
+
+    $box.off('click.prev').on('click.prev', 'button', function() {
+        var next = $(this).data('prev-mode');
+        if (next === com_getPrevMode()) { return; }
+        com_setPrevMode(next);
+        sync(next);
+        if (pOnChange) { pOnChange(next); }
+    });
+}

@@ -8,9 +8,14 @@
 LLM に集計や比率の計算をさせると、転記や割り算で数値が変わる。
 表もここで Markdown にしておき、段4には「この表をそのまま使う」と渡す。
 
-週の区切りは「1日から7日ごと」。暦の週（月曜始まり）にすると、両年で
-区切りの位置が変わって並べて比べられない。曜日構成の違いは
-平日/休日の平均のほうで見る。
+月の中の区切りは旬（上旬 1〜10日・中旬 11〜20日・下旬 21日〜末日）。
+日付で区切るので、前年の同じ旬と並べて比べられ、年末年始・お盆のように
+日付で決まる出来事も両年でそろう。以前の「1日から7日ごと」の週は、一般的な
+週（日曜・月曜始まり）と区切りが違い、読み手に違和感があった。暦の週にして
+前年を52週前の同じ曜日と比べる案は、日付で決まる出来事がずれるので採らない
+（github issue #31）。
+旬では両年で曜日の構成が変わるので、旬ごとに土日祝の日数を添える。
+曜日構成の違いは、平日/休日の平均のほうでも見る。
 
 比較はすべてここで済ませる。「雨の日は多かったか」「連休は休日平均より
 多かったか」を日別の表から LLM に読み取らせると、日を数え間違え、
@@ -28,7 +33,7 @@ from django.db.models import Sum
 from ..models import Ta215Attnd, Ta220Memo, Tz301AttendanceForecast, Tz810Holiday2
 from .com_remark import com_memo_marks
 from .com_utils import com_get_holiday2_calendars
-from .report_weather import com_collect_weather, com_day_weather_facts
+from .report_weather import DEKAD_NAMES, com_collect_weather, com_day_weather_facts, com_dekad_no
 
 WEEKDAY_JA = '月火水木金土日'
 
@@ -38,7 +43,7 @@ SEGMENT_TREND_MONTHS = 6
 # 「連休」と呼ぶ最小の日数。土日だけでは連休にしない
 LONG_HOLIDAY_MIN_DAYS = 3
 
-# 予測とのずれを内訳で示す週の閾値（予測比の絶対値、%）と、挙げる日数
+# 予測とのずれを内訳で示す旬の閾値（予測比の絶対値、%）と、挙げる日数
 FORECAST_MISS_PCT = 10
 FORECAST_MISS_DAYS = 3
 
@@ -101,15 +106,15 @@ def com_collect_review_data(pBaseMonth):
 
     daytype_cur = sub_daytype_average(cur_days, daytype_keys)
     weather = com_collect_weather(month_start, month_end, cur_days, prev_start, prev_end, prev_days)
-    weeks = sub_weekly_pairs(month_start, cur_days, prev_start, prev_days, forecast_by_day)
+    dekads = sub_dekad_pairs(month_start, cur_days, prev_start, prev_days, forecast_by_day)
 
     return {
         'month': month_start,
         'prev_month': prev_start,
         'cur_days': cur_days,
         'prev_days': prev_days,
-        'weeks': weeks,
-        'forecast_misses': sub_forecast_misses(weeks, cur_days, forecast_by_day, weather['cur']['flags'], daytype_keys),
+        'dekads': dekads,
+        'forecast_misses': sub_forecast_misses(dekads, cur_days, forecast_by_day, weather['cur']['flags'], daytype_keys),
         'daytype_keys': daytype_keys,
         'daytype_avg': {
             'cur': daytype_cur,
@@ -222,9 +227,11 @@ def sub_marks_by_day(pStart, pEnd):
     return marks
 
 
-def sub_week_no(pMonthStart, pDay):
-    """1日から7日ごとの区切り。第1週=1〜7日、第5週=29日〜末日"""
-    return (pDay - pMonthStart).days // 7 + 1
+def sub_dekad_range(pMonthStart, pNo):
+    """旬の初日と末日。下旬は月末まで（8〜11日になる）"""
+    start = pMonthStart.replace(day=(pNo - 1) * 10 + 1)
+    end = sub_month_end(pMonthStart) if pNo == 3 else pMonthStart.replace(day=pNo * 10)
+    return start, end
 
 
 def sub_forecast_by_day(pStart, pEnd):
@@ -236,52 +243,85 @@ def sub_forecast_by_day(pStart, pEnd):
     }
 
 
-def sub_weekly_pairs(pCurStart, pCurDays, pPrevStart, pPrevDays, pForecast):
+def sub_dekad_pairs(pCurStart, pCurDays, pPrevStart, pPrevDays, pForecast):
     """
-    週別の実績・予測・前年。予測は日別の合計で、その週に予測の無い日があれば
-    出さない（部分の合計を週の予測として読ませない）
+    旬別の実績・予測・前年。予測は日別の合計で、その旬に予測の無い日があれば
+    出さない（部分の合計を旬の予測として読ませない）。
+
+    旬は両年で曜日の構成が変わるので、土日祝の日数を両年分添える。下旬は
+    月によって8〜11日と長さが変わるので、旬どうしを比べられるよう1日平均も出す。
+
+    平日平均（祝日を除く）と土日祝平均も出す。旬の合計や1日平均は曜日の構成で
+    上下するので、平日と土日祝に分けて見られるようにする。母数は日の区分ごとの
+    平均（sub_daytype_average）と同じく、休業日と来場0の日を除く。1日平均は
+    旬の合計を暦日で割ったもの（旬どうしの規模を比べるため）
     """
     cur = defaultdict(int)
     prev = defaultdict(int)
+    cur_off = defaultdict(int)
+    prev_off = defaultdict(int)
+    cur_rows = defaultdict(list)
     fc = defaultdict(float)
     fc_days = defaultdict(int)
     for r in pCurDays:
-        cur[sub_week_no(pCurStart, r['day'])] += r['total']
+        cur[com_dekad_no(r['day'])] += r['total']
+        cur_rows[com_dekad_no(r['day'])].append(r)
+        if sub_is_off_day(r):
+            cur_off[com_dekad_no(r['day'])] += 1
     for r in pPrevDays:
-        prev[sub_week_no(pPrevStart, r['day'])] += r['total']
+        prev[com_dekad_no(r['day'])] += r['total']
+        if sub_is_off_day(r):
+            prev_off[com_dekad_no(r['day'])] += 1
     for day, value in pForecast.items():
-        fc[sub_week_no(pCurStart, day)] += value
-        fc_days[sub_week_no(pCurStart, day)] += 1
+        fc[com_dekad_no(day)] += value
+        fc_days[com_dekad_no(day)] += 1
 
-    weeks = []
-    month_end = sub_month_end(pCurStart)
-    for no in range(1, sub_week_no(pCurStart, month_end) + 1):
-        w_start = pCurStart + timedelta(days=(no - 1) * 7)
-        w_end = min(w_start + timedelta(days=6), month_end)
-        days = (w_end - w_start).days + 1
+    dekads = []
+    for no in (1, 2, 3):
+        d_start, d_end = sub_dekad_range(pCurStart, no)
+        days = (d_end - d_start).days + 1
         forecast = round(fc[no]) if fc_days.get(no) == days else None
-        weeks.append({
-            'no': no, 'start': w_start, 'end': w_end,
-            'cur': cur.get(no), 'prev': prev.get(no),
-            'pct': sub_pct(cur.get(no), prev.get(no)),
+        cur_total = cur.get(no)
+        open_rows = sub_open_days(cur_rows[no])
+        dekads.append({
+            'no': no, 'name': DEKAD_NAMES[no], 'start': d_start, 'end': d_end,
+            'days': days,
+            'cur': cur_total, 'prev': prev.get(no),
+            'cur_avg': round(cur_total / days) if cur_total is not None else None,
+            'cur_weekday_avg': sub_avg_total([r for r in open_rows if not sub_is_off_day(r)]),
+            'cur_off_avg': sub_avg_total([r for r in open_rows if sub_is_off_day(r)]),
+            'cur_off': cur_off.get(no, 0), 'prev_off': prev_off.get(no, 0),
+            'pct': sub_pct(cur_total, prev.get(no)),
             'forecast': forecast,
-            'forecast_pct': sub_pct(cur.get(no), forecast),
+            'forecast_pct': sub_pct(cur_total, forecast),
         })
-    return weeks
+    return dekads
 
 
-def sub_forecast_misses(pWeeks, pDays, pForecast, pWeatherFlags, pDaytypeKeys):
+def sub_is_off_day(pRow):
+    """土日祝（土日・祝日）。旬ごとの曜日構成を示すのに使う"""
+    return pRow['weekend'] or pRow['national']
+
+
+def sub_avg_total(pRows):
+    """来場者数の1日平均。日が無ければ None（その旬に平日・土日祝が無い）"""
+    if not pRows:
+        return None
+    return round(sum(r['total'] for r in pRows) / len(pRows))
+
+
+def sub_forecast_misses(pDekads, pDays, pForecast, pWeatherFlags, pDaytypeKeys):
     """
-    予測から大きくずれた週の内訳。ずれの大きい日と、その日の事実（天候・印・区分）。
+    予測から大きくずれた旬の内訳。ずれの大きい日と、その日の事実（天候・印・区分）。
 
-    週の予測比だけ渡すと LLM は理由を想像する。どの日がずれを作ったかと、
+    旬の予測比だけ渡すと LLM は理由を想像する。どの日がずれを作ったかと、
     その日に何があったか（雨・雪・強風・休業・カレンダー休日）はデータに
     あるので、事実として渡す。因果の断定は段4に任せず、「その日は雨だった」まで
     """
     labels = dict(pDaytypeKeys)
     by_day = {r['day']: r for r in pDays}
     misses = []
-    for w in pWeeks:
+    for w in pDekads:
         if w['forecast_pct'] is None or abs(w['forecast_pct']) < FORECAST_MISS_PCT:
             continue
         days = []
@@ -296,10 +336,10 @@ def sub_forecast_misses(pWeeks, pDays, pForecast, pWeatherFlags, pDaytypeKeys):
             if row['daytype'] not in ('weekday', 'weekend'):
                 facts.append(labels.get(row['daytype'], row['daytype']))
             days.append({'day': day, 'pct': pct, 'facts': facts})
-        # ずれの向きが週と同じ日を、大きい順に
+        # ずれの向きが旬と同じ日を、大きい順に
         sign = 1 if w['forecast_pct'] > 0 else -1
         same_side = sorted((d for d in days if d['pct'] * sign > 0), key=lambda d: -abs(d['pct']))
-        misses.append({'week': w, 'days': same_side[:FORECAST_MISS_DAYS]})
+        misses.append({'dekad': w, 'days': same_side[:FORECAST_MISS_DAYS]})
     return misses
 
 
@@ -517,17 +557,21 @@ def com_render_attendance_block(pData):
     """
     段1（来場者推移）の入力。
 
-    日別の表は渡さない。31行の表を渡すと日付を列挙して終わり、週や期間の
+    日別の表は渡さない。31行の表を渡すと日付を列挙して終わり、旬や期間の
     まとまりで語らない。日付が要るのは休業・特別営業の日だけなので、
     それだけを別に並べる。
     """
     pym = pData['prev_month'].strftime('%Y年%m月')
-    lines = [f'■ 週別合計（1日から7日区切り。当月の実績 / 予測 / 予測比 / {pym} / 前年比）']
-    for w in pData['weeks']:
+    lines = [f'■ 旬別合計（上旬 1〜10日・中旬 11〜20日・下旬 21日〜末日。'
+             f'当月の実績 / 1日平均 / 平日平均（祝日を除く） / 土日祝平均 / 予測 / 予測比 / {pym} / 前年比。'
+             f'土日祝の日数は旬によって両年で違う。平日・土日祝の平均は休業日を除く）']
+    for w in pData['dekads']:
         lines.append(
-            f"第{w['no']}週 ({w['start']:%m/%d}〜{w['end']:%m/%d}) "
-            f"実績 {sub_fmt(w['cur'])} / 予測 {sub_fmt(w['forecast'])} / {sub_fmt_pct(w['forecast_pct'])}"
-            f" / 前年 {sub_fmt(w['prev'])} / {sub_fmt_pct(w['pct'])}")
+            f"{w['name']} ({w['start']:%m/%d}〜{w['end']:%m/%d}、{w['days']}日・土日祝 {w['cur_off']}日) "
+            f"実績 {sub_fmt(w['cur'])} / 1日平均 {sub_fmt(w['cur_avg'])}"
+            f" / 平日平均 {sub_fmt(w['cur_weekday_avg'])} / 土日祝平均 {sub_fmt(w['cur_off_avg'])}"
+            f" / 予測 {sub_fmt(w['forecast'])} / {sub_fmt_pct(w['forecast_pct'])}"
+            f" / 前年 {sub_fmt(w['prev'])}（土日祝 {w['prev_off']}日） / {sub_fmt_pct(w['pct'])}")
 
     lines.append('')
     lines.append(f'■ 日の区分ごとの1日平均と時間帯の内訳（当月 / {pym} / 前年比。休業日は除く）')
@@ -548,14 +592,14 @@ def com_render_attendance_block(pData):
         lines.append('該当なし')
 
     lines.append('')
-    lines.append(f'■ 予測とのずれ（予測比が ±{FORECAST_MISS_PCT}% を超えた週。ずれの大きい日と、その日の事実）')
+    lines.append(f'■ 予測とのずれ（予測比が ±{FORECAST_MISS_PCT}% を超えた旬。ずれの大きい日と、その日の事実）')
     if pData['forecast_misses']:
         for m in pData['forecast_misses']:
-            w = m['week']
+            w = m['dekad']
             days = ', '.join(
                 f"{sub_day_label(d['day'])} {sub_fmt_pct(d['pct'])}（{'・'.join(d['facts']) if d['facts'] else '特記なし'}）"
                 for d in m['days'])
-            lines.append(f"第{w['no']}週 {sub_fmt_pct(w['forecast_pct'])}: {days or '—'}")
+            lines.append(f"{w['name']} {sub_fmt_pct(w['forecast_pct'])}: {days or '—'}")
     else:
         lines.append('該当なし')
 
@@ -644,15 +688,36 @@ def com_render_headline_table(pData):
 # 変わるので、観察と同じ数値からコードが組み立て、生成後に見出しの下へ置く
 # ----------------------------------------------------------------------
 
-def com_render_weekly_table(pData):
-    """「予測と実績・前年比較」の下。週別の実績・予測・前年。予測と実績の動きを並べて読める"""
-    lines = ['*週別の来場者数（1日から7日区切り。予測は先行予測の日別値の合計）*', '',
-             '| 週 | 期間 | 実績 | 予測 | 予測比 | 前年 | 前年比 |',
-             '| :--- | :--- | ---: | ---: | ---: | ---: | ---: |']
-    for w in pData['weeks']:
-        lines.append(f"| 第{w['no']}週 | {w['start']:%m/%d}〜{w['end']:%m/%d} | {sub_fmt(w['cur'])}"
-                     f" | {sub_fmt(w['forecast'])} | {sub_fmt_pct(w['forecast_pct'])}"
-                     f" | {sub_fmt(w['prev'])} | {sub_fmt_pct(w['pct'])} |")
+def com_render_dekad_table(pData):
+    """
+    「予測と実績・前年比較」の下。旬別の実績・予測・前年。予測と実績の動きを並べて読める。
+
+    旬は両年で曜日の構成が変わるので、土日祝の日数を「当月（前年）」で添える。
+    前年比の大きさが、曜日の違いによるものかを読み手が見分けられるように
+    """
+    # iPad 縦でも升の中で折り返さないよう、列と升の文字を詰める。
+    # - 期間の列は持たない。旬の名前で区切りは分かり、月で変わるのは下旬の
+    #   終わりだけなので、表の上の説明に書く
+    # - 予測比・前年比は、それぞれ予測・前年の後ろに括弧で添える
+    # - 日数の単位は升に繰り返さず、説明に1回だけ書く
+    # - 平均の見出しは「1日平均・平日平均・土日祝平均」と書き切る。「平均・平日・
+    #   土日祝」まで削ると3つの関係が読み取れなかった。期間の列を外したので
+    #   この長さでも iPad 縦で折り返さない
+    dekads = pData['dekads']
+    ranges = '・'.join(
+        f"{w['name']} {w['start']:%m/%d}〜{w['end']:%m/%d}" + (f"〔{w['days']}日〕" if w['no'] == 3 else '')
+        for w in dekads)
+    lines = [f'*旬別の来場者数（{ranges}。'
+             '平日平均は祝日を除き、平日平均・土日祝平均は休業日を除く。'
+             '土日祝日数は当月（前年）。予測は先行予測の日別値の合計。括弧内は予測比・前年比）*', '',
+             '| 旬 | 土日祝日数 | 実績 | 1日平均 | 平日平均 | 土日祝平均 | 予測（予測比） | 前年（前年比） |',
+             '| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
+    for w in dekads:
+        lines.append(f"| {w['name']} | {w['cur_off']}（{w['prev_off']}）"
+                     f" | {sub_fmt(w['cur'])} | {sub_fmt(w['cur_avg'])}"
+                     f" | {sub_fmt(w['cur_weekday_avg'])} | {sub_fmt(w['cur_off_avg'])}"
+                     f" | {sub_fmt(w['forecast'])}（{sub_fmt_pct(w['forecast_pct'])}）"
+                     f" | {sub_fmt(w['prev'])}（{sub_fmt_pct(w['pct'])}） |")
     return '\n'.join(lines)
 
 

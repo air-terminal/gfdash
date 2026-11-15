@@ -25,12 +25,14 @@
     /* 未確定の下書きがある印。確定版の状態とは別に、確定待ちの内容があることを示す */
     .gf_mnt_draft     { background-color: #E67E22; margin-left: 4px; }
 
-    /* 直接編集する JSON。等幅でないと括弧の対応を追えない */
+    /* 直接編集する JSON。等幅でないと括弧の対応を追えない。
+       高さは中身に合わせて伸ばし（autosize）、長い行は折り返す。欄の中に
+       縦横のスクロールバーができると、ダイアログのスクロールと重なって読みにくい */
     #detail_json {
       width: 100%; min-height: 320px; font-size: 12px;
       font-family: 'Courier New', Courier, monospace;
       border: 1px solid #E6E9ED; border-radius: 3px; padding: 8px;
-      white-space: pre; overflow-wrap: normal; overflow-x: auto;
+      white-space: pre-wrap; overflow-wrap: anywhere;
     }
     .gf_mnt_readonly {
       background-color: #FAFBFC; border: 1px solid #E6E9ED; border-radius: 3px;
@@ -42,6 +44,66 @@
       padding: 8px 10px; font-size: 12px; color: #8A5A2B; margin-top: 8px;
     }
     .gf_mnt_warns .fa { color: #E67E22; margin-right: 4px; }
+
+    /* 一覧の絞り込み（github issue #30） */
+    .gf_mnt_filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 8px; }
+    .gf_mnt_filter label { font-weight: normal; margin: 0; font-size: 12px; }
+    .gf_mnt_filter select { margin-left: 4px; height: 28px; font-size: 12px; }
+
+    /* 一覧は1行に収める。状態の目印が1文字ずつ折り返したり、冒頭が何行にも
+       折り返したりすると、行が間延びして月を目で追えない */
+    .gf_mnt_table td, .gf_mnt_table th { white-space: nowrap; }
+    .gf_mnt_table .gf_mnt_head {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 100%;
+    }
+
+    /* 内容は、どの幅でも画面に重ねて開く（ダイアログ）。一覧の下に開くと長く
+       スクロールして行き来することになり、左右に並べるとスクロールバーが重なった。
+       開いている間は画面本体をスクロールさせず、スクロールはダイアログの1つにする。
+       z-index は SweetAlert2（1060）より下にし、確認のダイアログを内容の上に出す */
+    .gf_mnt_detail_col { display: none; }
+    /* 重ねる枠は画面いっぱいに固定し、その中にダイアログを置く。ダイアログの高さは
+       この枠（＝実際に見えている範囲）から決める。100vh で決めると、iPad の
+       Safari / Chrome ではアドレスバーの裏まで含んだ高さになり、下の段のボタンが
+       見えている範囲の外に出た */
+    .gf_mnt_detail_col.gf_mnt_open {
+      display: flex; justify-content: center; align-items: flex-start;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+      z-index: 1050; padding: 16px;
+      background-color: rgba(42, 63, 84, 0.45);
+    }
+    /* ダイアログは上（題名）・真ん中（スクロール）・下（ボタン）の3段。高さは画面に
+       収め、スクロールは真ん中の1本だけにする。
+       テーマの .x_panel は float: left かつ inline-block で margin: auto が効かないので、
+       打ち消して中央に置く（flex にすると、中の float も枠に収まる） */
+    .gf_mnt_detail_panel {
+      width: 100%; max-width: 1000px; max-height: 100%; margin: 0;
+      float: none; display: flex; flex-direction: column; padding-bottom: 0;
+    }
+    /* 題名と「閉じる」を1行に並べる。custom_gf.css の .x_panel .x_title h2 { width: 100% !important }
+       を打ち消さないと、ボタンが次の行に落ちる */
+    .gf_mnt_dlg_head {
+      flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+    }
+    .gf_mnt_dlg_head h2 { flex: 1 1 auto; width: auto !important; margin: 0; }
+    .gf_mnt_close { flex: 0 0 auto; white-space: nowrap; }
+    /* 題名と状態の目印の間を空ける */
+    #detail_header .gf_mnt_state { margin-left: 8px; vertical-align: middle; }
+    /* 横にはスクロールさせない。中の .row は左右に負の余白を持ち、そのはみ出しが
+       横スクロールになっていた。長い行は JSON の欄の中で折り返す */
+    .gf_mnt_dlg_body {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; float: none;
+      padding-right: 8px;
+    }
+    #detail_body > .row { margin-left: 0; margin-right: 0; }
+    #detail_body > .row > [class*="col-"] { padding-left: 0; padding-right: 0; }
+    .gf_mnt_dlg_foot {
+      flex: 0 0 auto; border-top: 1px solid #E6E9ED; padding: 10px 0 12px;
+    }
+    .gf_mnt_dlg_buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .gf_mnt_dlg_buttons .btn { margin: 0; }
+    .gf_mnt_btn_delete { margin-left: auto !important; }
+    body.gf_mnt_noscroll { overflow: hidden; }
   </style>
 {% endblock stylesheets %}
 
@@ -53,8 +115,10 @@
       <i class="fa-solid fa-circle-info"></i>
       デモンストレーションモードのため、所見の保存・確定・削除などの変更はできません。登録済みの内容をご覧いただけます。
     </div>
+    <!-- 一覧と内容。内容はどの幅でも、選んだときに画面に重ねて開く。所見が増えると、
+         一覧の下に開く内容との間を長くスクロールすることになり、使いにくかった（github issue #30） -->
     <div class="row">
-      <div class="col-md-12 col-sm-12 col-xs-12">
+      <div class="col-md-12 col-sm-12 col-xs-12 gf_mnt_list_col">
         <div class="x_panel">
           <div class="x_title">
             <h2><i class="fa-solid fa-screwdriver-wrench"></i> 所見メンテナンス</h2>
@@ -67,21 +131,55 @@
               こちらは<b>過去分の修正や、画面では表現できない編集</b>のための画面です。
             </p>
 
+            <!-- 予測所見とレビュー所見はタブで分ける。480 / 410 と同じ分け方にそろえ、
+                 同じ月の2件が交互に並ばないようにする。件数は絞り込み後の数 -->
+            <ul class="nav nav-tabs gf_tabs" id="mnt_tabs">
+              <li class="active" data-cls="forecast">
+                <a href="#" onclick="return btnMntTab('forecast')">
+                  <i class="fa-solid fa-chart-line"></i> 予測所見 <span class="gf_mnt_tab_count"></span>
+                </a>
+              </li>
+              <li data-cls="review">
+                <a href="#" onclick="return btnMntTab('review')">
+                  <i class="fa-solid fa-clock-rotate-left"></i> レビュー所見 <span class="gf_mnt_tab_count"></span>
+                </a>
+              </li>
+            </ul>
+
+            <!-- 絞り込み。所見は月に2件ずつ増えるので、既定は直近1年に絞る -->
+            <div class="gf_mnt_filter">
+              <label>期間
+                <select id="mnt_f_period" onchange="sub485_applyFilter()">
+                  <option value="recent" selected>直近1年</option>
+                  <option value="all">すべて</option>
+                </select>
+              </label>
+              <label>状態
+                <select id="mnt_f_state" onchange="sub485_applyFilter()">
+                  <option value="">すべて</option>
+                  <option value="confirmed">確認済み</option>
+                  <option value="unconfirmed">未確定</option>
+                  <option value="draft">下書きあり</option>
+                </select>
+              </label>
+              <span class="text-muted" id="mnt_f_count"></span>
+            </div>
+
             <div class="table-responsive">
               <table class="table table-hover gf_mnt_table" id="mnt_table">
                 <thead>
+                  <!-- 区分はタブで、解析モデル・更新者・時刻は内容のダイアログで見る -->
                   <tr>
-                    <th style="width: 90px;">対象月</th>
-                    <th style="width: 110px;">区分</th>
-                    <th style="width: 130px;">状態</th>
-                    <th style="width: 60px;" class="text-right">件数</th>
+                    <th style="width: 80px;">対象月</th>
+                    <th style="width: 1%;">状態</th>
+                    <!-- その所見から作った補正の内容（出来事）の数。480 のカードの枚数 -->
+                    <th style="width: 1%;" class="text-right">補正</th>
                     <th>所見（冒頭）</th>
-                    <th style="width: 130px;">解析モデル</th>
-                    <th style="width: 150px;">更新</th>
+                    <th style="width: 1%;">更新</th>
                   </tr>
                 </thead>
                 <tbody id="mnt_tbody">
-                  <tr><td colspan="7" class="text-muted">読み込み中...</td></tr>
+                  <tr><td colspan="5" class="text-muted">読み込み中...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -92,20 +190,25 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="row" id="detail_row" style="display: none;">
-      <div class="col-md-12 col-sm-12 col-xs-12">
-        <div class="x_panel">
-          <div class="x_title">
+      <!-- 内容のダイアログ。外側（暗い所）を押すか Esc でも閉じる -->
+      <div class="gf_mnt_detail_col" id="detail_row" onclick="if (event.target === this) btnMntCloseDetail();">
+        <!-- 上（題名・閉じる）と下（操作ボタン・結果）を固定し、真ん中だけスクロールする。
+             ボタンを本文の下に置くと、毎回スクロールして探すことになる（github issue #30） -->
+        <div class="x_panel gf_mnt_detail_panel">
+          <div class="x_title gf_mnt_dlg_head">
             <h2 id="detail_header">所見の内容</h2>
-            <div class="clearfix"></div>
+            <button type="button" class="btn btn-default btn-sm gf_mnt_close" onclick="btnMntCloseDetail()">
+              <i class="fa fa-times"></i> 閉じる
+            </button>
           </div>
-          <div class="x_content">
+          <div class="x_content gf_mnt_dlg_body" id="detail_scroll">
 
+            <div id="detail_body">
             <div class="row">
-              <div class="col-md-5 col-sm-12 col-xs-12">
+              <div class="col-xs-12">
                 <label>所見（本文）</label>
+                <span class="text-muted" id="detail_meta" style="margin-left: 8px; font-size: 12px;"></span>
                 <div class="gf_mnt_readonly" id="detail_text"></div>
                 <p class="text-muted" style="margin-top: 6px;">
                   本文の編集は「月次所見入力」画面で行います。ここで本文を変えると、
@@ -119,7 +222,7 @@
                 <div id="detail_warns"></div>
               </div>
 
-              <div class="col-md-7 col-sm-12 col-xs-12">
+              <div class="col-xs-12" style="margin-top: 12px;">
                 <label>補正の内容（JSON）<span id="detail_json_kind" class="text-muted"
                        style="font-weight: normal; margin-left: 6px;"></span></label>
                 <textarea id="detail_json" spellcheck="false"></textarea>
@@ -129,9 +232,11 @@
                 </p>
               </div>
             </div>
+            </div>
+          </div>
 
-            <div class="ln_solid"></div>
-            <div class="form-group">
+          <div class="gf_mnt_dlg_foot">
+            <div class="gf_mnt_dlg_buttons">
               <button type="button" class="btn btn-primary gf_write" onclick="btnMntSaveJson()">
                 <i class="fa-solid fa-floppy-disk"></i> JSONを保存
               </button>
@@ -141,11 +246,12 @@
               <button type="button" class="btn btn-default gf_write" id="btn_mnt_unconfirm" onclick="btnMntUnconfirm()">
                 <i class="fa-solid fa-rotate-left"></i> 確定を解除
               </button>
-              <button type="button" class="btn btn-danger gf_write" onclick="btnMntDelete()" style="margin-left: 30px;">
+              <!-- 削除は右端に離して置く。保存や確定と取り違えないように -->
+              <button type="button" class="btn btn-danger gf_write gf_mnt_btn_delete" onclick="btnMntDelete()">
                 <i class="fa-solid fa-trash"></i> この所見を削除
               </button>
             </div>
-
+            <!-- 保存・確定の結果。ボタンの近くに出し、スクロールしなくても見えるようにする -->
             <div id="detail_msg"></div>
           </div>
         </div>

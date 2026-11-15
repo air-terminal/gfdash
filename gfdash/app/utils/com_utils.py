@@ -552,3 +552,47 @@ def com_safe_average(pTotal, pCount, pDigits=2):
     if not pCount:
         return 0
     return round(pTotal / pCount, pDigits)
+
+
+# --------------------------------------------------------------------
+# 前年との比べ方（github issue #7）
+#
+# 日ごとの前年の値（001 のグラフの前年の棒）で、前年の日を
+# 「同日（1年前の同じ月日）」か「同曜日（364日前）」から選べるようにする。
+#
+# 同日では曜日がずれ（今年の月曜と前年の日曜を比べる）、良し悪しを曜日で
+# 読み替える必要があった。同曜日は52週前で、必ず同じ曜日になり、日付の
+# ずれも1〜2日で済む。週番号（ISO）で合わせると年によって371日前になり、
+# ずれが大きくなるので使わない。
+#
+# 同曜日では、年末年始・お盆のように日付で決まる日が前年の別の日と並ぶ
+# （github issue #31 で分かったこと）。そのため曜日に置き換えず、画面で
+# 切り替えられるようにし、既定は今までどおりの同日にする。
+#
+# 同曜日を使うのは日ごとの値だけ。累計と月の合計は、どちらでも前年同月（日付）で
+# 比べる。同曜日の前年は364日前から364日分（10月なら前年10/02〜11/01）なので、
+# 累計や合計にすると月末の値が前年同月の合計と合わず、意味が変わる。累計だけの
+# 101 / 201 と、月集計の 110 / 210 に切り替えを置かないのはこのため。
+# --------------------------------------------------------------------
+PREV_MODE_DATE = 'date'
+PREV_MODE_WEEKDAY = 'weekday'
+PREV_WEEKDAY_DAYS = 364
+
+
+def com_get_prev_mode(dic):
+    """画面から送られた前年の比べ方。未指定や不明な値は同日"""
+    mode = dic.get('prevMode') if dic is not None else None
+    return mode if mode in (PREV_MODE_DATE, PREV_MODE_WEEKDAY) else PREV_MODE_DATE
+
+
+def com_prev_weekday_days(pFrom, pTo):
+    """
+    当月の各日と、比べる前年の日（364日前）の組を、当月の日の順に返す。
+    [(当月の日, 前年の日), ...]
+    """
+    pairs = []
+    day = pFrom
+    while day <= pTo:
+        pairs.append((day, day - timedelta(days=PREV_WEEKDAY_DAYS)))
+        day += timedelta(days=1)
+    return pairs

@@ -193,7 +193,7 @@ def sub_year_weather(pStart, pEnd, pDays, pSlotHours, pThreshold):
         'flags': flags,     # 日別の判定。予測とのずれの内訳（report_data）が日の事実を引く
         'groups': {key: sub_day_impact(open_rows, flags, key) for key, _l, _m in DAY_GROUPS},
         'slots': sub_slot_impacts(open_rows, flags),
-        'weeks': sub_weekly(pStart, flags, pDays),
+        'dekads': sub_dekads(flags, pDays),
         'summary': sub_summary(flags),
     }
 
@@ -431,22 +431,33 @@ def sub_slot_impacts(pOpenRows, pFlags):
     return result
 
 
-def sub_weekly(pStart, pFlags, pDays):
-    """週別（1日から7日区切り）の平均最高気温・雨の日数・来場者数"""
+# 旬（github issue #31）。月の中を、上旬 1〜10日・中旬 11〜20日・下旬 21日〜末日で
+# 区切る。日付で区切るので前年の同じ旬と並べられる。来場者側（report_data）と
+# 天候側で同じ区切りを使うため、下位のこのモジュールに置く
+DEKAD_NAMES = {1: '上旬', 2: '中旬', 3: '下旬'}
+
+
+def com_dekad_no(pDay):
+    """旬の番号。1=上旬（1〜10日）、2=中旬（11〜20日）、3=下旬（21日〜末日）"""
+    return min((pDay.day - 1) // 10 + 1, 3)
+
+
+def sub_dekads(pFlags, pDays):
+    """旬別の平均最高気温・雨の日数・来場者数"""
     temps = defaultdict(list)
     rain_days = defaultdict(int)
     totals = defaultdict(int)
     for day, f in pFlags.items():
-        no = (day - pStart).days // 7 + 1
+        no = com_dekad_no(day)
         if f['temp_max'] is not None:
             temps[no].append(f['temp_max'])
         if f['rain']:
             rain_days[no] += 1
     for r in pDays:
-        totals[(r['day'] - pStart).days // 7 + 1] += r['total']
+        totals[com_dekad_no(r['day'])] += r['total']
 
     return [{
-        'no': no,
+        'no': no, 'name': DEKAD_NAMES[no],
         'avg_max': round(sum(temps[no]) / len(temps[no]), 1) if temps[no] else None,
         'rain_days': rain_days.get(no, 0),
         'total': totals.get(no),
@@ -563,11 +574,11 @@ def com_render_weather_block(pWeather, pPrevMonth):
         lines.append(f"{label} 雨あり {sub_impact_text(cur['slots'][slot], '回')}")
 
     lines.append('')
-    lines.append(f'■ 週別（平均最高気温 / 雨の日数 / 来場者数。当月 → {pym}）')
-    prev_weeks = {w['no']: w for w in prev['weeks']}
-    for w in cur['weeks']:
-        p = prev_weeks.get(w['no'], {})
-        lines.append(f"第{w['no']}週 当月 {sub_fmt(w['avg_max'], '℃')} / 雨 {w['rain_days']}日 / {sub_fmt(w['total'])}"
+    lines.append(f'■ 旬別（上旬 1〜10日・中旬 11〜20日・下旬 21日〜末日。平均最高気温 / 雨の日数 / 来場者数。当月 → {pym}）')
+    prev_dekads = {w['no']: w for w in prev['dekads']}
+    for w in cur['dekads']:
+        p = prev_dekads.get(w['no'], {})
+        lines.append(f"{w['name']} 当月 {sub_fmt(w['avg_max'], '℃')} / 雨 {w['rain_days']}日 / {sub_fmt(w['total'])}"
                      f" → 前年 {sub_fmt(p.get('avg_max'), '℃')} / 雨 {sub_fmt(p.get('rain_days'))}日 / {sub_fmt(p.get('total'))}")
 
     lines.append('')

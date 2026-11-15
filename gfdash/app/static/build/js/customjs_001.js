@@ -13,6 +13,11 @@ function initFor001(){
 
     sub001_postView(initParam);
     sub001_syncChartWidth();
+
+    // 前年の比べ方（同日／同曜日。github issue #7）。切り替えたら今の月で読み直す
+    com_renderPrevModeToggle('#prev_mode_toggle', function() {
+        btnToggleChartMode();
+    });
 }
 
 
@@ -27,7 +32,8 @@ function sub001_postView(postParam){
         data: {
             getMode : postParam.getMode,
             getYM : postParam.getYM,
-            getChartMode : postParam.getChartMode
+            getChartMode : postParam.getChartMode,
+            prevMode : com_getPrevMode()
         },
         beforeSend: function(xhr, settings) {
             if (!csrfSafeMethod(settings.type) && !this.crossDomain) {
@@ -45,6 +51,9 @@ function sub001_postView(postParam){
 
         var raijyoDetail = [];
         var raijyoDetailOld = [];
+        // 同曜日のときだけ届く、前年の棒用の日ごとの値（github issue #7）
+        var raijyoDetailOldBar = [];
+        var uriageDetailOldBar = [];
         var uriageDetail = [];
         var uriageDetailOld = [];
 
@@ -147,6 +156,14 @@ function sub001_postView(postParam){
                         });
                         raijyoDetailOld.push([pDate, tempDetail['all']]);
                         raijyoDetailSumOld.push([pDate, tmpRaijyoSumOld]);
+                    });
+                    break;
+                case 'raijyoDetailOldBar':
+                case 'uriageDetailOldBar':
+                    // 前年の棒だけに使う。累計の線は raijyoDetailOld / uriageDetailOld（同日）から作る
+                    $.each(val, function(key2, val2) {
+                        var bar = (key === 'raijyoDetailOldBar') ? raijyoDetailOldBar : uriageDetailOldBar;
+                        bar.push([val2['business_day'].substr(5), Number(val2['all'])]);
                     });
                     break;
                 case 'raijyoSumOld':
@@ -313,10 +330,12 @@ function sub001_postView(postParam){
         // indexグラフ書き換え専用
         if(postParam.getChartMode === 'raijyo'){
             //来場者数
-            sub001_set_chatjs_gf(chartXLabels, chartDataNum, raijyoDetail, raijyoDetailOld, raijyoDetailSum, raijyoDetailSumOld);
+            sub001_set_chatjs_gf(chartXLabels, chartDataNum, raijyoDetail,
+                raijyoDetailOldBar.length ? raijyoDetailOldBar : raijyoDetailOld, raijyoDetailSum, raijyoDetailSumOld);
         } else {
             //売上高
-            sub001_set_chatjs_gf(chartXLabels, chartDataNum, uriageDetail, uriageDetailOld, uriageDetailSum, uriageDetailSumOld);
+            sub001_set_chatjs_gf(chartXLabels, chartDataNum, uriageDetail,
+                uriageDetailOldBar.length ? uriageDetailOldBar : uriageDetailOld, uriageDetailSum, uriageDetailSumOld);
         }
         $("#detail_option").hide();
         $("#temperature_option").hide();
@@ -686,7 +705,7 @@ function sub001_set_chatjs_gf(chartXLabels, chartDataNum, chart_plotY1_data1, ch
                 ,lineAtIndex: tmpDataNum    // 独自プロパティ
             }, {
                 order: 101,
-                label: "前年" + tmpDataLabel,
+                label: com_prevLabel() + tmpDataLabel,
                 backgroundColor: "rgba(3, 88, 106, 0.7)",
                 fill: true,
                 data: tmpData2,
@@ -708,6 +727,7 @@ function sub001_set_chatjs_gf(chartXLabels, chartDataNum, chart_plotY1_data1, ch
                 yAxisID: 'y2'
             }, {
                 order: 11,
+                // 累計の線は常に前年同日（前年同月の合計に向かう線）。同曜日にするのは棒だけ
                 label: "前年" + tmpDataLabel + "累計",
                 borderDash: [10, 5],
 //                borderColor: "rgba(155,89,182,0.8)",

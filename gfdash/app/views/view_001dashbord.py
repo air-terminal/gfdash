@@ -14,6 +14,7 @@ from ..models import Tz105DetailedWeatherReport
 from ..models import Tz901ComName
 
 from ..utils.com_utils import com_get_chart_xLabel
+from ..utils.com_utils import PREV_MODE_WEEKDAY, com_get_prev_mode, com_prev_weekday_days
 from ..utils.com_weather import *
 
 import json
@@ -30,12 +31,16 @@ def post001_main(request):
     dic = QueryDict(request.body, encoding='utf-8')
 
     tmpParam = dic.get('getMode')
+    # 前年の比べ方（同日／同曜日。github issue #7）
+    prevMode = com_get_prev_mode(dic)
     if tmpParam == 'get':
         dictParam =  sub001_conv_param(dic)
+        dictParam['prevMode'] = prevMode
         ret = sub001_index(dictParam)
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
     elif tmpParam == 'init':
         dictParam =  sub001_get_init(dic)
+        dictParam['prevMode'] = prevMode
         ret = sub001_index(dictParam)
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
         ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
@@ -53,6 +58,7 @@ def post001_main(request):
             ret['amedas'] = dictParam['amedas']
     else:
         dictParam =  sub001_get_init(dic)
+        dictParam['prevMode'] = prevMode
         ret = sub001_index(dictParam)
         ret['initYMD'] = format(dictParam['from'],"%Y/%m/%d 00:00:00")
         ret['firstDay'] = format(dictParam['firstDay'],"%Y/%m/%d 00:00:00")
@@ -242,6 +248,31 @@ def sub001_get_tb120(pFromYmd, pToYmd, pDayNum):
 
     return tmpUriageData
 
+def sub001_ta215_by_day(pFrom, pTo):
+    """日ごとの来場者数（会員・ビジター・スクール）。sub001_get_ta215 と同じ合算"""
+    return {r.business_day: r.member + r.visitor + r.school_total
+            for r in Ta215Attnd.objects.filter(business_day__range=[pFrom, pTo])}
+
+
+def sub001_tb120_by_day(pFrom, pTo):
+    """日ごとの売上高（有高＋出金）。sub001_get_tb120 と同じ合算"""
+    return {r.business_day: r.aridaka + r.shukkin
+            for r in Tb120Report.objects.filter(business_day__range=[pFrom, pTo])}
+
+
+def sub001_prev_weekday_detail(pFrom, pTo, pByDay):
+    """
+    同曜日（364日前）の前年の日ごとの値を、当月の日の順に返す（github issue #7）。
+    形は sub001_get_ta215 / sub001_get_tb120 の detail と同じ（1始まりの番号 → 日付・値）。
+    グラフは並び順で値を読むので、当月の1日目に対応する前年の日から並べる。
+    データの無い日は 0
+    """
+    pairs = com_prev_weekday_days(pFrom, pTo)
+    values = pByDay(pairs[0][1], pairs[-1][1])
+    return {i: {'business_day': format(prev, "%Y/%m/%d"), 'all': values.get(prev, 0)}
+            for i, (_cur, prev) in enumerate(pairs, start=1)}
+
+
 def sub001_index(dictParam):
 
     dictCtx = {}
@@ -266,6 +297,12 @@ def sub001_index(dictParam):
     tmpOldRaijyoData = sub001_get_ta215(oldYearParam['from'], oldYearParam['to'], tmpDayNum)
     dictCtx['raijyoDetailOld'] = tmpOldRaijyoData['raijyoDetail']
     dictCtx['raijyoSumOld'] = tmpOldRaijyoData['raijyoSum']
+    # 同曜日では、グラフの前年の棒（日ごとの値）だけを364日前の日から取る。
+    # 前年の累計の線と上の数値の前年比は、前年同月（同日）のまま。累計や合計を
+    # 同曜日にすると、月末の値が前年同月の合計と合わなくなり、意味が変わる
+    if dictParam.get('prevMode') == PREV_MODE_WEEKDAY:
+        dictCtx['raijyoDetailOldBar'] = sub001_prev_weekday_detail(
+            dictParam['from'], dictParam['to'], sub001_ta215_by_day)
 
     #売上情報の取得
     # 指定年月データ
@@ -281,6 +318,9 @@ def sub001_index(dictParam):
     tmpOldUriageData = sub001_get_tb120(oldYearParam['from'], oldYearParam['to'], tmpUriageData['dayNum'])
     dictCtx['uriageDetailOld'] = tmpOldUriageData['uriageDetail']
     dictCtx['uriageSumOld'] = tmpOldUriageData['uriageSum']
+    if dictParam.get('prevMode') == PREV_MODE_WEEKDAY:
+        dictCtx['uriageDetailOldBar'] = sub001_prev_weekday_detail(
+            dictParam['from'], dictParam['to'], sub001_tb120_by_day)
 
     # 天候情報
     dictCtx['weatherData'] = com_get_101weather_data(dictParam['from'], dictParam['to'])
