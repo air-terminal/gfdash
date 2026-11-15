@@ -56,6 +56,12 @@
   </head>
 
   <body class="{% block body_class %}nav-md {% endblock body_class %}{% if is_sample_mode %} gf_sample_mode{% endif %}">
+    <!-- どの画面でも CSRF の Cookie を付ける（github issue #33）。画面の JS は読み込み時に
+         Cookie の csrftoken を読んで POST に付ける。Django は描画中にトークンを使ったときだけ
+         Cookie を付けるので、トークンを出していない画面（490 / 480 など）を最初に開くと
+         Cookie が無く、POST が 403（CSRF cookie not set）になった。ログインの運用では
+         ログイン画面で付くが、デモンストレーションモードとログインなしの運用では付かない -->
+    <div style="display: none;">{% csrf_token %}</div>
     {% block body %}
       <div class="container body">
         <div class="main_container">
