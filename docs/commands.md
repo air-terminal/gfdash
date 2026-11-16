@@ -17,7 +17,7 @@ AI予測・レポートのコマンド（`run_forecast` / `run_llm_analysis` /
 | [`get_daily_weather`](#天候情報の取得) | 気象庁から天候情報を取得する |
 | [`import_attendance`](#来場者数の取り込み) | 来場者数のCSVを取り込む |
 | [`import_holiday2` / `export_holiday2`](#第2休日カレンダーの取り込み書き出し) | 第2休日カレンダーの取り込み・書き出し |
-| [`export_ai_data` / `import_ai_data`](#ai関連データの書き出し取り込み) | 月次所見の書き出し・取り込み（環境の間で持ち回す） |
+| [`export_ai_data` / `import_ai_data`](#ai関連データの書き出し取り込み) | 月次所見・AI の実行履歴の書き出し・取り込み（環境の間で持ち回す） |
 | [`gen_weather_station_master`](#気象観測地点マスタの再生成通常は不要) | 気象観測地点マスタを再生成する（通常は不要） |
 
 ---
@@ -190,8 +190,9 @@ Note: 複数の環境で同じカレンダーを使う場合、書き出したCS
 
 ## AI関連データの書き出し・取り込み
 
-月次所見（予測所見・レビュー所見）を JSON ファイルに書き出し、別の環境へ取り込みます。
-開発用の PC と本番機のあいだなど、所見を持ち回すときに使います。
+月次所見（予測所見・レビュー所見）と、AI の実行履歴（予測・レポートの履歴）を JSON ファイルに
+書き出し、別の環境へ取り込みます。開発用の PC と本番機のあいだなど、所見や AI の結果を
+持ち回すときに使います。
 
 画面から行う場合は、**「メンテナンス」→「AI関連データの書き出し・取り込み」**（991）を
 開いてください。既定では Admin だけが使えます。
@@ -199,12 +200,20 @@ Note: 複数の環境で同じカレンダーを使う場合、書き出したCS
 ```bash
 python manage.py export_ai_data --output ai_data.json
 python manage.py export_ai_data --from 2026-01 --to 2026-06 --cls forecast --output ai_data.json
+python manage.py export_ai_data --kind remarks,runs --output ai_data.json
+python manage.py export_ai_data --kind runs --run-kind report --from 2026-05 --to 2026-10 --output reports.json
 
 python manage.py import_ai_data ai_data.json --dry-run
 python manage.py import_ai_data ai_data.json
 python manage.py import_ai_data ai_data.json --overwrite-month 2026-09:forecast
 python manage.py import_ai_data ai_data.json --overwrite
+python manage.py import_ai_data reports.json --adopt-month 2026-10:review
+python manage.py import_ai_data reports.json --adopt
 ```
+
+`--kind` の既定は `remarks`（所見だけ）です。実行履歴も書き出すときは `runs` を足します。
+
+### 月次所見
 
 | 項目 | 扱い |
 | :--- | :--- |
@@ -218,7 +227,24 @@ python manage.py import_ai_data ai_data.json --overwrite
 （根拠の入力、期間限定のイベントの終了日など）。画面から確定できない内容は、
 取り込みでも確定版になりません。
 
-Note: AI の実行履歴（予測・レポートの履歴）はまだ対象外です。
+### AI の実行履歴
+
+| 項目 | 扱い |
+| :--- | :--- |
+| 書き出す内容 | 完了した実行の条件（モデル・プロンプトの版など）と、予測の日別値・レポートの本文 |
+| 書き出さない内容 | 実行中・失敗した実行 |
+| 期間 | 実行の対象月で絞ります。レポートはレポートの月、予測は予測を始めた月です |
+| 取り込み済みの実行 | 種類と実行日時（マイクロ秒まで）が同じ実行があれば、取り込み済みとして飛ばします。同じファイルを何度取り込んでも重複しません |
+| 実行の番号 | 取り込み先で振り直します。メモの末尾に、取り込み元のファイル名と書き出し日時を足します |
+| 最新のレポート | 月次レポートの画面（410）に出すレポートです。無い月は、取り込んだ一番新しい実行で埋めます。ある月は **既定では置き換えません。** 画面では採用のチェック、コマンドでは `--adopt-month` / `--adopt` で指定した月だけを置き換えます |
+| 最新の予測 | 触りません。予測の履歴は予測を始めた月以降しか持たず、全期間の予測を作り直せないためです。持ち回すときは「来場者予測／レポートデータメンテナンス」（905）を使います |
+| 誤りのある行 | 所見と同じく、1件でもあれば何も取り込みません |
+
+実行履歴を含むファイルは形式の版が 2 になり、所見だけを扱う前の版では読めません
+（版が違う、と出て何も入りません）。所見だけを書き出したファイルは、前の版でも読めます。
+
+> **予測とレポートには、その環境の来場者数がそのまま入ります。**
+> 公開するデモへは、デモの DB で作った実行だけを渡してください。
 
 ---
 

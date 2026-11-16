@@ -167,6 +167,14 @@
                 <div class="x_panel" style="border: 1px solid #CCD0D7; background-color: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                   <div class="x_title" style="margin-bottom: 12px; padding-bottom: 5px;">
                     <h3 style="font-size: 16px !important; font-weight: bold !important; color: #2A3F54; margin: 0;">
+                      <!-- モデルごとの見比べ（github issue #28）。.env の REPORT_MODEL_COMPARE が
+                           collapsed / expanded のときだけ出す。見出しにはこの開閉ボタンだけを置き、
+                           検索は開いた欄の中に置く（ふだん画面を見る人の目に入るものを増やさない） -->
+                      <span class="gf_compare_ctl" id="compare_ctl_410" style="display: none;">
+                        <a class="gf_compare_btn" id="btn_compare_410"
+                           onclick="sub410_toggleCompare()" title="モデルごとに見比べる">
+                          モデル比較 <i class="fa fa-chevron-down"></i></a>
+                      </span>
                       <i class="fa-solid fa-robot text-primary"></i> AIアドバイザーの月次分析レポート
                     </h3>
                     <div class="clearfix"></div>
@@ -188,11 +196,15 @@
                     </ul>
 
                     <div id="ai_report_forecast_wrap" class="gf_report_pane_410">
+                      <!-- モデルごとの見比べ（github issue #28）。中身は customjs_410.js が描く -->
+                      <div class="gf_report_runs" id="report_runs_forecast_1m" style="display: none;"></div>
                       <div id="ai_report_forecast" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
                         読み込み中...
                       </div>
                     </div>
                     <div id="ai_report_review_wrap" class="gf_report_pane_410" style="display: none;">
+                      <!-- モデルごとの見比べ（github issue #28）。中身は customjs_410.js が描く -->
+                      <div class="gf_report_runs" id="report_runs_review" style="display: none;"></div>
                       <div id="ai_report_review" style="font-size: 13px; line-height: 1.6; color: #4B5F71; padding-left: 12px; padding-right: 12px; padding-bottom: 10px;">
                         読み込み中...
                       </div>

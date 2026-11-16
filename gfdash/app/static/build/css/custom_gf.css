@@ -2032,3 +2032,124 @@ body.modal-open .modal-backdrop {
     font-size: 12px;
     color: #73879C;
 }
+
+
+/* =========================================================
+   26. 410 月次レポートをモデルごとに見比べる（github issue #28）
+   レポートの上に置く「モデル × プロンプトの版」の選択と、前後の移動
+   ========================================================= */
+.gf_report_runs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 12px 10px;
+    padding: 6px 8px;
+    background-color: #F7F9FB;
+    border: 1px solid #E6E9ED;
+    border-radius: 3px;
+    font-size: 12px;
+}
+.gf_report_runs .gf_runs_select {
+    max-width: 100%;
+    height: 28px;
+    font-size: 12px;
+}
+.gf_report_runs .btn {
+    margin-bottom: 0;
+}
+.gf_runs_info {
+    color: #73879C;
+}
+.gf_runs_current {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 3px;
+    background-color: #1ABB9C;
+    color: #fff;
+    font-size: 11px;
+}
+
+/* 見出しの右端の「検索」「モデル比較」。機能を有効にした環境でだけ出る。
+   410 の見出しは flex で並ぶので、開閉ボタン（.gf_collapse_btn）と同じく order と
+   margin-left: auto で右端に置く */
+.gf_compare_ctl {
+    float: right;
+    order: 99;
+    margin-left: auto !important;
+    flex-shrink: 0;
+    display: flex;
+    gap: 6px;
+}
+.gf_compare_btn {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 20px;
+    color: #73879C;
+    border: 1px solid #D5D9DE;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.gf_compare_btn:hover,
+.gf_compare_btn:focus,
+.gf_compare_btn.active {
+    color: #2A3F54;
+    background-color: #EDF1F5;
+    text-decoration: none;
+}
+
+/* 見比べの欄の右端の「他の月を探す」 */
+.gf_report_runs .gf_runs_search_btn {
+    margin-left: auto;
+}
+
+/* 検索ダイアログ */
+.gf_runs_search {
+    text-align: left;
+    font-size: 13px;
+}
+.gf_runs_search_form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 10px;
+}
+.gf_runs_search_form label {
+    flex: 1 1 220px;
+    font-weight: normal;
+    color: #73879C;
+    margin: 0;
+}
+.gf_runs_search_form select {
+    margin-top: 2px;
+}
+.gf_runs_search_result {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.gf_runs_search_note {
+    color: #73879C;
+    margin: 6px 0;
+}
+.gf_runs_search_table {
+    margin-bottom: 0;
+}
+.gf_runs_search_table tbody tr {
+    cursor: pointer;
+}
+.gf_runs_search_table .gf_nowrap {
+    white-space: nowrap;
+}
+.gf_runs_more {
+    color: #73879C;
+    white-space: nowrap;
+    border-bottom: 1px dotted #9AA5B1;
+}
+.gf_runs_total {
+    display: block;
+    color: #9AA5B1;
+    font-size: 11px;
+}

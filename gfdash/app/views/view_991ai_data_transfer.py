@@ -6,24 +6,34 @@ from datetime import datetime
 
 import json
 
-from ..models import Tz305MonthlyRemark
+from ..models import Tz305MonthlyRemark, Tz310AiRun, Tz312ReportHistory
 from ..utils.com_ai_data import (
-    REMARK_CLASSES, REMARK_CLS_NAMES, AiDataError,
-    com_count_errors, com_dump_ai_data, com_export_ai_data, com_export_file_name,
-    com_load_ai_data, com_plan_import, com_public_rows, com_run_import,
+    EXPORT_KINDS, KIND_REMARKS, REMARK_CLASSES, REMARK_CLS_NAMES, RUN_KIND_NAMES, RUN_KINDS,
+    AiDataError,
+    com_count_done_runs, com_count_errors, com_count_items, com_dump_ai_data,
+    com_export_ai_data, com_export_file_name, com_import_source, com_load_ai_data,
+    com_plan_adopts, com_plan_import, com_plan_runs, com_public_rows, com_run_import,
 )
 
 
 def get991_main(ctx):
-    # 書き出しの期間の初期値。所見がある範囲を出しておくと、全期間を
-    # 書き出すときに入力し直さずに済む
-    months = Tz305MonthlyRemark.objects.order_by('target_month').values_list('target_month', flat=True)
-    first = months.first()
-    last = months.last()
-    ctx['remark_count'] = months.count()
-    ctx['first_month'] = first.strftime('%Y-%m') if first else ''
-    ctx['last_month'] = last.strftime('%Y-%m') if last else ''
+    # 書き出しの期間の初期値。所見と実行履歴がある範囲を出しておくと、全期間を
+    # 書き出すときに入力し直さずに済む。実行履歴の月は、レポートの対象月と
+    # 予測を始めた月（com_ai_data.sub_run_target_month と同じ考え方）
+    remark_months = list(Tz305MonthlyRemark.objects.values_list('target_month', flat=True))
+    done = Tz310AiRun.objects.filter(status=Tz310AiRun.STATUS_DONE)
+    run_months = list(Tz312ReportHistory.objects.filter(run_id__in=done.values('run_id'))
+                      .values_list('target_month', flat=True).distinct())
+    run_months += [d.replace(day=1) for d in done.filter(run_kind=Tz310AiRun.RUN_KIND_FORECAST)
+                   .exclude(history_from=None).values_list('history_from', flat=True).distinct()]
+    months = remark_months + run_months
+    ctx['remark_count'] = len(remark_months)
+    ctx['first_month'] = min(months).strftime('%Y-%m') if months else ''
+    ctx['last_month'] = max(months).strftime('%Y-%m') if months else ''
     ctx['remark_classes'] = [(c, REMARK_CLS_NAMES[c]) for c in REMARK_CLASSES]
+    # 実行履歴（段階2、gitea #89）
+    ctx['run_count'] = com_count_done_runs()
+    ctx['run_kinds'] = [(k, RUN_KIND_NAMES[k]) for k in RUN_KINDS]
     return ctx
 
 
@@ -37,14 +47,15 @@ def post991_main(request):
         return json.dumps(sub991_plan(dic.get('fileName')), ensure_ascii=False)
     if mode == 'import':
         return json.dumps(
-            sub991_import(dic.get('fileName'), dic.get('overwrite'), request.user.get_username()),
+            sub991_import(dic.get('fileName'), dic.get('overwrite'), dic.get('adopt'),
+                          request.user.get_username()),
             ensure_ascii=False)
 
     return json.dumps({'ok': False, 'err_message': '不明な処理です。'}, ensure_ascii=False)
 
 
 def sub991_export(pDic):
-    """所見を JSON で返す。画面はダウンロード指示(attachment)の有無で成否を見分ける"""
+    """所見・実行履歴を JSON で返す。画面はダウンロード指示(attachment)の有無で成否を見分ける"""
     try:
         from_month = sub991_month(pDic.get('fromMonth'))
         to_month = sub991_month(pDic.get('toMonth'))
@@ -56,9 +67,18 @@ def sub991_export(pDic):
     if remark_cls and remark_cls not in REMARK_CLASSES:
         return json.dumps({'ok': False, 'err_message': '区分が不正です。'}, ensure_ascii=False)
 
-    data = com_export_ai_data(from_month, to_month, remark_cls)
-    if not data['remarks']:
-        return json.dumps({'ok': False, 'err_message': '書き出す所見がありません。'},
+    # 書き出すもの（所見 / 実行履歴）。指定が無ければ段階1と同じく所見だけ
+    kinds = [k for k in (pDic.get('kinds') or KIND_REMARKS).split(',') if k]
+    if not kinds or any(k not in EXPORT_KINDS for k in kinds):
+        return json.dumps({'ok': False, 'err_message': '書き出すものを選んでください。'},
+                          ensure_ascii=False)
+    run_kind = pDic.get('runKind') or None
+    if run_kind and run_kind not in RUN_KINDS:
+        return json.dumps({'ok': False, 'err_message': '実行の種類が不正です。'}, ensure_ascii=False)
+
+    data = com_export_ai_data(from_month, to_month, remark_cls, kinds, run_kind)
+    if not com_count_items(data):
+        return json.dumps({'ok': False, 'err_message': '書き出すデータがありません。'},
                           ensure_ascii=False)
 
     response = HttpResponse(com_dump_ai_data(data), content_type='application/json; charset=utf-8')
@@ -92,6 +112,8 @@ def sub991_plan(pFileName):
     try:
         _path, data = sub991_read(pFileName)
         rows = com_plan_import(data)
+        run_rows = com_plan_runs(data)
+        adopt_rows = com_plan_adopts(run_rows)
     except AiDataError as e:
         return {'ok': False, 'err_message': str(e)}
 
@@ -99,29 +121,36 @@ def sub991_plan(pFileName):
         'ok': True,
         'exported_at': data.get('exported_at') or '',
         'rows': com_public_rows(rows),
-        'error_count': com_count_errors(rows),
+        'runs': com_public_rows(run_rows),
+        'adopts': com_public_rows(adopt_rows),
+        'error_count': com_count_errors(rows) + com_count_errors(run_rows),
     }
 
 
-def sub991_import(pFileName, pOverwrite, pUpdatedBy):
+def sub991_import(pFileName, pOverwrite, pAdopt, pUpdatedBy):
     """
     取り込む。確認一覧を作り直してから書き込む。
 
     確認一覧を出したあとに他の人が同じ月を登録していることがある。画面に
     出した判定を信じて書き込むと、新規のつもりで既存の行を上書きしかねない。
     上書きは pOverwrite で指定された行だけで、それ以外の既存行は飛ばす。
+    最新のレポートも同じく、置き換えるのは pAdopt で指定された月だけ。
     """
     try:
         overwrite = json.loads(pOverwrite or '[]')
-        if not isinstance(overwrite, list):
+        adopt = json.loads(pAdopt or '[]')
+        if not isinstance(overwrite, list) or not isinstance(adopt, list):
             raise ValueError
     except ValueError:
-        return {'ok': False, 'err_message': '上書きの指定が不正です。'}
+        return {'ok': False, 'err_message': '上書き・採用の指定が不正です。'}
 
     try:
         path, data = sub991_read(pFileName)
         rows = com_plan_import(data)
-        counts = com_run_import(rows, overwrite, pUpdatedBy)
+        run_rows = com_plan_runs(data)
+        adopt_rows = com_plan_adopts(run_rows)
+        counts = com_run_import(rows, overwrite, pUpdatedBy, run_rows, adopt_rows, adopt,
+                                com_import_source(pFileName, data.get('exported_at')))
     except AiDataError as e:
         return {'ok': False, 'err_message': str(e)}
     except Exception as e:

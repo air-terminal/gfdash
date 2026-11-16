@@ -8,6 +8,10 @@
 
     取り込みは必ず「内容を確認」を挟む。既にある月は行ごとのチェックで上書きを
     選ぶ。全期間をまとめて変える操作なので、何がどう変わるかを見てから実行する。
+
+    段階2（gitea #89）で AI 実行履歴を足した。確認一覧に実行履歴の表と、
+    最新のレポート（tz302）の表を出す。最新のレポートは、無い月は埋め、
+    ある月はチェックを入れた月だけを置き換える。
 */
 
 Dropzone.autoDiscover = false;
@@ -17,6 +21,9 @@ let uploadedFileName = null;
 let isBusy = false;
 // 確認一覧の行。取り込むときに上書きの指定を組み立てるのに使う
 let planRows = [];
+// 実行履歴と最新のレポートの確認一覧の行（段階2）
+let planRuns = [];
+let planAdopts = [];
 
 $(document).ready(function() {
     sub991_setUploadEnabled(false);
@@ -92,11 +99,20 @@ function btnExport() {
         return;
     }
 
+    var kinds = [];
+    if ($('#export_kind_remarks').prop('checked')) { kinds.push('remarks'); }
+    if ($('#export_kind_runs').prop('checked')) { kinds.push('runs'); }
+    if (kinds.length === 0) {
+        Swal.fire('確認', '書き出すもの（月次所見・AI 実行履歴）を選んでください。', 'warning');
+        return;
+    }
+
     $('#btn_export').prop('disabled', true);
     if (typeof NProgress != 'undefined') { NProgress.start(); }
 
     var body = $.param({
-        getMode: 'export', fromMonth: from, toMonth: to, remarkCls: $('#export_cls').val()
+        getMode: 'export', fromMonth: from, toMonth: to, remarkCls: $('#export_cls').val(),
+        kinds: kinds.join(','), runKind: $('#export_run_kind').val()
     });
 
     fetch(location.pathname, {
@@ -166,6 +182,8 @@ function btnPlan() {
             return;
         }
         planRows = res.rows || [];
+        planRuns = res.runs || [];
+        planAdopts = res.adopts || [];
         sub991_renderPlan(res);
     })
     .fail(function() {
@@ -179,7 +197,11 @@ function btnPlan() {
 
 function sub991_clearPlan() {
     planRows = [];
+    planRuns = [];
+    planAdopts = [];
     $('#plan_table tbody').empty();
+    $('#plan_runs_table tbody').empty();
+    $('#plan_adopts_table tbody').empty();
     $('#plan_wrap').hide();
 }
 
@@ -227,8 +249,14 @@ function sub991_renderPlan(pRes) {
     });
 
     var existing = planRows.filter(function(r) { return r.exists && r.errors.length === 0; }).length;
-    var summary = '書き出し日時: ' + sub991_escape(pRes.exported_at || '-')
-                + ' / ' + planRows.length + '件（既にある月 ' + existing + '件）';
+    var summary = '書き出し日時: ' + sub991_escape(pRes.exported_at || '-');
+    if (planRows.length > 0) {
+        summary += ' / 所見 ' + planRows.length + '件（既にある月 ' + existing + '件）';
+    }
+    if (planRuns.length > 0) {
+        var imported = planRuns.filter(function(r) { return r.exists && r.errors.length === 0; }).length;
+        summary += ' / 実行 ' + planRuns.length + '件（取り込み済み ' + imported + '件）';
+    }
     if (pRes.error_count > 0) {
         summary += ' <span class="text-danger"><b>誤り ' + pRes.error_count
                  + '件。直してから取り込んでください。</b></span>';
@@ -237,9 +265,106 @@ function sub991_renderPlan(pRes) {
 
     $('#chk_overwrite_all').prop('checked', false).prop('indeterminate', false)
                            .prop('disabled', existing === 0);
+    $('#plan_remarks_wrap').toggle(planRows.length > 0);
     $('#btn_import').prop('disabled', pRes.error_count > 0);
     sub991_refreshJudge();
+    sub991_renderRuns();
+    sub991_renderAdopts();
     $('#plan_wrap').show();
+}
+
+// 実行履歴の表（段階2）。判定は 新規 / 取り込み済み / エラー
+function sub991_renderRuns() {
+    var $tbody = $('#plan_runs_table tbody').empty();
+    $('#plan_runs_wrap').toggle(planRuns.length > 0);
+
+    $.each(planRuns, function(i, row) {
+        var judge;
+        if (row.errors.length > 0) {
+            judge = '<span class="label label-danger gf_991_judge">エラー</span>';
+        } else if (row.exists) {
+            judge = '<span class="label label-default gf_991_judge">取り込み済み</span>';
+        } else {
+            judge = '<span class="label label-success gf_991_judge">新規</span>';
+        }
+        var notes = $.map(row.errors, function(e) {
+            return '<div class="text-danger">' + sub991_escape(e) + '</div>';
+        });
+        var model = [row.llm_model, row.prompt_version].filter(function(v) { return v; }).join(' · ');
+        var unit = row.run_kind === 'forecast' ? '行' : '本';
+
+        $tbody.append(
+            '<tr>'
+          + '<td class="gf_991_nowrap">' + sub991_escape(row.run_kind_name || row.run_kind || '-') + '</td>'
+          + '<td class="gf_991_nowrap">' + sub991_escape(row.executed_at || '-') + '</td>'
+          + '<td class="gf_991_nowrap">' + sub991_escape(row.target_month || '-') + '</td>'
+          + '<td>' + sub991_escape(model || '-') + '</td>'
+          + '<td class="gf_991_nowrap">' + (row.item_count || 0) + unit + '</td>'
+          + '<td>' + judge + '</td>'
+          + '<td class="gf_991_note">' + notes.join('') + '</td>'
+          + '</tr>'
+        );
+    });
+}
+
+// 最新のレポートの表（段階2）。チェックは今のレポートがあり、内容が違う行にだけ出す
+function sub991_renderAdopts() {
+    var $tbody = $('#plan_adopts_table tbody').empty();
+    $('#plan_adopts_wrap').toggle(planAdopts.length > 0);
+
+    $.each(planAdopts, function(i, row) {
+        var check = '';
+        if (row.exists && !row.same) {
+            check = '<input type="checkbox" class="chk_adopt" data-index="' + i
+                  + '" onclick="chkAdoptRow()">';
+        }
+        var model = [row.llm_model, row.prompt_version].filter(function(v) { return v; }).join(' · ');
+        $tbody.append(
+            '<tr data-index="' + i + '">'
+          + '<td class="gf_991_check">' + check + '</td>'
+          + '<td class="gf_991_nowrap">' + sub991_escape(row.target_month) + '</td>'
+          + '<td class="gf_991_nowrap">' + sub991_escape(row.report_cls_name) + '</td>'
+          + '<td>' + sub991_escape(model || '-')
+          + ' <small class="text-muted gf_991_nowrap">' + sub991_escape(row.executed_at) + '</small></td>'
+          + '<td class="gf_991_nowrap">' + (row.exists ? (row.same ? 'あり（同じ内容）' : 'あり') : 'なし') + '</td>'
+          + '<td class="gf_991_adopt_judge"></td>'
+          + '</tr>'
+        );
+    });
+
+    var checkable = $('.chk_adopt').length;
+    $('#chk_adopt_all').prop('checked', false).prop('indeterminate', false).prop('disabled', checkable === 0);
+    sub991_refreshAdopt();
+}
+
+function chkAdoptAll(pElem) {
+    $('.chk_adopt').prop('checked', pElem.checked);
+    sub991_refreshAdopt();
+}
+
+function chkAdoptRow() {
+    sub991_refreshAdopt();
+}
+
+// チェックの状態に合わせて、最新のレポートの判定と一括のチェックを更新する
+function sub991_refreshAdopt() {
+    var checks = $('.chk_adopt');
+    var checked = checks.filter(':checked').length;
+    $('#chk_adopt_all').prop('checked', checks.length > 0 && checked === checks.length)
+                       .prop('indeterminate', checked > 0 && checked < checks.length);
+
+    $('#plan_adopts_table tbody tr').each(function() {
+        var row = planAdopts[$(this).data('index')];
+        var judge;
+        if (!row.exists) {
+            judge = '<span class="label label-success gf_991_judge">追加</span>';
+        } else if ($(this).find('.chk_adopt').prop('checked')) {
+            judge = '<span class="label label-warning gf_991_judge">置き換え</span>';
+        } else {
+            judge = '<span class="label label-default gf_991_judge">そのまま</span>';
+        }
+        $(this).find('.gf_991_adopt_judge').html(judge);
+    });
 }
 
 // 一括のチェック。既にある行のチェックをまとめて入れる・外す
@@ -294,30 +419,50 @@ function btnImport() {
     var created = planRows.filter(function(r) { return !r.exists; }).length;
     var skipped = planRows.filter(function(r) { return r.exists; }).length - overwrite.length;
 
-    if (created === 0 && overwrite.length === 0) {
-        Swal.fire('確認', '取り込む行がありません。既にある月を取り込むには、上書きのチェックを入れてください。', 'info');
+    var adopt = [];
+    $('.chk_adopt:checked').each(function() {
+        var row = planAdopts[$(this).data('index')];
+        adopt.push(row.target_month + ':' + row.report_cls);
+    });
+    var runsNew = planRuns.filter(function(r) { return !r.exists; }).length;
+    var reportsAdded = planAdopts.filter(function(r) { return !r.exists; }).length;
+
+    if (created === 0 && overwrite.length === 0 && runsNew === 0 && reportsAdded === 0 && adopt.length === 0) {
+        Swal.fire('確認', '取り込むものがありません。既にある月を取り込むには、上書き・採用のチェックを入れてください。', 'info');
         return;
+    }
+
+    var html = [];
+    if (planRows.length > 0) {
+        html.push('所見: 新規 ' + created + '件 / 上書き ' + overwrite.length + '件 / スキップ ' + skipped + '件');
+    }
+    if (planRuns.length > 0) {
+        html.push('実行: 新規 ' + runsNew + '件 / 取り込み済み ' + (planRuns.length - runsNew) + '件');
+    }
+    if (planAdopts.length > 0) {
+        html.push('最新のレポート: 追加 ' + reportsAdded + '件 / 置き換え ' + adopt.length + '件');
     }
 
     Swal.fire({
         title: '取り込みますか？',
-        html: '新規 ' + created + '件 / 上書き ' + overwrite.length + '件 / スキップ ' + skipped + '件',
-        icon: overwrite.length > 0 ? 'warning' : 'question',
+        html: html.join('<br>'),
+        icon: (overwrite.length > 0 || adopt.length > 0) ? 'warning' : 'question',
         showCancelButton: true,
         confirmButtonText: '取り込む',
         cancelButtonText: 'やめる'
     }).then(function(result) {
         if (!result.isConfirmed) { return; }
-        sub991_runImport(overwrite);
+        sub991_runImport(overwrite, adopt);
     });
 }
 
-function sub991_runImport(pOverwrite) {
+function sub991_runImport(pOverwrite, pAdopt) {
     isBusy = true;
     $('#btn_import').prop('disabled', true);
     if (typeof NProgress != 'undefined') { NProgress.start(); }
 
-    sub991_post({ getMode: 'import', fileName: uploadedFileName, overwrite: JSON.stringify(pOverwrite) })
+    sub991_post({ getMode: 'import', fileName: uploadedFileName,
+                  overwrite: JSON.stringify(pOverwrite), adopt: JSON.stringify(pAdopt) })
     .done(function(res) {
         if (!res.ok) {
             Swal.fire('取り込み', sub991_escape(res.err_message), 'warning');
@@ -325,10 +470,19 @@ function sub991_runImport(pOverwrite) {
             return;
         }
         var c = res.counts;
-        var msg = '新規 ' + c.created + '件 / 上書き ' + c.overwritten + '件 / スキップ ' + c.skipped + '件';
-        if (c.drafts_discarded > 0) {
-            msg += '<br>破棄した下書き ' + c.drafts_discarded + '件';
+        var lines = [];
+        if (planRows.length > 0) {
+            var line = '所見: 新規 ' + c.created + '件 / 上書き ' + c.overwritten + '件 / スキップ ' + c.skipped + '件';
+            if (c.drafts_discarded > 0) {
+                line += '（破棄した下書き ' + c.drafts_discarded + '件）';
+            }
+            lines.push(line);
         }
+        if (planRuns.length > 0) {
+            lines.push('実行: 新規 ' + c.runs_created + '件 / 取り込み済み ' + c.runs_skipped + '件');
+            lines.push('最新のレポート: 追加 ' + c.reports_added + '件 / 置き換え ' + c.reports_replaced + '件');
+        }
+        var msg = lines.join('<br>');
         Swal.fire('取り込みが完了しました', msg, 'success');
 
         // 取り込めたファイルはサーバ側で削除されるため、画面からも外す

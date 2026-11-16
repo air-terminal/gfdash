@@ -13,6 +13,16 @@
     #plan_table .gf_991_check { width: 1%; white-space: nowrap; text-align: center; }
     #plan_table .gf_991_note { font-size: 12px; }
     .gf_991_judge { display: inline-block; min-width: 4em; text-align: center; }
+    /* 段階2（gitea #89）: 書き出すものの選択と、実行履歴・最新のレポートの確認一覧 */
+    .gf_991_kind { font-weight: bold !important; min-width: 8em; }
+    .gf_991_sub { font-size: 14px; font-weight: bold; color: #2A3F54; margin: 18px 0 6px; }
+    .gf_991_scroll { max-height: 420px; overflow-y: auto; border: 1px solid #E6E9ED; }
+    .gf_991_scroll table { margin-bottom: 0; }
+    .gf_991_scroll thead th { position: sticky; top: 0; background-color: #F7F9FB; z-index: 1; }
+    #plan_runs_table th, #plan_runs_table td,
+    #plan_adopts_table th, #plan_adopts_table td { vertical-align: middle; font-size: 13px; }
+    #plan_adopts_table .gf_991_check { width: 1%; white-space: nowrap; text-align: center; }
+    .gf_991_nowrap { white-space: nowrap; }
   </style>
 {% endblock stylesheets %}
 
@@ -28,28 +38,52 @@
             </div>
             <div class="x_content gf_991_form">
               <p>
-                月次所見を JSON ファイルに書き出します。別の環境の「取り込み」で読み込めます。
-                <span class="text-muted">（登録済み {{ remark_count }}件）</span>
+                月次所見と、AI の実行履歴（予測・レポート）を JSON ファイルに書き出します。
+                別の環境の「取り込み」で読み込めます。
               </p>
               <p>
                 <label>期間</label>
                 <input type="month" id="export_from" class="form-control input-sm" value="{{ first_month }}">
                 〜
                 <input type="month" id="export_to" class="form-control input-sm" value="{{ last_month }}">
-                <label style="margin-left: 20px;">区分</label>
+              </p>
+              <!-- 書き出すもの。既定は所見だけ（段階1と同じ）。実行履歴は gitea #89 -->
+              <p>
+                <label class="gf_991_kind"><input type="checkbox" id="export_kind_remarks" checked> 月次所見</label>
+                <label>区分</label>
                 <select id="export_cls" class="form-control input-sm">
                   <option value="">両方</option>
                   {% for value, name in remark_classes %}
                     <option value="{{ value }}">{{ name }}</option>
                   {% endfor %}
                 </select>
-                <button id="btn_export" class="btn btn-primary btn-sm" type="button" onclick="btnExport()" style="margin-left: 20px;">
+                <span class="text-muted">（登録済み {{ remark_count }}件）</span>
+              </p>
+              <p>
+                <label class="gf_991_kind"><input type="checkbox" id="export_kind_runs"> AI 実行履歴</label>
+                <label>種類</label>
+                <select id="export_run_kind" class="form-control input-sm">
+                  <option value="">両方</option>
+                  {% for value, name in run_kinds %}
+                    <option value="{{ value }}">{{ name }}</option>
+                  {% endfor %}
+                </select>
+                <span class="text-muted">（完了した実行 {{ run_count }}件）</span>
+              </p>
+              <p>
+                <button id="btn_export" class="btn btn-primary btn-sm" type="button" onclick="btnExport()">
                   <i class="fa-solid fa-download"></i> 書き出す
                 </button>
               </p>
-              <p class="text-muted" style="margin-bottom: 0;">
+              <p class="text-muted">
                 期間を空にすると端を区切りません。確定していない所見は本文だけを書き出し、
-                下書きと更新者は書き出しません。
+                下書きと更新者は書き出しません。実行履歴は完了した実行だけを書き出し、
+                実行の対象月（レポートはレポートの月、予測は予測を始めた月）で期間を絞ります。
+              </p>
+              <p class="text-warning" style="margin-bottom: 0;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                予測とレポートには、この環境の来場者数がそのまま入ります。
+                公開するデモへは、デモの DB で作った実行だけを渡してください。
               </p>
             </div>
           </div>
@@ -81,6 +115,9 @@
               <!-- 確認一覧。「内容を確認」を押すまで出さない -->
               <div id="plan_wrap" style="display: none;">
                 <p id="plan_summary"></p>
+                <!-- ファイルに無いものの表は出さない -->
+                <div id="plan_remarks_wrap">
+                <h4 class="gf_991_sub">月次所見</h4>
                 <table class="table table-condensed table-hover" id="plan_table">
                   <thead>
                     <tr>
@@ -99,12 +136,69 @@
                   </thead>
                   <tbody></tbody>
                 </table>
+                <p class="text-muted">
+                  既にある月は、チェックを入れた行だけを上書きします。上書きした月の下書きは破棄します。
+                </p>
+                </div>
+
+                <!-- AI 実行履歴（gitea #89）。取り込み済みの実行は飛ばす -->
+                <div id="plan_runs_wrap" style="display: none;">
+                  <h4 class="gf_991_sub">AI 実行履歴</h4>
+                  <div class="gf_991_scroll">
+                    <table class="table table-condensed table-hover" id="plan_runs_table">
+                      <thead>
+                        <tr>
+                          <th>種類</th>
+                          <th>実行日時</th>
+                          <th>対象月</th>
+                          <th>モデル · プロンプトの版</th>
+                          <th>件数</th>
+                          <th>判定</th>
+                          <th>備考</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                  <p class="text-muted" style="margin-top: 6px;">
+                    取り込み先に同じ実行（種類と実行日時が同じもの）がある実行は、取り込み済みとして飛ばします。
+                  </p>
+                </div>
+
+                <!-- 最新のレポート（tz302）。月次レポートの画面（410）に出すもの -->
+                <div id="plan_adopts_wrap" style="display: none;">
+                  <h4 class="gf_991_sub">最新のレポート（月次レポートの画面に出すもの）</h4>
+                  <div class="gf_991_scroll">
+                    <table class="table table-condensed table-hover" id="plan_adopts_table">
+                      <thead>
+                        <tr>
+                          <th class="gf_991_check">
+                            <!-- 今のレポートがある行のチェックをまとめて入れる・外す -->
+                            <label style="margin: 0; font-weight: normal;">
+                              <input type="checkbox" id="chk_adopt_all" onclick="chkAdoptAll(this)"> 採用
+                            </label>
+                          </th>
+                          <th>対象月</th>
+                          <th>種類</th>
+                          <th>採用する実行</th>
+                          <th>今のレポート</th>
+                          <th>判定</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                  <p class="text-muted" style="margin-top: 6px;">
+                    採用する実行は、その月・種類で実行日時が一番新しいものです。今のレポートが無い月は、それで埋めます。
+                    ある月は、チェックを入れた月だけを置き換えます。
+                  </p>
+                </div>
+
                 <div class="form-group">
                   <button id="btn_import" class="btn btn-success" type="button" onclick="btnImport()">取り込む</button>
                 </div>
                 <p class="text-muted">
-                  既にある月は、チェックを入れた行だけを上書きします。上書きした月の下書きは破棄します。
-                  誤りのある行が1件でもあると取り込めません。
+                  誤りのある行が1件でもあると取り込めません。所見・実行履歴・最新のレポートは、まとめて取り込みます。
                 </p>
               </div>
             </div>

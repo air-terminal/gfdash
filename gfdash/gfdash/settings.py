@@ -305,6 +305,26 @@ OLLAMA_ALLOW_MODEL_SELECT = os.environ.get('OLLAMA_ALLOW_MODEL_SELECT', 'True') 
 #   .env に DISABLE_BATCH_EXECUTION=False を設定してください（コードの書き換えは不要）。
 DISABLE_BATCH_EXECUTION = os.environ.get('DISABLE_BATCH_EXECUTION', 'True') == 'True'
 
+# 410（来場予測詳細）で、月次レポートの履歴をモデル・プロンプトの版ごとに見比べる機能を
+# 出すかどうか（github issue #28）。読むだけで、採用中のレポートは変わりません。
+#   off       : 出さない（既定）。モデルの挙動を確かめる検証向けの機能で、
+#               ふだん画面を見る人には要らないため
+#   collapsed : 出す。初めは畳み、レポートの見出しの「モデル比較」で開く（社内の検証向け）
+#   expanded  : 出す。初めから開く（デモで、見に来た人が見つけられるように）
+# 大文字・小文字は区別しません。ほかの設定に合わせて True / False と書いた場合は、
+# True を collapsed（使いたいという意思はあるが、初めに開くかは読み取れない）、
+# False を off として扱います。
+# 分からない値（綴りの間違いなど）は off として扱い、起動時と manage.py check で
+# 警告を出します（app/checks.py）。黙って off になると、出ない理由が分からないため
+# 空（REPORT_MODEL_COMPARE= とだけ書いた場合）は、書かなかったのと同じ off
+_report_model_compare = os.environ.get('REPORT_MODEL_COMPARE', '').strip() or 'off'
+REPORT_MODEL_COMPARE = {'true': 'collapsed', 'false': 'off'}.get(
+    _report_model_compare.lower(), _report_model_compare.lower())
+REPORT_MODEL_COMPARE_INVALID = None
+if REPORT_MODEL_COMPARE not in ('off', 'collapsed', 'expanded'):
+    REPORT_MODEL_COMPARE_INVALID = _report_model_compare
+    REPORT_MODEL_COMPARE = 'off'
+
 # 休業・祝日カレンダー(913)で過去日を編集できるようにするかどうか。
 #
 # 既定は True（編集可）です。本システムだけで運用する場合、過去日を
